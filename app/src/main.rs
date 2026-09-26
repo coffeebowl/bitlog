@@ -32,6 +32,7 @@ fn main() -> glib::ExitCode {
     app.add_action_entries([quit, about]);
     app.set_accels_for_action("app.quit", &["<Control>q"]);
     app.set_accels_for_action("window.close", &["<Control>w"]);
+    app.set_accels_for_action("win.open-vault", &["<Control>o"]);
 
     app.run()
 }

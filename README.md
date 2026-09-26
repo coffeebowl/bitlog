@@ -37,6 +37,8 @@ XDG_DATA_DIRS="$PWD/_install/share:$XDG_DATA_DIRS" _install/bin/knotbook-gtk
 ```
 
 `XDG_DATA_DIRS` lets the app find its settings schema and icon in `_install/`.
+On first start, open a vault folder; `fixtures/sample-vault/` is one to try.
+Knotbook opens the same vault again on the next start.
 `meson test -C _build` validates the desktop file, metainfo and settings
 schema.
 

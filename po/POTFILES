@@ -1,4 +1,5 @@
 app/src/main.rs
+app/src/window.rs
 app/ui/window.blp
 data/dev.knotbook.Knotbook.desktop.in
 data/dev.knotbook.Knotbook.gschema.xml

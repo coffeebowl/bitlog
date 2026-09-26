@@ -16,15 +16,48 @@ template $KnotbookWindow: Adw.ApplicationWindow {
       }
     }
 
-    content: Adw.StatusPage {
-      icon-name: "dev.knotbook.Knotbook";
-      title: _("Knotbook");
-      description: _("A daily dev log");
+    content: Stack stack {
+      StackPage {
+        name: "welcome";
+
+        child: Adw.StatusPage {
+          icon-name: "dev.knotbook.Knotbook";
+          title: _("Welcome to Knotbook");
+          description: _("Open a vault, the folder that holds your log");
+
+          child: Button {
+            label: _("_Open Vault…");
+            use-underline: true;
+            action-name: "win.open-vault";
+            halign: center;
+
+            styles [
+              "pill",
+              "suggested-action",
+            ]
+          };
+        };
+      }
+
+      StackPage {
+        name: "vault";
+
+        child: Adw.StatusPage vault_page {
+          icon-name: "folder-symbolic";
+        };
+      }
     };
   };
 }
 
 menu primary_menu {
+  section {
+    item {
+      label: _("_Open Vault…");
+      action: "win.open-vault";
+    }
+  }
+
   section {
     item {
       label: _("_About Knotbook");

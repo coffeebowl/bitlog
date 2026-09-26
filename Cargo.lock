@@ -610,8 +610,10 @@ dependencies = [
 name = "knotbook-gtk"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "gettext-rs",
  "gtk4",
+ "knotbook-core",
  "libadwaita",
 ]
 
