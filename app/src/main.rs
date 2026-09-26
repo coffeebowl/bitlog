@@ -1,5 +1,7 @@
+mod calendar_view;
 mod config;
 mod day_view;
+mod format;
 mod markdown_view;
 mod timeline;
 mod window;
@@ -38,8 +40,8 @@ fn main() -> glib::ExitCode {
     app.set_accels_for_action("window.close", &["<Control>w"]);
     app.set_accels_for_action("win.open-vault", &["<Control>o"]);
     // The same keys as in GNOME Calendar.
-    app.set_accels_for_action("win.previous-day", &["<Alt>Left"]);
-    app.set_accels_for_action("win.next-day", &["<Alt>Right"]);
+    app.set_accels_for_action("win.previous", &["<Alt>Left"]);
+    app.set_accels_for_action("win.next", &["<Alt>Right"]);
     app.set_accels_for_action("win.today", &["<Control>t"]);
 
     app.run()

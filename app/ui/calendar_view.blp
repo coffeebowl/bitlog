@@ -1,0 +1,57 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookCalendarView: Adw.NavigationPage {
+  title: _("Calendar");
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle window_title {};
+
+      [start]
+      Box {
+        styles [
+          "linked",
+        ]
+
+        Button {
+          icon-name: "go-previous-symbolic";
+          tooltip-text: _("Previous Month");
+          action-name: "win.previous";
+        }
+
+        Button {
+          icon-name: "go-next-symbolic";
+          tooltip-text: _("Next Month");
+          action-name: "win.next";
+        }
+      }
+
+      [end]
+      Button {
+        label: _("_Today");
+        use-underline: true;
+        action-name: "win.today";
+      }
+    }
+
+    content: ScrolledWindow {
+      hscrollbar-policy: never;
+
+      child: Adw.Clamp {
+        maximum-size: 900;
+        margin-top: 12;
+        margin-bottom: 12;
+        margin-start: 12;
+        margin-end: 12;
+
+        child: Grid grid {
+          column-homogeneous: true;
+          row-spacing: 6;
+          column-spacing: 6;
+        };
+      };
+    };
+  };
+}

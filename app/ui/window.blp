@@ -70,13 +70,30 @@ template $KnotbookWindow: Adw.ApplicationWindow {
             content: ScrolledWindow {
               hscrollbar-policy: never;
 
-              child: ListBox {
+              child: ListBox sidebar_list {
                 styles [
                   "navigation-sidebar",
                 ]
 
-                ListBoxRow {
-                  action-name: "win.today";
+                ListBoxRow today_row {
+                  action-name: "win.show-today";
+
+                  child: Box {
+                    spacing: 12;
+
+                    Image {
+                      icon-name: "weather-clear-symbolic";
+                    }
+
+                    Label {
+                      label: _("Today");
+                      xalign: 0;
+                    }
+                  };
+                }
+
+                ListBoxRow calendar_row {
+                  action-name: "win.show-calendar";
 
                   child: Box {
                     spacing: 12;
@@ -86,7 +103,7 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                     }
 
                     Label {
-                      label: _("Today");
+                      label: _("Calendar");
                       xalign: 0;
                     }
                   };
@@ -95,8 +112,6 @@ template $KnotbookWindow: Adw.ApplicationWindow {
             };
           };
         };
-
-        content: $KnotbookDayView day_view {};
       };
     }
   };

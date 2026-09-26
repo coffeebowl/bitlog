@@ -3,11 +3,11 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Datelike, Local, NaiveDate, NaiveTime, TimeDelta};
-use gettextrs::gettext;
+use chrono::{Local, NaiveDate};
 use gtk::glib;
 use knotbook_core::{Day, Vault};
 
+use crate::format::{capitalize, format_date, format_duration, format_full_date, format_time};
 use crate::markdown_view::MarkdownView;
 use crate::timeline::Timeline;
 
@@ -147,17 +147,11 @@ impl DayView {
     fn show_details(&self, vault: &Vault, day: &Day) {
         let imp = self.imp();
         imp.kind_label.set_label(&capitalize(&day.kind));
-        let location = day.location.as_ref().map(|key| {
-            vault
-                .config()
-                .locations
-                .get(key)
-                .cloned()
-                // Hand-edited files may use a key the configuration lacks.
-                .unwrap_or_else(|| key.to_string())
-        });
-        imp.location_label
-            .set_label(location.as_deref().unwrap_or("–"));
+        let location = day
+            .location
+            .as_ref()
+            .map(|key| vault.config().location_name(key));
+        imp.location_label.set_label(location.unwrap_or("–"));
         imp.working_time_label
             .set_label(&format_duration(day.working_time(vault.projects())));
         let hours = match (day.work_start, day.work_end) {
@@ -205,42 +199,5 @@ impl DayView {
 
 /// The weekday and the full date of `date`, in the user's language.
 fn date_titles(date: NaiveDate) -> (String, String) {
-    let date = glib::DateTime::from_local(
-        date.year(),
-        date.month() as i32,
-        date.day() as i32,
-        0,
-        0,
-        0.0,
-    )
-    .expect("every date chrono knows is valid in GLib");
-    let format = |format: &str| {
-        date.format(format)
-            .expect("the date format is valid")
-            .to_string()
-    };
-    // Translators: A date without the weekday, as in "September 22, 2026".
-    // See the GLib documentation of g_date_time_format() for the codes.
-    (format("%A"), format(&gettext("%B %-d, %Y")))
-}
-
-fn format_time(time: NaiveTime) -> String {
-    time.format("%H:%M").to_string()
-}
-
-fn format_duration(duration: TimeDelta) -> String {
-    let minutes = duration.num_minutes();
-    // Translators: A duration, as in "7 h 45 min".
-    gettext("{hours} h {minutes} min")
-        .replace("{hours}", &(minutes / 60).to_string())
-        .replace("{minutes}", &(minutes % 60).to_string())
-}
-
-/// `kind` is free text in the file, usually lowercase like `work`.
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
-    }
+    (format_date(date, "%A"), format_full_date(date))
 }

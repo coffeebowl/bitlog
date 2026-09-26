@@ -3,16 +3,24 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Local, TimeDelta};
+use chrono::{Local, Months, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 use knotbook_core::Vault;
 
+use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 3] = ["win.previous-day", "win.next-day", "win.today"];
+const VAULT_ACTIONS: [&str; 6] = [
+    "win.previous",
+    "win.next",
+    "win.today",
+    "win.show-today",
+    "win.show-calendar",
+    "win.show-day",
+];
 
 mod imp {
     use super::*;
@@ -28,7 +36,15 @@ mod imp {
         #[template_child]
         pub sidebar: TemplateChild<adw::NavigationPage>,
         #[template_child]
-        pub day_view: TemplateChild<DayView>,
+        pub sidebar_list: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub today_row: TemplateChild<gtk::ListBoxRow>,
+        #[template_child]
+        pub calendar_row: TemplateChild<gtk::ListBoxRow>,
+        /// The pages of the content, owned here because only one of them is
+        /// in the split view at a time.
+        pub day_view: DayView,
+        pub calendar_view: CalendarView,
     }
 
     impl Default for Window {
@@ -38,7 +54,11 @@ mod imp {
                 stack: TemplateChild::default(),
                 split_view: TemplateChild::default(),
                 sidebar: TemplateChild::default(),
-                day_view: TemplateChild::default(),
+                sidebar_list: TemplateChild::default(),
+                today_row: TemplateChild::default(),
+                calendar_row: TemplateChild::default(),
+                day_view: glib::Object::new(),
+                calendar_view: glib::Object::new(),
             }
         }
     }
@@ -50,22 +70,38 @@ mod imp {
         type ParentType = adw::ApplicationWindow;
 
         fn class_init(klass: &mut Self::Class) {
-            DayView::ensure_type();
             klass.bind_template();
             klass.install_action_async("win.open-vault", None, |window, _, _| async move {
                 window.choose_vault().await;
             });
-            klass.install_action("win.previous-day", None, |window, _, _| {
-                window.move_days(-1);
-            });
-            klass.install_action("win.next-day", None, |window, _, _| {
-                window.move_days(1);
-            });
+            // Previous, next and today move by the unit of the page shown.
+            klass.install_action("win.previous", None, |window, _, _| window.step(-1));
+            klass.install_action("win.next", None, |window, _, _| window.step(1));
             klass.install_action("win.today", None, |window, _, _| {
+                let today = Local::now().date_naive();
                 let imp = window.imp();
-                imp.day_view.show_date(Local::now().date_naive());
-                imp.split_view.set_show_content(true);
+                if window.shows_calendar() {
+                    imp.calendar_view.show_month(today);
+                } else {
+                    imp.day_view.show_date(today);
+                }
             });
+            klass.install_action("win.show-today", None, |window, _, _| {
+                window.show_day(Local::now().date_naive());
+            });
+            klass.install_action("win.show-calendar", None, |window, _, _| {
+                window.show_calendar();
+            });
+            klass.install_action(
+                "win.show-day",
+                Some(glib::VariantTy::STRING),
+                |window, _, date| {
+                    let date = date
+                        .and_then(|date| date.str()?.parse().ok())
+                        .expect("the calendar passes dates as YYYY-MM-DD");
+                    window.show_day(date);
+                },
+            );
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -76,6 +112,7 @@ mod imp {
     impl ObjectImpl for Window {
         fn constructed(&self) {
             self.parent_constructed();
+            self.split_view.set_content(Some(&self.day_view));
             for action in VAULT_ACTIONS {
                 self.obj().action_set_enabled(action, false);
             }
@@ -156,7 +193,10 @@ impl Window {
             }
         };
         imp.sidebar.set_title(&vault.config().name);
+        imp.calendar_view.set_vault(vault.clone());
         imp.day_view.set_vault(vault);
+        imp.split_view.set_content(Some(&imp.day_view));
+        imp.sidebar_list.select_row(Some(&*imp.today_row));
         imp.stack.set_visible_child_name("vault");
         for action in VAULT_ACTIONS {
             self.action_set_enabled(action, true);
@@ -166,14 +206,46 @@ impl Window {
             .expect("the last vault can be stored");
     }
 
-    /// Shows the day `days` days after the one shown now.
-    fn move_days(&self, days: i64) {
-        let day_view = &self.imp().day_view;
-        let date = day_view
-            .date()
-            .checked_add_signed(TimeDelta::days(days))
-            .expect("nobody steps day by day to the end of the calendar");
-        day_view.show_date(date);
+    fn shows_calendar(&self) -> bool {
+        let imp = self.imp();
+        imp.split_view.content().as_ref() == Some(imp.calendar_view.upcast_ref())
+    }
+
+    /// Shows the day or month `steps` days or months after the one shown now.
+    fn step(&self, steps: i32) {
+        let imp = self.imp();
+        let unreachable = "nobody steps this way to the end of the calendar";
+        if self.shows_calendar() {
+            let month = imp.calendar_view.month();
+            let months = Months::new(steps.unsigned_abs());
+            let month = if steps < 0 {
+                month.checked_sub_months(months)
+            } else {
+                month.checked_add_months(months)
+            };
+            imp.calendar_view.show_month(month.expect(unreachable));
+        } else {
+            let date = imp.day_view.date();
+            let date = date.checked_add_signed(TimeDelta::days(steps.into()));
+            imp.day_view.show_date(date.expect(unreachable));
+        }
+    }
+
+    fn show_day(&self, date: NaiveDate) {
+        let imp = self.imp();
+        imp.day_view.show_date(date);
+        imp.split_view.set_content(Some(&imp.day_view));
+        imp.split_view.set_show_content(true);
+        imp.sidebar_list.select_row(Some(&*imp.today_row));
+    }
+
+    fn show_calendar(&self) {
+        let imp = self.imp();
+        // Reloads the month, days may have changed since it was shown.
+        imp.calendar_view.show_month(imp.calendar_view.month());
+        imp.split_view.set_content(Some(&imp.calendar_view));
+        imp.split_view.set_show_content(true);
+        imp.sidebar_list.select_row(Some(&*imp.calendar_row));
     }
 
     fn show_error(&self, message: &str) {

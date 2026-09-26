@@ -109,6 +109,12 @@ impl VaultConfig {
         read_file(path, Self::parse)
     }
 
+    /// The display name of the location `key`, or the key itself if
+    /// `[locations]` lacks it, as in hand-edited day files.
+    pub fn location_name<'a>(&'a self, key: &'a LocationKey) -> &'a str {
+        self.locations.get(key).map_or(key.as_str(), String::as_str)
+    }
+
     fn parse(text: &str) -> Result<Self, String> {
         let config: Self = toml::from_str(text).map_err(|err| err.to_string())?;
         config.validate()?;
@@ -168,6 +174,9 @@ mod tests {
         assert_eq!(config.locations.len(), 3);
         let office: LocationKey = "office".parse().unwrap();
         assert_eq!(config.locations[&office], "Office");
+        assert_eq!(config.location_name(&office), "Office");
+        let moon: LocationKey = "moon".parse().unwrap();
+        assert_eq!(config.location_name(&moon), "moon");
         assert_eq!(config.defaults.location, Some("remote".parse().unwrap()));
         assert_eq!(
             config.defaults.note_template,
