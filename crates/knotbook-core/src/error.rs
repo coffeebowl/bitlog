@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::EditError;
+use crate::{BlockId, LocationKey, ProjectSlug};
 
 /// A vault file that cannot be read or does not follow the format.
 #[derive(Debug, Error)]
@@ -12,6 +12,29 @@ pub enum ReadError {
     Io { path: PathBuf, source: io::Error },
     #[error("invalid {path}: {message}")]
     Invalid { path: PathBuf, message: String },
+}
+
+/// A change that would make a day or project invalid.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum EditError {
+    #[error("there is no block {0}")]
+    UnknownBlock(BlockId),
+    #[error("there is no project {0}")]
+    UnknownProject(ProjectSlug),
+    #[error("there is no location {0}")]
+    UnknownLocation(LocationKey),
+    #[error("a block cannot start and end at the same time")]
+    EmptyBlock,
+    #[error("the block would overlap block {0}")]
+    Overlap(BlockId),
+    #[error("a block title has to fit on one line")]
+    MultilineTitle,
+    #[error("the project {0} exists already")]
+    ProjectExists(ProjectSlug),
+    #[error("a color has to look like #3584e4, found {0:?}")]
+    InvalidColor(String),
+    #[error("unknown project status {0:?}, expected active, paused or archived")]
+    InvalidStatus(String),
 }
 
 /// A vault file that cannot be saved. Saving reads the file again first if

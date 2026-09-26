@@ -136,6 +136,23 @@ impl Vault {
         Ok(saved)
     }
 
+    /// Saves the new project `project` and adds it to the vault.
+    pub fn add_project(&mut self, project: Project) -> Result<&Project, SaveError> {
+        let path = Project::path(&self.root, &project.slug);
+        if self.project(&project.slug).is_some() || path.exists() {
+            return Err(EditError::ProjectExists(project.slug).into());
+        }
+        let text = project.to_toml();
+        let saved =
+            Project::read(&self.root, project.slug.clone(), &text).expect("new projects are valid");
+        self.write(&path, &text)?;
+        let index = self
+            .projects
+            .partition_point(|other| other.slug < saved.slug);
+        self.projects.insert(index, saved);
+        Ok(&self.projects[index])
+    }
+
     /// Applies `change` to the project `slug` of this vault and saves it.
     ///
     /// If the file was changed elsewhere since it was read, `change` is applied
@@ -143,13 +160,13 @@ impl Vault {
     pub fn update_project(
         &mut self,
         slug: &ProjectSlug,
-        change: impl FnOnce(&mut Project),
+        change: impl FnOnce(&mut Project) -> Result<(), EditError>,
     ) -> Result<&Project, SaveError> {
         let index = self
             .projects
             .iter()
             .position(|project| project.slug == *slug)
-            .expect("only projects of the vault are updated");
+            .ok_or_else(|| EditError::UnknownProject(slug.clone()))?;
         let path = Project::path(&self.root, slug);
         let current = read_text(&path)?;
         let mut project = if self.projects[index].is_read_from(&current) {
@@ -157,7 +174,7 @@ impl Vault {
         } else {
             Project::read(&self.root, slug.clone(), &current)?
         };
-        change(&mut project);
+        change(&mut project)?;
         let text = project.to_toml();
         let saved =
             Project::read(&self.root, slug.clone(), &text).expect("changes keep a project valid");
@@ -486,7 +503,10 @@ mod tests {
         fs::write(&path, &external).unwrap();
 
         let project = vault
-            .update_project(&slug, |project| project.name = "Infra".to_owned())
+            .update_project(&slug, |project| {
+                project.name = "Infra".to_owned();
+                Ok(())
+            })
             .unwrap();
         assert_eq!(project.name, "Infra");
         assert!(project.pinned);
@@ -541,5 +561,52 @@ mod tests {
                 VaultChange::Project("infra".parse().unwrap())
             ]
         );
+    }
+
+    #[test]
+    fn add_project() {
+        let (_dir, mut vault) = sample_copy();
+        let slug: ProjectSlug = "docs".parse().unwrap();
+        let project = Project::new(slug.clone(), "Documentation", date(2026, 10, 1));
+        let text = project.to_toml();
+        vault.add_project(project).unwrap();
+        assert_eq!(
+            fs::read_to_string(Project::path(vault.root(), &slug)).unwrap(),
+            text
+        );
+        let slugs: Vec<&str> = vault.projects().iter().map(|p| p.slug.as_str()).collect();
+        assert_eq!(
+            slugs,
+            ["docs", "filler", "infra", "meetings", "pause", "webshop"]
+        );
+
+        let again = Project::new(slug.clone(), "Again", date(2026, 10, 1));
+        assert!(matches!(
+            vault.add_project(again),
+            Err(SaveError::Edit(EditError::ProjectExists(_)))
+        ));
+        // The saved project can be changed like any other.
+        vault
+            .update_project(&slug, |project| project.set_color("#ff7800"))
+            .unwrap();
+    }
+
+    #[test]
+    fn invalid_project_changes() {
+        let (_dir, mut vault) = sample_copy();
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        let before = fs::read_to_string(Project::path(vault.root(), &infra)).unwrap();
+        assert!(matches!(
+            vault.update_project(&infra, |project| project.set_color("green")),
+            Err(SaveError::Edit(EditError::InvalidColor(_)))
+        ));
+        assert_eq!(
+            fs::read_to_string(Project::path(vault.root(), &infra)).unwrap(),
+            before
+        );
+        assert!(matches!(
+            vault.update_project(&"nope".parse().unwrap(), |_| Ok(())),
+            Err(SaveError::Edit(EditError::UnknownProject(_)))
+        ));
     }
 }

@@ -3,14 +3,15 @@
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use chrono::{Datelike, NaiveDate};
 use serde::{Deserialize, Deserializer};
 use toml_edit::{DocumentMut, Item, Table, Value};
 
-use crate::ProjectSlug;
 use crate::error::ReadError;
 use crate::file::{content_hash, parse_text, read_file};
+use crate::{EditError, ProjectSlug};
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;
@@ -56,6 +57,17 @@ impl ProjectStatus {
             Self::Paused => "paused",
             Self::Archived => "archived",
         }
+    }
+}
+
+impl FromStr for ProjectStatus {
+    type Err = EditError;
+
+    fn from_str(text: &str) -> Result<Self, EditError> {
+        [Self::Active, Self::Paused, Self::Archived]
+            .into_iter()
+            .find(|status| status.as_str() == text)
+            .ok_or_else(|| EditError::InvalidStatus(text.to_owned()))
     }
 }
 
@@ -131,6 +143,15 @@ impl Project {
             }
         })
         .collect()
+    }
+
+    /// Sets the color, `#` and six hex digits.
+    pub fn set_color(&mut self, color: &str) -> Result<(), EditError> {
+        if !is_color(color) {
+            return Err(EditError::InvalidColor(color.to_owned()));
+        }
+        self.color = color.to_owned();
+        Ok(())
     }
 
     /// Whether blocks of this project are breaks.
@@ -364,6 +385,15 @@ mod tests {
             let sample = Project::load(&sample_vault(), default.slug.clone()).unwrap();
             assert_eq!(default.to_toml(), sample.to_toml(), "{}", default.slug);
         }
+    }
+
+    #[test]
+    fn status_from_text() {
+        assert_eq!("paused".parse(), Ok(ProjectStatus::Paused));
+        assert_eq!(
+            "done".parse::<ProjectStatus>(),
+            Err(EditError::InvalidStatus("done".to_owned()))
+        );
     }
 
     #[test]

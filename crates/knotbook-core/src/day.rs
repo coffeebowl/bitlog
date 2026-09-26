@@ -15,7 +15,7 @@ use crate::error::ReadError;
 use crate::file::parse_text;
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
-pub use edit::{EditError, RemovedText};
+pub use edit::RemovedText;
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;

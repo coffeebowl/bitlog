@@ -93,6 +93,10 @@ knotbook block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
 knotbook block note k7f3    # edit the block's text in $VISUAL or $EDITOR
 knotbook block rm k7f3 --move-text
 knotbook set --location office --work 08:30-16:45
+
+knotbook project list
+knotbook project add client-portal --name "Client portal" --color ff7800 --pin
+knotbook project edit client-portal --status archived --unpin
 ```
 
 These commands change today unless `--date 2026-09-23` names another day.

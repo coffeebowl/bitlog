@@ -6,12 +6,14 @@ use std::path::{self, Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use chrono::{Local, NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
-use knotbook_core::{BlockId, LocationKey, ProjectSlug, RemovedText, Vault};
+use knotbook_core::{BlockId, LocationKey, ProjectSlug, ProjectStatus, RemovedText, Vault};
 
 use crate::edit::{BlockChanges, DayChanges, parse_span};
+use crate::project::ProjectChanges;
 
 mod day;
 mod edit;
+mod project;
 
 /// The environment variable naming the vault when --vault is missing.
 const VAULT_VARIABLE: &str = "KNOTBOOK_VAULT";
@@ -51,6 +53,11 @@ enum Command {
         #[command(flatten)]
         date: DateArg,
     },
+    /// List, add or change projects.
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommand,
+    },
     /// Set the kind, location or working hours of a day.
     #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
     Set {
@@ -72,6 +79,51 @@ enum Command {
         #[command(flatten)]
         date: DateArg,
     },
+}
+
+#[derive(Subcommand)]
+enum ProjectCommand {
+    /// List all projects.
+    List,
+    /// Add a project.
+    #[command(group(ArgGroup::new("change").multiple(true)))]
+    Add {
+        /// Lowercase letters, digits and hyphens, as in client-portal
+        slug: ProjectSlug,
+        #[command(flatten)]
+        values: ProjectArgs,
+    },
+    /// Change a project.
+    #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
+    Edit {
+        /// The slug of the project
+        slug: ProjectSlug,
+        #[command(flatten)]
+        values: ProjectArgs,
+        /// active, paused or archived
+        #[arg(long, group = "change")]
+        status: Option<ProjectStatus>,
+        /// Stop listing the project first
+        #[arg(long, group = "change", conflicts_with = "pin")]
+        unpin: bool,
+    },
+}
+
+#[derive(Args)]
+struct ProjectArgs {
+    /// The name shown for the project [default for new projects: the slug]
+    #[arg(long, group = "change")]
+    name: Option<String>,
+    /// As in 3584e4 or "#3584e4"
+    #[arg(long, group = "change")]
+    color: Option<String>,
+    /// Free text; blocks of `break` projects are breaks [default for new
+    /// projects: work]
+    #[arg(long, group = "change")]
+    category: Option<String>,
+    /// List the project first when picking one for a block
+    #[arg(long, group = "change")]
+    pin: bool,
 }
 
 #[derive(Args)]
@@ -137,6 +189,7 @@ fn main() -> Result<()> {
         Command::Block { command, date } => {
             block(&open_vault(cli.vault)?, date.date.unwrap_or(today), command)
         }
+        Command::Project { command } => project(open_vault(cli.vault)?, command, today),
         Command::Set {
             kind,
             location,
@@ -153,6 +206,39 @@ fn main() -> Result<()> {
                 work: (work.is_some() || no_work).then_some(work),
             },
         ),
+    }
+}
+
+fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Result<()> {
+    let changes = |values: ProjectArgs, status, pinned| ProjectChanges {
+        name: values.name,
+        color: values.color,
+        category: values.category,
+        status,
+        pinned,
+    };
+    match command {
+        ProjectCommand::List => {
+            print!("{}", project::format_projects(&vault));
+            Ok(())
+        }
+        ProjectCommand::Add { slug, values } => {
+            let pinned = Some(values.pin);
+            project::add_project(&mut vault, slug, changes(values, None, pinned), today)
+        }
+        ProjectCommand::Edit {
+            slug,
+            values,
+            status,
+            unpin,
+        } => {
+            let pinned = if values.pin {
+                Some(true)
+            } else {
+                unpin.then_some(false)
+            };
+            project::edit_project(&mut vault, &slug, changes(values, status, pinned))
+        }
     }
 }
 
@@ -267,6 +353,16 @@ mod tests {
     #[test]
     fn arguments_are_consistent() {
         Cli::command().debug_assert();
+    }
+
+    #[test]
+    fn options_combine() {
+        let parse = |args: &str| Cli::try_parse_from(args.split(' ')).map(|_| ());
+        parse("knotbook project add docs --name Docs --color ff7800 --pin").unwrap();
+        parse("knotbook project add docs").unwrap();
+        parse("knotbook project edit docs --status paused --unpin").unwrap();
+        assert!(parse("knotbook project edit docs").is_err());
+        assert!(parse("knotbook project edit docs --pin --unpin").is_err());
     }
 
     #[test]

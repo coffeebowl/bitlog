@@ -1,28 +1,10 @@
 //! Changes to days that keep them valid.
 
 use chrono::NaiveTime;
-use thiserror::Error;
 
 use super::sections::trim_blank_lines;
 use super::{Block, Day};
-use crate::{BlockId, LocationKey, Project, ProjectSlug, VaultConfig};
-
-/// A change that would make a day invalid.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum EditError {
-    #[error("there is no block {0}")]
-    UnknownBlock(BlockId),
-    #[error("there is no project {0}")]
-    UnknownProject(ProjectSlug),
-    #[error("there is no location {0}")]
-    UnknownLocation(LocationKey),
-    #[error("a block cannot start and end at the same time")]
-    EmptyBlock,
-    #[error("the block would overlap block {0}")]
-    Overlap(BlockId),
-    #[error("a block title has to fit on one line")]
-    MultilineTitle,
-}
+use crate::{BlockId, EditError, LocationKey, Project, ProjectSlug, VaultConfig};
 
 /// What happens to the text of a removed block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
