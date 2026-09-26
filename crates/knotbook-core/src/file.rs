@@ -102,6 +102,31 @@ impl Drop for TempDir {
     }
 }
 
+/// A copy of the sample vault that a test may change, removed again when
+/// the returned folder is dropped.
+#[cfg(test)]
+pub(crate) fn sample_copy() -> (TempDir, crate::Vault) {
+    fn copy(from: &Path, to: &Path) {
+        fs::create_dir_all(to).unwrap();
+        for entry in fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let target = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy(&entry.path(), &target);
+            } else {
+                fs::copy(entry.path(), target).unwrap();
+            }
+        }
+    }
+    let dir = TempDir::new();
+    copy(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault"),
+        &dir.0,
+    );
+    let vault = crate::Vault::open(&dir.0).unwrap();
+    (dir, vault)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

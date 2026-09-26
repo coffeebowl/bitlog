@@ -1,0 +1,260 @@
+//! Finding what is odd in a vault, for `knotbook doctor`.
+
+use std::fmt;
+use std::fs;
+use std::io;
+
+use chrono::NaiveDate;
+
+use crate::error::{ReadError, SaveError};
+use crate::markdown::{escape_headings, heading_lines};
+use crate::{BlockId, Day, DayFile, DayWarning, ProjectSlug, Vault};
+
+/// Something in a vault that needs a look.
+#[derive(Debug)]
+pub enum Problem {
+    /// A day file that cannot be read at all.
+    Unreadable(ReadError),
+    UnknownProject {
+        date: NaiveDate,
+        block: BlockId,
+        project: ProjectSlug,
+    },
+    Overlap {
+        date: NaiveDate,
+        first: BlockId,
+        second: BlockId,
+    },
+    /// A heading in the day note (`block` is `None`) or a block text. This
+    /// includes orphaned ID markers and second headings of a block.
+    Heading {
+        date: NaiveDate,
+        block: Option<BlockId>,
+        line: String,
+    },
+}
+
+impl Problem {
+    /// Whether [`Vault::escape_headings`] solves it.
+    pub fn can_be_escaped(&self) -> bool {
+        matches!(self, Self::Heading { .. })
+    }
+}
+
+impl fmt::Display for Problem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unreadable(err) => err.fmt(f),
+            Self::UnknownProject {
+                date,
+                block,
+                project,
+            } => write!(
+                f,
+                "{date}: block {block} belongs to the unknown project {project}"
+            ),
+            Self::Overlap {
+                date,
+                first,
+                second,
+            } => write!(f, "{date}: blocks {first} and {second} overlap"),
+            Self::Heading {
+                date,
+                block: Some(block),
+                line,
+            } => write!(f, "{date}: the text of block {block} has a heading: {line}"),
+            Self::Heading {
+                date,
+                block: None,
+                line,
+            } => write!(f, "{date}: the day note has a heading: {line}"),
+        }
+    }
+}
+
+impl Vault {
+    /// Checks all day files, oldest first.
+    pub fn check(&self) -> Result<Vec<Problem>, ReadError> {
+        let mut problems = Vec::new();
+        for date in self.all_days()? {
+            match self.load_day(date) {
+                Ok(Some(file)) => problems.extend(self.check_day(&file)),
+                Ok(None) => {}
+                Err(err) => problems.push(Problem::Unreadable(err)),
+            }
+        }
+        Ok(problems)
+    }
+
+    /// Escapes the headings in the day note and block texts of the day
+    /// `date`, so that they read as plain text.
+    pub fn escape_headings(&self, date: NaiveDate) -> Result<(), SaveError> {
+        let Some(file) = self.load_day(date)? else {
+            return Ok(());
+        };
+        self.update_day(&file, |day| {
+            day.note = escape_headings(&day.note);
+            for block in &mut day.blocks {
+                block.text = escape_headings(&block.text);
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    fn check_day(&self, file: &DayFile) -> Vec<Problem> {
+        let day = &file.day;
+        let date = day.date;
+        let mut problems: Vec<Problem> = day
+            .blocks
+            .iter()
+            .filter(|block| self.project(&block.project).is_none())
+            .map(|block| Problem::UnknownProject {
+                date,
+                block: block.id.clone(),
+                project: block.project.clone(),
+            })
+            .collect();
+        // Marker warnings show up as headings below.
+        problems.extend(file.warnings.iter().filter_map(|warning| match warning {
+            DayWarning::Overlap { first, second } => Some(Problem::Overlap {
+                date,
+                first: first.clone(),
+                second: second.clone(),
+            }),
+            _ => None,
+        }));
+        problems.extend(headings(day));
+        problems
+    }
+
+    /// All dates with a day file, oldest first.
+    fn all_days(&self) -> Result<Vec<NaiveDate>, ReadError> {
+        let folder = self.root().join("daily");
+        let entries = match fs::read_dir(&folder) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(source) => {
+                return Err(ReadError::Io {
+                    path: folder,
+                    source,
+                });
+            }
+        };
+        let mut dates = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|source| ReadError::Io {
+                path: folder.clone(),
+                source,
+            })?;
+            let year = entry
+                .file_name()
+                .to_str()
+                .filter(|name| name.len() == 4)
+                .and_then(|name| name.parse().ok());
+            let first = year.and_then(|year| NaiveDate::from_ymd_opt(year, 1, 1));
+            let last = year.and_then(|year| NaiveDate::from_ymd_opt(year, 12, 31));
+            if let (Some(first), Some(last)) = (first, last) {
+                dates.extend(self.days(first, last)?);
+            }
+        }
+        dates.sort();
+        Ok(dates)
+    }
+}
+
+fn headings(day: &Day) -> Vec<Problem> {
+    let texts = std::iter::once((None, &day.note)).chain(
+        day.blocks
+            .iter()
+            .map(|block| (Some(&block.id), &block.text)),
+    );
+    texts
+        .flat_map(|(block, text)| {
+            heading_lines(text)
+                .into_iter()
+                .map(move |line| Problem::Heading {
+                    date: day.date,
+                    block: block.cloned(),
+                    line: text[line].trim().to_owned(),
+                })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::file::sample_copy;
+
+    fn date(day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 9, day).unwrap()
+    }
+
+    fn messages(vault: &Vault) -> Vec<String> {
+        vault
+            .check()
+            .unwrap()
+            .iter()
+            .map(|problem| problem.to_string())
+            .collect()
+    }
+
+    #[test]
+    fn sample_vault() {
+        let (_dir, vault) = sample_copy();
+        assert_eq!(
+            messages(&vault),
+            [
+                "2026-09-22: the text of block t5u6 has a heading: ## Root cause",
+                "2026-09-23: the text of block cc33 has a heading: ## Old notes {#zz99}",
+            ]
+        );
+    }
+
+    #[test]
+    fn escaping_leaves_only_what_needs_a_person() {
+        let (_dir, vault) = sample_copy();
+        let path = vault.day_path(date(25));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(
+            &path,
+            "---\nformat: 1\ndate: \"2026-09-25\"\nblocks:\n\
+             - { id: \"aa11\", start: \"09:00\", end: \"10:00\", project: \"gone\" }\n\
+             - { id: \"bb22\", start: \"09:30\", end: \"11:00\", project: \"infra\" }\n\
+             ---\n\n# 2026-09-25\n\nNote\n===\n\n## {#aa11}\n\n## {#bb22}\n",
+        )
+        .unwrap();
+        // Not a day file, so not checked.
+        fs::write(path.with_file_name("notes.md"), "# Heading\n").unwrap();
+        // Unreadable.
+        fs::write(vault.day_path(date(26)), "no front matter").unwrap();
+
+        let problems = vault.check().unwrap();
+        let escapable: Vec<String> = problems
+            .iter()
+            .filter(|problem| problem.can_be_escaped())
+            .map(|problem| problem.to_string())
+            .collect();
+        assert_eq!(escapable.len(), 3, "{escapable:?}");
+        assert!(escapable.contains(&"2026-09-25: the day note has a heading: Note".to_owned()));
+
+        for date in [date(22), date(23), date(25), date(26)] {
+            let _ = vault.escape_headings(date);
+        }
+        let remaining = messages(&vault);
+        assert_eq!(remaining.len(), 3, "{remaining:?}");
+        assert_eq!(
+            remaining[..2],
+            [
+                "2026-09-25: block aa11 belongs to the unknown project gone",
+                "2026-09-25: blocks aa11 and bb22 overlap",
+            ]
+        );
+        assert!(remaining[2].starts_with("invalid "), "{remaining:?}");
+        // Escaped, the orphaned marker no longer warns either.
+        let day = vault.load_day(date(23)).unwrap().unwrap();
+        assert!(day.warnings.is_empty(), "{:?}", day.warnings);
+        assert!(day.day.blocks[2].text.contains("\\## Old notes {#zz99}"));
+    }
+}

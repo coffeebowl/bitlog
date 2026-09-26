@@ -273,7 +273,7 @@ mod tests {
 
     use super::*;
     use crate::RemovedText;
-    use crate::file::TempDir;
+    use crate::file::sample_copy;
 
     fn sample_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault")
@@ -281,26 +281,6 @@ mod tests {
 
     fn sample_vault() -> Vault {
         Vault::open(&sample_path()).unwrap()
-    }
-
-    /// A copy of the sample vault that tests may change.
-    fn sample_copy() -> (TempDir, Vault) {
-        fn copy(from: &Path, to: &Path) {
-            fs::create_dir_all(to).unwrap();
-            for entry in fs::read_dir(from).unwrap() {
-                let entry = entry.unwrap();
-                let target = to.join(entry.file_name());
-                if entry.file_type().unwrap().is_dir() {
-                    copy(&entry.path(), &target);
-                } else {
-                    fs::copy(entry.path(), target).unwrap();
-                }
-            }
-        }
-        let dir = TempDir::new();
-        copy(&sample_path(), &dir.0);
-        let vault = Vault::open(&dir.0).unwrap();
-        (dir, vault)
     }
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {

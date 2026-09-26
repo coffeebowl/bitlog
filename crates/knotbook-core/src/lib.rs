@@ -1,5 +1,6 @@
 //! Data model, file format and vault I/O for Knotbook.
 
+mod check;
 mod config;
 mod day;
 mod error;
@@ -11,6 +12,7 @@ mod project;
 mod vault;
 mod watch;
 
+pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
 pub use day::{Block, Day, DayWarning, RemovedText};
 pub use error::{EditError, ReadError, SaveError};

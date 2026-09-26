@@ -2,11 +2,14 @@
 
 use std::env;
 use std::path::{self, Path, PathBuf};
+use std::process;
 
 use anyhow::{Context, Result, bail};
 use chrono::{Local, NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
-use knotbook_core::{BlockId, LocationKey, ProjectSlug, ProjectStatus, RemovedText, Vault};
+use knotbook_core::{
+    BlockId, LocationKey, Problem, ProjectSlug, ProjectStatus, RemovedText, Vault,
+};
 
 use crate::edit::{BlockChanges, DayChanges, parse_span};
 use crate::project::ProjectChanges;
@@ -57,6 +60,14 @@ enum Command {
     Project {
         #[command(subcommand)]
         command: ProjectCommand,
+    },
+    /// Check all days for unknown projects, overlapping blocks and headings
+    /// in texts. Exits with 1 if something is left.
+    Doctor {
+        /// Escape headings in block texts and day notes, so that they read
+        /// as plain text
+        #[arg(long)]
+        fix: bool,
     },
     /// Set the kind, location or working hours of a day.
     #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
@@ -189,6 +200,7 @@ fn main() -> Result<()> {
         Command::Block { command, date } => {
             block(&open_vault(cli.vault)?, date.date.unwrap_or(today), command)
         }
+        Command::Doctor { fix } => doctor(&open_vault(cli.vault)?, fix),
         Command::Project { command } => project(open_vault(cli.vault)?, command, today),
         Command::Set {
             kind,
@@ -207,6 +219,37 @@ fn main() -> Result<()> {
             },
         ),
     }
+}
+
+fn doctor(vault: &Vault, fix: bool) -> Result<()> {
+    let mut problems = vault.check()?;
+    if fix {
+        let mut dates: Vec<NaiveDate> = problems
+            .iter()
+            .filter_map(|problem| match problem {
+                Problem::Heading { date, .. } => Some(*date),
+                _ => None,
+            })
+            .collect();
+        dates.dedup();
+        for date in &dates {
+            vault.escape_headings(*date)?;
+        }
+        println!("Escaped the headings of {} days.", dates.len());
+        problems = vault.check()?;
+    }
+    if problems.is_empty() {
+        println!("No problems found.");
+        return Ok(());
+    }
+    for problem in &problems {
+        println!("{problem}");
+    }
+    let escapable = problems.iter().filter(|p| p.can_be_escaped()).count();
+    if escapable > 0 {
+        println!("\n`knotbook doctor --fix` escapes the {escapable} headings.");
+    }
+    process::exit(1);
 }
 
 fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Result<()> {

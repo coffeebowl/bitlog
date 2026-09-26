@@ -97,6 +97,9 @@ knotbook set --location office --work 08:30-16:45
 knotbook project list
 knotbook project add client-portal --name "Client portal" --color ff7800 --pin
 knotbook project edit client-portal --status archived --unpin
+
+knotbook doctor             # unknown projects, overlaps, headings in texts
+knotbook doctor --fix       # escape those headings so they read as text
 ```
 
 These commands change today unless `--date 2026-09-23` names another day.
