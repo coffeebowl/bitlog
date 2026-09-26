@@ -1,0 +1,78 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookProjectDialog: Adw.Dialog {
+  content-width: 420;
+  default-widget: save_button;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      show-start-title-buttons: false;
+      show-end-title-buttons: false;
+
+      [start]
+      Button cancel_button {
+        label: _("_Cancel");
+        use-underline: true;
+      }
+
+      [end]
+      Button save_button {
+        use-underline: true;
+
+        styles [
+          "suggested-action",
+        ]
+      }
+    }
+
+    content: Adw.PreferencesPage {
+      Adw.PreferencesGroup {
+        Adw.EntryRow name_row {
+          title: _("Name");
+          activates-default: true;
+        }
+      }
+
+      Adw.PreferencesGroup slug_group {
+        description: _("Names the project's folder and is used in the command line. It cannot be changed later.");
+
+        Adw.EntryRow slug_row {
+          title: _("ID");
+          activates-default: true;
+        }
+      }
+
+      Adw.PreferencesGroup {
+        Adw.ActionRow {
+          title: _("Color");
+          activatable-widget: color_button;
+
+          [suffix]
+          ColorDialogButton color_button {
+            valign: center;
+
+            dialog: ColorDialog {
+              with-alpha: false;
+            };
+          }
+        }
+
+        Adw.EntryRow category_row {
+          title: _("Category");
+          activates-default: true;
+        }
+
+        Adw.ComboRow status_row {
+          title: _("Status");
+        }
+
+        Adw.SwitchRow pinned_row {
+          title: _("Pinned");
+          subtitle: _("Listed first when choosing the project of a block");
+        }
+      }
+    };
+  };
+}

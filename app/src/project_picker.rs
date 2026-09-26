@@ -48,10 +48,15 @@ pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static)
 /// The name of `project` behind a dot in its colour, as Pango markup.
 pub fn project_markup(project: &Project) -> String {
     format!(
-        "<span foreground=\"{}\">●</span> {}",
-        project.color,
+        "{} {}",
+        color_dot(project),
         glib::markup_escape_text(&project.name),
     )
+}
+
+/// A dot in the colour of `project`, as Pango markup.
+pub fn color_dot(project: &Project) -> String {
+    format!("<span foreground=\"{}\">●</span>", project.color)
 }
 
 fn project_row(project: &Project) -> gtk::Label {

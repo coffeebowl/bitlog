@@ -12,16 +12,18 @@ use knotbook_core::{ReadError, Vault, VaultChange, VaultWatcher, WatchError};
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
+use crate::projects_page::ProjectsPage;
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 8] = [
+const VAULT_ACTIONS: [&str; 9] = [
     "win.previous",
     "win.next",
     "win.today",
     "win.show-today",
     "win.show-calendar",
     "win.show-tasks",
+    "win.show-projects",
     "win.show-day",
     "win.new-block",
 ];
@@ -47,11 +49,14 @@ mod imp {
         pub calendar_row: TemplateChild<gtk::ListBoxRow>,
         #[template_child]
         pub tasks_row: TemplateChild<gtk::ListBoxRow>,
+        #[template_child]
+        pub projects_row: TemplateChild<gtk::ListBoxRow>,
         /// The pages of the content, owned here because only one of them is
         /// in the split view at a time.
         pub day_view: DayView,
         pub calendar_view: CalendarView,
         pub tasks_page: TasksPage,
+        pub projects_page: ProjectsPage,
         /// The folder of the open vault.
         pub vault_path: RefCell<Option<PathBuf>>,
         pub watcher: RefCell<Option<VaultWatcher>>,
@@ -68,9 +73,11 @@ mod imp {
                 today_row: TemplateChild::default(),
                 calendar_row: TemplateChild::default(),
                 tasks_row: TemplateChild::default(),
+                projects_row: TemplateChild::default(),
                 day_view: glib::Object::new(),
                 calendar_view: glib::Object::new(),
                 tasks_page: glib::Object::new(),
+                projects_page: glib::Object::new(),
                 vault_path: RefCell::default(),
                 watcher: RefCell::default(),
             }
@@ -92,7 +99,7 @@ mod imp {
                 window.create_vault().await;
             });
             // Previous, next and today move by the unit of the page shown,
-            // and do nothing on the task page.
+            // and do nothing on the task and project pages.
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
             klass.install_action("win.today", None, |window, _, _| {
@@ -121,6 +128,9 @@ mod imp {
             klass.install_action("win.show-tasks", None, |window, _, _| {
                 window.show_tasks();
             });
+            klass.install_action("win.show-projects", None, |window, _, _| {
+                window.show_projects();
+            });
             klass.install_action(
                 "win.show-day",
                 Some(glib::VariantTy::STRING),
@@ -142,6 +152,11 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             self.split_view.set_content(Some(&self.day_view));
+            self.projects_page.connect_vault_changed(glib::clone!(
+                #[weak(rename_to = window)]
+                self.obj(),
+                move |page| window.projects_changed(page.vault())
+            ));
             self.obj().connect_close_request(|window| {
                 window.imp().day_view.save_texts_now();
                 glib::Propagation::Proceed
@@ -275,15 +290,12 @@ impl Window {
             .expect("the last vault can be stored");
     }
 
-    /// Reads the vault in `path` for both pages and watches it for changes
+    /// Reads the vault in `path` for all pages and watches it for changes
     /// made elsewhere. On failure everything stays as it was.
     fn load_vault(&self, path: &Path) -> Result<(), ReadError> {
         let imp = self.imp();
         let vault = Rc::new(Vault::open(path)?);
-        imp.sidebar.set_title(&vault.config().name);
-        imp.calendar_view.set_vault(vault.clone());
-        imp.day_view.set_vault(vault.clone());
-        imp.tasks_page.set_vault(vault.clone());
+        self.set_vault(&vault);
         imp.vault_path.replace(Some(path.to_owned()));
         // The watcher tells its own writes apart through the vault it
         // belongs to, so every vault gets a new one.
@@ -306,6 +318,24 @@ impl Window {
             }
         }
         Ok(())
+    }
+
+    fn set_vault(&self, vault: &Rc<Vault>) {
+        let imp = self.imp();
+        imp.sidebar.set_title(&vault.config().name);
+        imp.calendar_view.set_vault(vault.clone());
+        imp.day_view.set_vault(vault.clone());
+        imp.tasks_page.set_vault(vault.clone());
+        imp.projects_page.set_vault(vault.clone());
+    }
+
+    /// Hands `vault`, with projects changed on the project page, to the
+    /// other pages. It shares the record of own writes with the vault
+    /// watched, so the watcher stays.
+    fn projects_changed(&self, vault: Rc<Vault>) {
+        let imp = self.imp();
+        self.set_vault(&vault);
+        imp.day_view.show_date(imp.day_view.date());
     }
 
     /// Shows what was changed elsewhere, by sync or the CLI.
@@ -355,6 +385,7 @@ impl Window {
                 imp.day_view.show_date(date);
                 imp.calendar_view.reload();
                 imp.tasks_page.reload();
+                imp.projects_page.reload();
             }
             Err(err) => self.show_error(&gettext("Cannot Open Vault"), &err.to_string()),
         }
@@ -412,6 +443,15 @@ impl Window {
         imp.split_view.set_content(Some(&imp.tasks_page));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.tasks_row));
+    }
+
+    fn show_projects(&self) {
+        let imp = self.imp();
+        imp.day_view.save_texts_now();
+        imp.projects_page.reload();
+        imp.split_view.set_content(Some(&imp.projects_page));
+        imp.split_view.set_show_content(true);
+        imp.sidebar_list.select_row(Some(&*imp.projects_row));
     }
 
     fn show_watch_error(&self, err: &WatchError) {

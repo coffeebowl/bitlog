@@ -1,0 +1,35 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookProjectsPage: Adw.NavigationPage {
+  title: _("Projects");
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      [start]
+      Button {
+        icon-name: "list-add-symbolic";
+        tooltip-text: _("New Project");
+        action-name: "projects.add";
+      }
+    }
+
+    content: Stack stack {
+      StackPage {
+        name: "list";
+        child: Adw.PreferencesPage list {};
+      }
+
+      StackPage {
+        name: "empty";
+
+        child: Adw.StatusPage {
+          icon-name: "folder-symbolic";
+          title: _("No Projects");
+          description: _("Add a project to assign time to it");
+        };
+      }
+    };
+  };
+}

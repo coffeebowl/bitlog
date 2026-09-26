@@ -141,6 +141,23 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                       }
                     };
                   }
+
+                  ListBoxRow projects_row {
+                    action-name: "win.show-projects";
+
+                    child: Box {
+                      spacing: 12;
+
+                      Image {
+                        icon-name: "folder-symbolic";
+                      }
+
+                      Label {
+                        label: _("Projects");
+                        xalign: 0;
+                      }
+                    };
+                  }
                 };
               };
             };

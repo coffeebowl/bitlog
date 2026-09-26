@@ -66,6 +66,33 @@ fn random_short_id() -> String {
 pub struct ProjectSlug(String);
 
 impl ProjectSlug {
+    /// A slug made from the project name `name`, as in "Web Shop" →
+    /// `web-shop`, or `None` if nothing of it fits.
+    pub fn from_name(name: &str) -> Option<Self> {
+        let mut slug = String::new();
+        let mut hyphen = false;
+        for c in name.chars().flat_map(char::to_lowercase) {
+            let mut buffer = [0; 4];
+            let part: &str = match c {
+                'a'..='z' | '0'..='9' => c.encode_utf8(&mut buffer),
+                'ä' => "ae",
+                'ö' => "oe",
+                'ü' => "ue",
+                'ß' => "ss",
+                _ => {
+                    hyphen = !slug.is_empty();
+                    continue;
+                }
+            };
+            if hyphen {
+                slug.push('-');
+                hyphen = false;
+            }
+            slug.push_str(part);
+        }
+        slug.parse().ok()
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -291,6 +318,18 @@ mod tests {
             assert!(invalid.parse::<ProjectSlug>().is_err(), "{invalid:?}");
             assert!(invalid.parse::<LocationKey>().is_err(), "{invalid:?}");
         }
+    }
+
+    #[test]
+    fn slugs_from_names() {
+        let slug = |name| ProjectSlug::from_name(name).map(|slug| slug.0);
+        assert_eq!(slug("Web Shop").as_deref(), Some("web-shop"));
+        assert_eq!(
+            slug("  Größe -- 2026 Q3! ").as_deref(),
+            Some("groesse-2026-q3")
+        );
+        assert_eq!(slug("infra").as_deref(), Some("infra"));
+        assert_eq!(slug(" – ?"), None);
     }
 
     #[test]
