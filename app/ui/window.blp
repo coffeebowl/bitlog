@@ -1,0 +1,18 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookWindow: Adw.ApplicationWindow {
+  title: _("Knotbook");
+  default-width: 900;
+  default-height: 700;
+
+  content: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {}
+
+    content: Adw.StatusPage {
+      title: _("Knotbook");
+      description: _("A daily dev log");
+    };
+  };
+}

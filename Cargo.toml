@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/knotbook-core"]
+members = ["app", "crates/knotbook-core"]
 resolver = "3"
 
 [workspace.package]
