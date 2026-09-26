@@ -98,6 +98,13 @@ knotbook project list
 knotbook project add client-portal --name "Client portal" --color ff7800 --pin
 knotbook project edit client-portal --status archived --unpin
 
+knotbook task list --all    # open tasks with their ids, then the finished ones
+knotbook task add "Renew the TLS certificate" --due 2026-09-30
+knotbook task done h4c8     # also: drop, reopen
+knotbook task edit h4c8 --title "Renew the certificates" --no-due
+knotbook task move h4c8 1   # to the top of the open tasks
+knotbook task archive       # move finished tasks to tasks-archive-YYYY.toml
+
 knotbook doctor             # unknown projects, overlaps, headings in texts
 knotbook doctor --fix       # escape those headings so they read as text
 ```

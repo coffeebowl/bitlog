@@ -37,7 +37,7 @@ pub enum EditError {
     InvalidStatus(String),
     #[error("there is no task {0}")]
     UnknownTask(TaskId),
-    #[error("a task title has to be one line of text")]
+    #[error("a task needs a title of one line")]
     InvalidTaskTitle,
 }
 

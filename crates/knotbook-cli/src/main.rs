@@ -8,15 +8,18 @@ use anyhow::{Context, Result, bail};
 use chrono::{Local, NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use knotbook_core::{
-    BlockId, LocationKey, Problem, ProjectSlug, ProjectStatus, RemovedText, Vault,
+    BlockId, LocationKey, Problem, ProjectSlug, ProjectStatus, RemovedText, TaskId, TaskStatus,
+    Vault,
 };
 
 use crate::edit::{BlockChanges, DayChanges, parse_span};
 use crate::project::ProjectChanges;
+use crate::task::TaskChanges;
 
 mod day;
 mod edit;
 mod project;
+mod task;
 
 /// The environment variable naming the vault when --vault is missing.
 const VAULT_VARIABLE: &str = "KNOTBOOK_VAULT";
@@ -60,6 +63,11 @@ enum Command {
     Project {
         #[command(subcommand)]
         command: ProjectCommand,
+    },
+    /// List, add or change the tasks of the global task list.
+    Task {
+        #[command(subcommand)]
+        command: TaskCommand,
     },
     /// Check all days for unknown projects, overlapping blocks and headings
     /// in texts. Exits with 1 if something is left.
@@ -118,6 +126,66 @@ enum ProjectCommand {
         #[arg(long, group = "change", conflicts_with = "pin")]
         unpin: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum TaskCommand {
+    /// List the open tasks with their ids.
+    List {
+        /// Also list done and dropped tasks
+        #[arg(long)]
+        all: bool,
+    },
+    /// Add a task after the open ones and print its id.
+    Add {
+        /// The title of the task
+        title: String,
+        /// The due date, as in 2026-09-30
+        #[arg(long)]
+        due: Option<NaiveDate>,
+    },
+    /// Mark a task as done.
+    Done {
+        /// The id of the task, as shown by `knotbook task list`
+        id: TaskId,
+    },
+    /// Mark a task as dropped, as no longer needed.
+    Drop {
+        /// The id of the task, as shown by `knotbook task list`
+        id: TaskId,
+    },
+    /// Open a done or dropped task again.
+    Reopen {
+        /// The id of the task, as shown by `knotbook task list --all`
+        id: TaskId,
+    },
+    /// Change the title or due date of a task.
+    #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
+    Edit {
+        /// The id of the task, as shown by `knotbook task list`
+        id: TaskId,
+        /// The new title
+        #[arg(long, group = "change")]
+        title: Option<String>,
+        /// The due date, as in 2026-09-30
+        #[arg(long, group = "change", conflicts_with = "no_due")]
+        due: Option<NaiveDate>,
+        /// Remove the due date
+        #[arg(long, group = "change")]
+        no_due: bool,
+    },
+    /// Move a task to another place in the list.
+    Move {
+        /// The id of the task, as shown by `knotbook task list`
+        id: TaskId,
+        /// The new place, 1 for the top; open tasks always come before
+        /// finished ones
+        #[arg(value_parser = clap::value_parser!(u32).range(1..))]
+        position: u32,
+    },
+    /// Move all done and dropped tasks to the archive of the year they were
+    /// finished in, tasks-archive-YYYY.toml.
+    Archive,
 }
 
 #[derive(Args)]
@@ -202,6 +270,7 @@ fn main() -> Result<()> {
         }
         Command::Doctor { fix } => doctor(&open_vault(cli.vault)?, fix),
         Command::Project { command } => project(open_vault(cli.vault)?, command, today),
+        Command::Task { command } => task(&open_vault(cli.vault)?, command, today),
         Command::Set {
             kind,
             location,
@@ -282,6 +351,37 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
             };
             project::edit_project(&mut vault, &slug, changes(values, status, pinned))
         }
+    }
+}
+
+fn task(vault: &Vault, command: TaskCommand, today: NaiveDate) -> Result<()> {
+    match command {
+        TaskCommand::List { all } => {
+            print!("{}", task::format_tasks(&vault.load_tasks()?, all, today));
+            Ok(())
+        }
+        TaskCommand::Add { title, due } => task::add_task(vault, &title, due, today),
+        TaskCommand::Done { id } => task::set_status(vault, &id, TaskStatus::Done, today),
+        TaskCommand::Drop { id } => task::set_status(vault, &id, TaskStatus::Dropped, today),
+        TaskCommand::Reopen { id } => task::set_status(vault, &id, TaskStatus::Open, today),
+        TaskCommand::Edit {
+            id,
+            title,
+            due,
+            no_due,
+        } => task::edit_task(
+            vault,
+            &id,
+            TaskChanges {
+                title,
+                due: (due.is_some() || no_due).then_some(due),
+            },
+        ),
+        TaskCommand::Move { id, position } => {
+            let position = usize::try_from(position).expect("u32 fits into usize");
+            task::move_task(vault, &id, position)
+        }
+        TaskCommand::Archive => task::archive_tasks(vault, today),
     }
 }
 
@@ -406,6 +506,10 @@ mod tests {
         parse("knotbook project edit docs --status paused --unpin").unwrap();
         assert!(parse("knotbook project edit docs").is_err());
         assert!(parse("knotbook project edit docs --pin --unpin").is_err());
+        parse("knotbook task edit t9x2 --title Call --no-due").unwrap();
+        assert!(parse("knotbook task edit t9x2").is_err());
+        assert!(parse("knotbook task edit t9x2 --due 2026-09-30 --no-due").is_err());
+        assert!(parse("knotbook task move t9x2 0").is_err());
     }
 
     #[test]
