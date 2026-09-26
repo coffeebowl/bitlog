@@ -792,6 +792,7 @@ dependencies = [
  "chrono",
  "clap",
  "knotbook-core",
+ "knotbook-index",
 ]
 
 [[package]]

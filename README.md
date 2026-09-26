@@ -105,12 +105,21 @@ knotbook task edit h4c8 --title "Renew the certificates" --no-due
 knotbook task move h4c8 1   # to the top of the open tasks
 knotbook task archive       # move finished tasks to tasks-archive-YYYY.toml
 
+knotbook search release deploy     # blocks, day notes, notes and tasks holding both words
+knotbook search '"release notes"'  # the words as written, one after the other
+knotbook stats              # time per project this month, and remote work days
+knotbook stats --week       # also --year, or --from 2026-09-01 --to 2026-09-30
+
 knotbook doctor             # unknown projects, overlaps, headings in texts,
                             # broken wiki links in notes
 knotbook doctor --fix       # escape those headings so they read as text
 ```
 
 These commands change today unless `--date 2026-09-23` names another day.
+
+`search` and `stats` use an index of the vault in `.knotbook/index.sqlite`,
+which they create and bring up to date by themselves. It is never synced and
+can be deleted at any time.
 
 `knotbook --help` lists all commands.
 

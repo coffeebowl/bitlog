@@ -67,7 +67,7 @@ fn format_span(start: NaiveTime, end: NaiveTime) -> String {
 }
 
 /// "7 h 45 min", leaving out parts that are zero.
-fn format_duration(duration: TimeDelta) -> String {
+pub fn format_duration(duration: TimeDelta) -> String {
     let total = duration.num_minutes();
     match (total / 60, total % 60) {
         (hours, 0) => format!("{hours} h"),

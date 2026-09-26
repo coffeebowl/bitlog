@@ -1,6 +1,7 @@
 //! `knotbook`, the command line interface of Knotbook.
 
 use std::env;
+use std::io::{self, IsTerminal};
 use std::path::{self, Path, PathBuf};
 use std::process;
 
@@ -11,14 +12,18 @@ use knotbook_core::{
     BlockId, LocationKey, Problem, ProjectSlug, ProjectStatus, RemovedText, TaskId, TaskStatus,
     Vault,
 };
+use knotbook_index::Index;
 
 use crate::edit::{BlockChanges, DayChanges, parse_span};
 use crate::project::ProjectChanges;
+use crate::stats::Period;
 use crate::task::TaskChanges;
 
 mod day;
 mod edit;
 mod project;
+mod search;
+mod stats;
 mod task;
 
 /// The environment variable naming the vault when --vault is missing.
@@ -77,6 +82,38 @@ enum Command {
         /// as plain text
         #[arg(long)]
         fix: bool,
+    },
+    /// Find block titles and texts, day notes, notes and tasks that hold all
+    /// the words given. Parts of words count, case and accents do not;
+    /// words shorter than three characters are left out.
+    Search {
+        /// The words to find; put a part in double quotes to find it as
+        /// written, as in '"release notes"'
+        #[arg(required = true)]
+        query: Vec<String>,
+        /// Show at most this many results
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// Show the time spent on each project in a period, the current month
+    /// by default, and the remote work days of its years.
+    #[command(group(ArgGroup::new("period").multiple(false)))]
+    Stats {
+        /// The current week
+        #[arg(long, group = "period")]
+        week: bool,
+        /// The current month
+        #[arg(long, group = "period")]
+        month: bool,
+        /// The current year
+        #[arg(long, group = "period")]
+        year: bool,
+        /// The first day of the period, as in 2026-09-01
+        #[arg(long, group = "period", requires = "to")]
+        from: Option<NaiveDate>,
+        /// The last day of the period, as in 2026-09-30
+        #[arg(long, requires = "from")]
+        to: Option<NaiveDate>,
     },
     /// Set the kind, location or working hours of a day.
     #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
@@ -270,6 +307,32 @@ fn main() -> Result<()> {
             block(&open_vault(cli.vault)?, date.date.unwrap_or(today), command)
         }
         Command::Doctor { fix } => doctor(&open_vault(cli.vault)?, fix),
+        Command::Search { query, limit } => {
+            search(&open_vault(cli.vault)?, &query.join(" "), limit)
+        }
+        Command::Stats {
+            week,
+            month: _,
+            year,
+            from,
+            to,
+        } => {
+            let vault = open_vault(cli.vault)?;
+            let period = match (from, to) {
+                (Some(from), Some(to)) => (from, to),
+                _ => {
+                    let period = if week {
+                        Period::Week
+                    } else if year {
+                        Period::Year
+                    } else {
+                        Period::Month
+                    };
+                    stats::current(period, today, vault.config().week.first_day)
+                }
+            };
+            stats(&vault, period)
+        }
         Command::Project { command } => project(open_vault(cli.vault)?, command, today),
         Command::Task { command } => task(&open_vault(cli.vault)?, command, today),
         Command::Set {
@@ -289,6 +352,41 @@ fn main() -> Result<()> {
             },
         ),
     }
+}
+
+/// Opens the index of `vault` and brings it up to date, warning about files
+/// that cannot be read.
+fn open_index(vault: &Vault) -> Result<Index> {
+    let mut index = Index::open(vault)?;
+    for err in index.refresh(vault)? {
+        eprintln!("warning: {err}");
+    }
+    Ok(index)
+}
+
+fn search(vault: &Vault, query: &str, limit: u32) -> Result<()> {
+    let hits = open_index(vault)?.search(query, limit)?;
+    // As https://no-color.org asks.
+    let color = env::var_os("NO_COLOR").is_none_or(|value| value.is_empty());
+    print!(
+        "{}",
+        search::format_hits(&hits, color && io::stdout().is_terminal())
+    );
+    Ok(())
+}
+
+fn stats(vault: &Vault, (first, last): (NaiveDate, NaiveDate)) -> Result<()> {
+    if last < first {
+        bail!("the period ends on {last}, before it starts on {first}");
+    }
+    let index = open_index(vault)?;
+    let times = index.project_time(first, last)?;
+    let remote = index.remote_days()?;
+    print!(
+        "{}",
+        stats::format_stats(vault, first, last, &times, &remote)
+    );
+    Ok(())
 }
 
 fn doctor(vault: &Vault, fix: bool) -> Result<()> {
@@ -511,6 +609,14 @@ mod tests {
         assert!(parse("knotbook task edit t9x2").is_err());
         assert!(parse("knotbook task edit t9x2 --due 2026-09-30 --no-due").is_err());
         assert!(parse("knotbook task move t9x2 0").is_err());
+        parse("knotbook search release notes --limit 5").unwrap();
+        assert!(parse("knotbook search").is_err());
+        parse("knotbook stats").unwrap();
+        parse("knotbook stats --week").unwrap();
+        parse("knotbook stats --from 2026-09-01 --to 2026-09-30").unwrap();
+        assert!(parse("knotbook stats --week --year").is_err());
+        assert!(parse("knotbook stats --from 2026-09-01").is_err());
+        assert!(parse("knotbook stats --month --from 2026-09-01 --to 2026-09-30").is_err());
     }
 
     #[test]
