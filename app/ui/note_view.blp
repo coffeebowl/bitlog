@@ -1,0 +1,37 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookNoteView: Adw.NavigationPage {
+  tag: "note";
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle window_title {};
+
+      [end]
+      MenuButton menu_button {
+        icon-name: "view-more-symbolic";
+        tooltip-text: _("Note Menu");
+      }
+    }
+
+    content: ScrolledWindow {
+      hscrollbar-policy: never;
+
+      child: Adw.ClampScrollable {
+        maximum-size: 720;
+
+        child: $KnotbookMarkdownView editor {
+          full: true;
+          editable: true;
+          placeholder: _("Add text");
+          top-margin: 24;
+          bottom-margin: 24;
+          left-margin: 12;
+          right-margin: 12;
+        };
+      };
+    };
+  };
+}

@@ -1,0 +1,70 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookProjectView: Adw.NavigationPage {
+  tag: "project";
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle window_title {};
+
+      [start]
+      Button new_note_button {
+        icon-name: "list-add-symbolic";
+        tooltip-text: _("New Note");
+        action-name: "notes.new";
+      }
+
+      [end]
+      Button edit_button {
+        icon-name: "document-edit-symbolic";
+        tooltip-text: _("Edit Project");
+        action-name: "projects.edit";
+      }
+    }
+
+    content: Stack stack {
+      StackPage {
+        name: "list";
+
+        child: Adw.PreferencesPage {
+          Adw.PreferencesGroup notes_group {
+            title: _("Notes");
+          }
+        };
+      }
+
+      StackPage {
+        name: "empty";
+
+        child: Adw.StatusPage {
+          icon-name: "text-x-generic-symbolic";
+          title: _("No Notes");
+          description: _("Notes keep what you know about a project, in Markdown");
+
+          child: Button empty_new_note_button {
+            label: _("_New Note");
+            use-underline: true;
+            halign: center;
+            action-name: "notes.new";
+
+            styles [
+              "pill",
+              "suggested-action",
+            ]
+          };
+        };
+      }
+
+      StackPage {
+        name: "error";
+
+        child: Adw.StatusPage error_page {
+          icon-name: "dialog-error-symbolic";
+          title: _("Cannot Read Notes");
+        };
+      }
+    };
+  };
+}

@@ -1,10 +1,13 @@
 mod calendar_view;
 mod config;
+mod conflict_dialog;
 mod day_view;
 mod format;
 mod markdown_view;
+mod note_view;
 mod project_dialog;
 mod project_picker;
+mod project_view;
 mod projects_page;
 mod task_list_view;
 mod tasks_page;

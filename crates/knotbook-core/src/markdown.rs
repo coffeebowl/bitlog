@@ -42,7 +42,12 @@ struct Frame<'a> {
 pub fn markdown_styles(text: &str, mode: MarkdownMode) -> Vec<(Range<usize>, MarkdownStyle)> {
     let mut styles = Vec::new();
     let mut stack: Vec<Frame> = Vec::new();
-    for (event, range) in parser(text).into_offset_iter() {
+    let options = match mode {
+        MarkdownMode::Block => OPTIONS,
+        // Project notes may start with front matter.
+        MarkdownMode::Full => OPTIONS | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS,
+    };
+    for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
         match event {
             Event::Start(tag) => {
                 stack.push(Frame {
@@ -96,6 +101,11 @@ fn style_element(
         Tag::BlockQuote(_) => Some(MarkdownStyle::Quote),
         Tag::Heading { .. } if mode == MarkdownMode::Block => return,
         Tag::Heading { level, .. } => Some(MarkdownStyle::Heading(*level as u8)),
+        // Front matter is not evaluated, so all of it is dimmed.
+        Tag::MetadataBlock(_) => {
+            styles.extend(trim(text, range).map(|range| (range, MarkdownStyle::Markup)));
+            return;
+        }
         Tag::Link { .. } => {
             for child in &frame.children {
                 styles.push((child.clone(), MarkdownStyle::Link));
@@ -138,11 +148,12 @@ fn trim(text: &str, range: Range<usize>) -> Option<Range<usize>> {
     (start < end).then_some(start..end)
 }
 
+const OPTIONS: Options = Options::ENABLE_STRIKETHROUGH
+    .union(Options::ENABLE_TABLES)
+    .union(Options::ENABLE_TASKLISTS);
+
 fn parser(text: &str) -> Parser<'_> {
-    Parser::new_ext(
-        text,
-        Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TABLES | Options::ENABLE_TASKLISTS,
-    )
+    Parser::new_ext(text, OPTIONS)
 }
 
 /// The headings in `text`, as the byte ranges of their first lines. Block
@@ -328,6 +339,15 @@ mod tests {
                 ("Text\n===\n", Heading(1)),
                 ("===", Markup),
             ]
+        );
+    }
+
+    #[test]
+    fn front_matter_is_markup_in_notes() {
+        let text = "---\naliases: [\"PSP\"]\n---\n\nText\n";
+        assert_eq!(
+            styled(text, MarkdownMode::Full),
+            [("---\naliases: [\"PSP\"]\n---", Markup)]
         );
     }
 

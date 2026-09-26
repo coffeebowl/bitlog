@@ -11,8 +11,33 @@ use chrono::format::StrftimeItems;
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
 
 use crate::error::{ReadError, SaveError};
-use crate::file::{read_optional, read_text};
+use crate::file::{content_hash, read_optional, read_text};
 use crate::{EditError, NotePath, ProjectSlug, Vault};
+
+/// A project note as read, remembering the file's content to notice
+/// changes made elsewhere before saving.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteFile {
+    pub path: NotePath,
+    pub text: String,
+    hash: u64,
+}
+
+impl NoteFile {
+    fn new(path: NotePath, text: String) -> Self {
+        let hash = content_hash(&text);
+        Self { path, text, hash }
+    }
+}
+
+/// What saving a note came to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SavedNote {
+    Saved(NoteFile),
+    /// The note was changed elsewhere since it was read, so nothing was
+    /// written. Holds the note as it is now.
+    Conflict(NoteFile),
+}
 
 /// A wiki link like `[[project-a/deployment]]` in a project note.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -184,8 +209,33 @@ impl Vault {
         Ok(notes)
     }
 
-    pub fn load_note(&self, note: &NotePath) -> Result<String, ReadError> {
-        read_text(&self.note_path(note))
+    pub fn load_note(&self, note: &NotePath) -> Result<NoteFile, ReadError> {
+        let text = read_text(&self.note_path(note))?;
+        Ok(NoteFile::new(note.clone(), text))
+    }
+
+    /// Saves `text` as the note of `file`. If the note was changed elsewhere
+    /// since `file` was read, nothing is written and the note as it is now
+    /// comes back as a conflict, unless it holds `text` already. A note
+    /// removed elsewhere is created again, so that nothing typed gets lost.
+    pub fn save_note(&self, file: &NoteFile, text: &str) -> Result<SavedNote, SaveError> {
+        let path = self.note_path(&file.path);
+        if let Some(current) = read_optional(&path)? {
+            if current == text {
+                return Ok(SavedNote::Saved(NoteFile::new(file.path.clone(), current)));
+            }
+            if content_hash(&current) != file.hash {
+                return Ok(SavedNote::Conflict(NoteFile::new(
+                    file.path.clone(),
+                    current,
+                )));
+            }
+        }
+        self.write(&path, text)?;
+        Ok(SavedNote::Saved(NoteFile::new(
+            file.path.clone(),
+            text.to_owned(),
+        )))
     }
 
     /// The notes of all projects with a wiki link to `target`.
@@ -193,8 +243,8 @@ impl Vault {
         let mut linking = Vec::new();
         for project in self.projects() {
             for note in self.notes(&project.slug)? {
-                let text = self.load_note(&note)?;
-                if wiki_links(&text, &project.slug)
+                let file = self.load_note(&note)?;
+                if wiki_links(&file.text, &project.slug)
                     .iter()
                     .any(|link| link.note.as_ref() == Some(target))
                 {
@@ -263,7 +313,7 @@ impl Vault {
 
     /// Changes the wiki links to `from` in the note `note` to point to `to`.
     fn relink(&self, note: &NotePath, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
-        let mut text = self.load_note(note)?;
+        let mut text = self.load_note(note)?.text;
         let links = wiki_links(&text, note.project());
         // From the end, so that the ranges before stay valid.
         for link in links.iter().rev() {
@@ -328,7 +378,7 @@ mod tests {
     fn links_and_tags_of_sample_notes() {
         let (_dir, vault) = sample_copy();
         let checkout = note("projects/webshop/notes/checkout-flow.md");
-        let text = vault.load_note(&checkout).unwrap();
+        let text = vault.load_note(&checkout).unwrap().text;
         let targets: Vec<_> = wiki_links(&text, checkout.project())
             .into_iter()
             .map(|link| link.note.unwrap().to_string())
@@ -346,7 +396,7 @@ mod tests {
         let provider = vault
             .load_note(&note("projects/webshop/notes/payment-provider.md"))
             .unwrap();
-        assert_eq!(tags(&provider), ["payments"]);
+        assert_eq!(tags(&provider.text), ["payments"]);
     }
 
     #[test]
@@ -401,7 +451,7 @@ mod tests {
             .unwrap();
         assert_eq!(created, note("projects/webshop/notes/Auth middleware.md"));
         assert_eq!(
-            vault.load_note(&created).unwrap(),
+            vault.load_note(&created).unwrap().text,
             "# Auth middleware\n\nCreated 2026-09-26 in Webshop.\n"
         );
 
@@ -428,7 +478,7 @@ mod tests {
         let (dir, vault) = sample_copy();
         fs::remove_file(dir.0.join("templates/note.md")).unwrap();
         let created = vault.create_note(&slug("infra"), "Empty", today()).unwrap();
-        assert_eq!(vault.load_note(&created).unwrap(), "");
+        assert_eq!(vault.load_note(&created).unwrap().text, "");
     }
 
     #[test]
@@ -443,7 +493,7 @@ mod tests {
         );
 
         // Short links, links to headings and links in code.
-        let provider_text = vault.load_note(&provider).unwrap()
+        let provider_text = vault.load_note(&provider).unwrap().text
             + "[[checkout-flow#Payment|pay]] `[[webshop/checkout-flow]]`\n";
         fs::write(vault.note_path(&provider), &provider_text).unwrap();
 
@@ -454,16 +504,18 @@ mod tests {
             vault
                 .load_note(&renamed)
                 .unwrap()
+                .text
                 .starts_with("# Checkout flow\n")
         );
         assert!(
             vault
                 .load_note(&deployment)
                 .unwrap()
+                .text
                 .contains("see [[webshop/Checkout]].")
         );
         assert_eq!(
-            vault.load_note(&provider).unwrap(),
+            vault.load_note(&provider).unwrap().text,
             provider_text
                 .replace(
                     "see [[webshop/checkout-flow]] for",
@@ -473,9 +525,9 @@ mod tests {
         );
 
         // Without updating, links stay as they are.
-        let before = vault.load_note(&deployment).unwrap();
+        let before = vault.load_note(&deployment).unwrap().text;
         vault.rename_note(&renamed, "checkout-flow", false).unwrap();
-        assert_eq!(vault.load_note(&deployment).unwrap(), before);
+        assert_eq!(vault.load_note(&deployment).unwrap().text, before);
 
         // Names only clash within a project.
         vault.rename_note(&provider, "deployment", false).unwrap();
@@ -486,6 +538,43 @@ mod tests {
             matches!(err, SaveError::Edit(EditError::NoteExists(_))),
             "{err}"
         );
+    }
+
+    #[test]
+    fn save_note() {
+        let (_dir, vault) = sample_copy();
+        let file = vault
+            .load_note(&note("projects/infra/notes/deployment.md"))
+            .unwrap();
+        let path = vault.note_path(&file.path);
+        let SavedNote::Saved(saved) = vault.save_note(&file, "Mine.\n").unwrap() else {
+            panic!("the note was not changed elsewhere");
+        };
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Mine.\n");
+
+        // Changed elsewhere: nothing is written.
+        fs::write(&path, "Theirs.\n").unwrap();
+        let SavedNote::Conflict(theirs) = vault.save_note(&saved, "Mine again.\n").unwrap() else {
+            panic!("the note was changed elsewhere");
+        };
+        assert_eq!(theirs.text, "Theirs.\n");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Theirs.\n");
+        // Unless both sides hold the same.
+        assert!(matches!(
+            vault.save_note(&saved, "Theirs.\n").unwrap(),
+            SavedNote::Saved(_)
+        ));
+        // Keeping one's own version saves over the other one.
+        assert!(matches!(
+            vault.save_note(&theirs, "Mine again.\n").unwrap(),
+            SavedNote::Saved(_)
+        ));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Mine again.\n");
+
+        // Removed elsewhere: created again.
+        fs::remove_file(&path).unwrap();
+        vault.save_note(&theirs, "Back.\n").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Back.\n");
     }
 
     #[test]

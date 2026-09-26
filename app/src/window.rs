@@ -7,7 +7,7 @@ use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gio, glib};
-use knotbook_core::{ReadError, Vault, VaultChange, VaultWatcher, WatchError};
+use knotbook_core::{NotePath, ReadError, Vault, VaultChange, VaultWatcher, WatchError};
 
 use crate::calendar_view::CalendarView;
 use crate::config;
@@ -158,7 +158,7 @@ mod imp {
                 move |page| window.projects_changed(page.vault())
             ));
             self.obj().connect_close_request(|window| {
-                window.imp().day_view.save_texts_now();
+                window.save_texts_now();
                 glib::Propagation::Proceed
             });
             for action in VAULT_ACTIONS {
@@ -364,7 +364,16 @@ impl Window {
                 imp.tasks_page.reload();
             }
         }
-        // The calendar shows days only. Notes are not shown anywhere yet.
+        let notes: Vec<NotePath> = changes
+            .iter()
+            .filter_map(|change| match change {
+                VaultChange::Note(note) => Some(note.clone()),
+                _ => None,
+            })
+            .collect();
+        if !notes.is_empty() {
+            imp.projects_page.notes_changed(&notes);
+        }
         let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
         if self.shows_calendar() && changes.iter().any(changes_day) {
             imp.calendar_view.reload();
@@ -421,6 +430,7 @@ impl Window {
 
     fn show_day(&self, date: NaiveDate) {
         let imp = self.imp();
+        imp.projects_page.save_now();
         imp.day_view.show_date(date);
         imp.split_view.set_content(Some(&imp.day_view));
         imp.split_view.set_show_content(true);
@@ -429,7 +439,7 @@ impl Window {
 
     fn show_calendar(&self) {
         let imp = self.imp();
-        imp.day_view.save_texts_now();
+        self.save_texts_now();
         imp.calendar_view.reload();
         imp.split_view.set_content(Some(&imp.calendar_view));
         imp.split_view.set_show_content(true);
@@ -438,7 +448,7 @@ impl Window {
 
     fn show_tasks(&self) {
         let imp = self.imp();
-        imp.day_view.save_texts_now();
+        self.save_texts_now();
         imp.tasks_page.reload();
         imp.split_view.set_content(Some(&imp.tasks_page));
         imp.split_view.set_show_content(true);
@@ -447,11 +457,18 @@ impl Window {
 
     fn show_projects(&self) {
         let imp = self.imp();
-        imp.day_view.save_texts_now();
+        self.save_texts_now();
         imp.projects_page.reload();
         imp.split_view.set_content(Some(&imp.projects_page));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.projects_row));
+    }
+
+    /// Saves what is being typed on any page, if there are unsaved changes.
+    fn save_texts_now(&self) {
+        let imp = self.imp();
+        imp.day_view.save_texts_now();
+        imp.projects_page.save_now();
     }
 
     fn show_watch_error(&self, err: &WatchError) {

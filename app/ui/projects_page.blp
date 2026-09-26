@@ -4,32 +4,40 @@ using Adw 1;
 template $KnotbookProjectsPage: Adw.NavigationPage {
   title: _("Projects");
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      [start]
-      Button {
-        icon-name: "list-add-symbolic";
-        tooltip-text: _("New Project");
-        action-name: "projects.add";
-      }
-    }
+  // A project and one of its notes are pushed on top of the list.
+  child: Adw.NavigationView nav {
+    Adw.NavigationPage {
+      title: _("Projects");
+      tag: "projects";
 
-    content: Stack stack {
-      StackPage {
-        name: "list";
-        child: Adw.PreferencesPage list {};
-      }
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          [start]
+          Button {
+            icon-name: "list-add-symbolic";
+            tooltip-text: _("New Project");
+            action-name: "projects.add";
+          }
+        }
 
-      StackPage {
-        name: "empty";
+        content: Stack stack {
+          StackPage {
+            name: "list";
+            child: Adw.PreferencesPage list {};
+          }
 
-        child: Adw.StatusPage {
-          icon-name: "folder-symbolic";
-          title: _("No Projects");
-          description: _("Add a project to assign time to it");
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "folder-symbolic";
+              title: _("No Projects");
+              description: _("Add a project to assign time to it");
+            };
+          }
         };
-      }
-    };
+      };
+    }
   };
 }
