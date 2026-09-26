@@ -2,6 +2,7 @@
 
 mod check;
 mod config;
+mod conflict;
 mod day;
 mod error;
 mod file;
@@ -18,6 +19,7 @@ mod watch;
 
 pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
+pub use conflict::{ConflictCopy, Contradiction};
 pub use day::{Block, Day, DayWarning, RemovedText};
 pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;

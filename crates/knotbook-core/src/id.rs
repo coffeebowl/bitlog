@@ -6,6 +6,8 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer};
 use thiserror::Error;
 
+use crate::conflict::original_name;
+
 /// A string that does not match the rules of an identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("invalid {kind} {value:?}, expected {expected}")]
@@ -29,7 +31,7 @@ const SLUG_RULE: &str = "lowercase letters, digits and single hyphens";
 const SHORT_ID_RULE: &str = "4 characters from a-z and 0-9";
 const SHORT_ID_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const SHORT_ID_LEN: usize = 4;
-const NOTE_NAME_RULE: &str = "a file name without \"/\" or \"\\\" that does not start with \".\"";
+const NOTE_NAME_RULE: &str = "a file name without \"/\" or \"\\\" that does not start with \".\" and is no sync conflict copy";
 const NOTE_PATH_RULE: &str = "projects/<slug>/notes/<name>.md";
 
 fn is_slug(value: &str) -> bool {
@@ -281,6 +283,7 @@ fn is_note_name(name: &str) -> bool {
         && !name
             .chars()
             .any(|c| c == '/' || c == '\\' || c.is_control())
+        && original_name(name).is_none()
 }
 
 impl FromStr for NotePath {

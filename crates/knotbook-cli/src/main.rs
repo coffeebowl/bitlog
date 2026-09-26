@@ -80,12 +80,14 @@ enum Command {
         #[command(subcommand)]
         command: TaskCommand,
     },
-    /// Check all days for unknown projects, overlapping blocks and headings
-    /// in texts, and all notes for broken wiki links. Exits with 1 if
-    /// something is left.
+    /// Check for sync conflict copies, all days for unknown projects,
+    /// overlapping blocks and headings in texts, and all notes for broken
+    /// wiki links and Git conflict markers. Exits with 1 if something is
+    /// left.
     Doctor {
-        /// Escape headings in block texts and day notes, so that they read
-        /// as plain text
+        /// Merge conflict copies into their originals where nothing
+        /// contradicts, then escape headings in block texts and day notes,
+        /// so that they read as plain text
         #[arg(long)]
         fix: bool,
     },
@@ -461,6 +463,18 @@ fn stats(vault: &Vault, (first, last): (NaiveDate, NaiveDate)) -> Result<()> {
 fn doctor(vault: &Vault, fix: bool) -> Result<()> {
     let mut problems = vault.check()?;
     if fix {
+        let mut merged = 0;
+        for problem in &problems {
+            if let Problem::Conflict { copy, .. } = problem
+                && problem.can_be_merged()
+            {
+                vault.merge_conflict(copy)?;
+                merged += 1;
+            }
+        }
+        println!("Merged {merged} conflict copies.");
+        // Merged days may bring headings of their own.
+        problems = vault.check()?;
         let mut dates: Vec<NaiveDate> = problems
             .iter()
             .filter_map(|problem| match problem {
@@ -482,9 +496,19 @@ fn doctor(vault: &Vault, fix: bool) -> Result<()> {
     for problem in &problems {
         println!("{problem}");
     }
+    let mergeable = problems.iter().filter(|p| p.can_be_merged()).count();
+    if mergeable > 0 {
+        println!("\n`knotbook doctor --fix` merges the {mergeable} conflict copies.");
+    }
     let escapable = problems.iter().filter(|p| p.can_be_escaped()).count();
     if escapable > 0 {
         println!("\n`knotbook doctor --fix` escapes the {escapable} headings.");
+    }
+    if problems
+        .iter()
+        .any(|p| matches!(p, Problem::Conflict { .. }) && !p.can_be_merged())
+    {
+        println!("\nConflict copies with contradictions have to be merged by hand.");
     }
     process::exit(1);
 }

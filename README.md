@@ -117,9 +117,10 @@ knotbook export blocks --from 2026-09-01 --to 2026-09-30   # CSV in exports/, al
 knotbook export week --date 2026-09-23                     # Markdown report of that week
 knotbook export remote                                     # remote work days per year as CSV
 
-knotbook doctor             # unknown projects, overlaps, headings in texts,
-                            # broken wiki links in notes
-knotbook doctor --fix       # escape those headings so they read as text
+knotbook doctor             # sync conflict copies, unknown projects, overlaps,
+                            # headings in texts, broken wiki links in notes
+knotbook doctor --fix       # merge conflict copies without contradictions,
+                            # escape those headings so they read as text
 ```
 
 These commands change today unless `--date 2026-09-23` names another day.

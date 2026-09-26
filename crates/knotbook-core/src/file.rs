@@ -5,6 +5,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{self, Write};
 use std::path::Path;
 
+use crate::conflict::has_git_markers;
 use crate::error::{ReadError, SaveError};
 
 /// Reads `path` and parses it, attaching the path to any error.
@@ -43,7 +44,11 @@ pub(crate) fn parse_text<T>(
 ) -> Result<T, ReadError> {
     parse(text).map_err(|message| ReadError::Invalid {
         path: path.to_owned(),
-        message,
+        message: if has_git_markers(text) {
+            "it holds Git conflict markers, resolve them with Git".to_owned()
+        } else {
+            message
+        },
     })
 }
 

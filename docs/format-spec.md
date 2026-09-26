@@ -32,7 +32,7 @@ and project notes.
 | --- | --- | --- |
 | Project slug, location key | lowercase letters `a-z`, digits and single hyphens, not at the start or end | `project-a` |
 | Block ID, task ID | exactly 4 characters from `a-z` and `0-9` | `k7f3` |
-| Note name | the file name without `.md`; not empty, no `/` or `\`, not starting with `.` | `Auth middleware` |
+| Note name | the file name without `.md`; not empty, no `/` or `\`, not starting with `.`, not a sync conflict copy | `Auth middleware` |
 
 A project note is identified by its path relative to the vault,
 `projects/<slug>/notes/<name>.md`, always written with `/`.
@@ -473,13 +473,30 @@ Every write:
 
 ## Sync conflicts
 
-- Recognised are `*.sync-conflict-*` (Syncthing), `* (conflicted copy)*`
-  (Nextcloud) and Git conflict markers.
-- Day files: the front matter is merged by block IDs; blocks are merged
-  automatically if they do not overlap. Block texts are merged per section:
-  automatically if only one side changed it, otherwise in a comparison view.
-- `tasks.toml`: field by field via IDs. On contradictions Knotbook asks.
-- Project notes: never automatically, always in a comparison view.
+- Recognised are conflict copies of the files above, named
+  `<name>.sync-conflict-<date>-<time>-<device><extension>` (Syncthing) or
+  `<name> (conflicted copy…)<extension>` (Nextcloud), in the folder of their
+  original. Copies are never read as days, notes or tasks.
+- A copy has no common ancestor with its original, so Knotbook cannot tell
+  which side changed something. It takes what both sides agree on and what
+  only one side has; an empty text or a missing field gives way to the other
+  side. Everything else is a contradiction that the user decides. A block or
+  task removed on one side therefore comes back.
+- Day files: blocks are merged by their IDs, a block only the copy has only
+  if it overlaps no block of the original. Front matter fields, block times,
+  projects, titles and texts and the day note are compared one by one.
+- `tasks.toml`: tasks are merged by their IDs, field by field. A task only
+  one side has whose ID is in a task archive was archived on the other side
+  and stays archived.
+- Project notes, `project.toml` and `knotbook.toml`: never merged; the user
+  picks a version.
+- A copy that is the same as its original, or whose original is missing, is
+  merged without asking. After merging, the copy is removed.
+- Git conflict markers (lines starting with `<<<<<<<` and `>>>>>>>`) are
+  only reported: in project notes by `knotbook doctor`, in all other files
+  as the reason they cannot be read. They are resolved with Git.
+- `knotbook doctor` lists the conflict copies with their contradictions, and
+  `knotbook doctor --fix` merges those without any.
 
 ## Versioning
 

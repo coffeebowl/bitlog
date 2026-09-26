@@ -175,6 +175,7 @@ mod tests {
         for ignored in [
             "daily/2026/09/.2026-09-21.md.0badf00d.tmp",
             "daily/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md",
+            "projects/infra/notes/deployment (conflicted copy 2026-09-22 181530).md",
             "daily/2026/10/2026-09-21.md",
             "daily/2026/09",
             "projects/Not A Slug/project.toml",

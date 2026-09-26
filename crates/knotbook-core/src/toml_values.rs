@@ -63,6 +63,21 @@ pub(crate) fn set_date(table: &mut Table, key: &str, date: Option<NaiveDate>) {
     }
 }
 
+/// Whether `a` and `b` hold the same, however they are written.
+pub(crate) fn same_item(a: &Item, b: &Item) -> bool {
+    match (a.as_value(), b.as_value()) {
+        (Some(a), Some(b)) => same_value(a, b) || bare(a) == bare(b),
+        _ => a.to_string().trim() == b.to_string().trim(),
+    }
+}
+
+/// `value` as written, without comments and spaces around it.
+fn bare(value: &Value) -> String {
+    let mut value = value.clone();
+    value.decor_mut().clear();
+    value.to_string()
+}
+
 fn same_value(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::String(a), Value::String(b)) => a.value() == b.value(),

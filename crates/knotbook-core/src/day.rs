@@ -1,6 +1,7 @@
 //! Day files, `daily/YYYY/MM/YYYY-MM-DD.md`.
 
 mod edit;
+mod merge;
 mod sections;
 mod write;
 
@@ -209,7 +210,7 @@ impl Day {
         })
     }
 
-    fn parse(text: &str) -> Result<(Self, Vec<DayWarning>), String> {
+    pub(crate) fn parse(text: &str) -> Result<(Self, Vec<DayWarning>), String> {
         let (yaml, body) = split_front_matter(text)?;
         let front_matter: FrontMatter = serde_saphyr::from_str(yaml).map_err(|e| e.to_string())?;
         // Read a second time without a schema, to keep what this version does not know.
