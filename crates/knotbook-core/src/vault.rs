@@ -325,6 +325,40 @@ impl Vault {
         dates.sort();
         Ok(dates)
     }
+
+    /// All dates with a day file, oldest first.
+    pub fn all_days(&self) -> Result<Vec<NaiveDate>, ReadError> {
+        let folder = self.root().join("daily");
+        let entries = match fs::read_dir(&folder) {
+            Ok(entries) => entries,
+            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(source) => {
+                return Err(ReadError::Io {
+                    path: folder,
+                    source,
+                });
+            }
+        };
+        let mut dates = Vec::new();
+        for entry in entries {
+            let entry = entry.map_err(|source| ReadError::Io {
+                path: folder.clone(),
+                source,
+            })?;
+            let year = entry
+                .file_name()
+                .to_str()
+                .filter(|name| name.len() == 4)
+                .and_then(|name| name.parse().ok());
+            let first = year.and_then(|year| NaiveDate::from_ymd_opt(year, 1, 1));
+            let last = year.and_then(|year| NaiveDate::from_ymd_opt(year, 12, 31));
+            if let (Some(first), Some(last)) = (first, last) {
+                dates.extend(self.days(first, last)?);
+            }
+        }
+        dates.sort();
+        Ok(dates)
+    }
 }
 
 /// The date of a day file named `name`. Only names of the exact form

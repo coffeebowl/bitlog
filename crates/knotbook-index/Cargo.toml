@@ -1,0 +1,16 @@
+[package]
+name = "knotbook-index"
+description = "Local SQLite index of a Knotbook vault"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false }
+knotbook-core = { path = "../knotbook-core" }
+rusqlite = { version = "0.40.2", features = ["bundled", "chrono"] }
+rusqlite_migration = "2.6.0"
+thiserror = "2.0.21"
+
+[dev-dependencies]
+fastrand = "2.5.0"
