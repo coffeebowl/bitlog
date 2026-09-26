@@ -7,6 +7,7 @@ projects – roughly and in hindsight, without a stopwatch. Blocks can carry
 Markdown notes, projects keep a small set of notes of their own. All data
 lives in plain text files in an ordinary folder, the vault, which you can
 sync with Syncthing, Nextcloud, Git or anything else. There is no server.
+The file format is described in [docs/format-spec.md](docs/format-spec.md).
 
 Knotbook is at an early stage of development.
 
