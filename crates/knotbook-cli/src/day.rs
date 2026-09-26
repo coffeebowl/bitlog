@@ -8,7 +8,7 @@ pub fn heading(date: NaiveDate) -> String {
     date.format("%A, %Y-%m-%d").to_string()
 }
 
-/// The heading, the day's details and a table of its blocks.
+/// The heading, the day's details and a table of its blocks with their ids.
 pub fn format_day(vault: &Vault, day: &Day) -> String {
     let mut details = vec![capitalize(&day.kind)];
     if let Some(key) = &day.location {
@@ -24,7 +24,7 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
     if day.blocks.is_empty() {
         lines.push("No blocks.".to_owned());
     }
-    let rows: Vec<[String; 4]> = day
+    let rows: Vec<[String; 5]> = day
         .blocks
         .iter()
         .map(|block| {
@@ -32,6 +32,7 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
                 .project(&block.project)
                 .map_or(block.project.as_str(), |project| &project.name);
             [
+                block.id.to_string(),
                 format_span(block.start, block.end),
                 format_duration(block.duration()),
                 project.to_owned(),
@@ -45,10 +46,10 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
             .max()
             .unwrap_or(0)
     };
-    let (span_width, duration_width, project_width) = (width(0), width(1), width(2));
-    for [span, duration, project, title] in &rows {
+    let (span_width, duration_width, project_width) = (width(1), width(2), width(3));
+    for [id, span, duration, project, title] in &rows {
         let line = format!(
-            "{span:<span_width$}  {duration:>duration_width$}  {project:<project_width$}  {title}"
+            "{id}  {span:<span_width$}  {duration:>duration_width$}  {project:<project_width$}  {title}"
         );
         lines.push(line.trim_end().to_owned());
     }
@@ -105,12 +106,12 @@ mod tests {
             "Wednesday, 2026-09-23\n\
              Work · Hybrid · 6 h 45 min worked\n\
              \n\
-             09:30–10:00        30 min  Filler          Mails\n\
-             10:00–10:15        15 min  Meetings        Daily\n\
-             10:15–12:30    2 h 15 min  Infrastructure  Prepare release deployment\n\
-             12:30–13:15        45 min  Break           Lunch\n\
-             13:15–15:00    1 h 45 min  Webshop         Release notes\n\
-             22:30–00:30+1         2 h  Infrastructure  Release deployment\n"
+             aa11  09:30–10:00        30 min  Filler          Mails\n\
+             bb22  10:00–10:15        15 min  Meetings        Daily\n\
+             cc33  10:15–12:30    2 h 15 min  Infrastructure  Prepare release deployment\n\
+             dd44  12:30–13:15        45 min  Break           Lunch\n\
+             ee55  13:15–15:00    1 h 45 min  Webshop         Release notes\n\
+             ff66  22:30–00:30+1         2 h  Infrastructure  Release deployment\n"
         );
     }
 

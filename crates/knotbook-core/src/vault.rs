@@ -33,9 +33,9 @@ pub struct DayFile {
 
 impl DayFile {
     /// A day that has no file yet.
-    pub fn new(date: NaiveDate) -> Self {
+    fn new(day: Day) -> Self {
         Self {
-            day: Day::new(date),
+            day,
             warnings: Vec::new(),
             hash: None,
         }
@@ -96,6 +96,14 @@ impl Vault {
             .transpose()
     }
 
+    /// A day without a file yet, with the vault's default location.
+    pub fn new_day(&self, date: NaiveDate) -> DayFile {
+        DayFile::new(Day {
+            location: self.config.defaults.location.clone(),
+            ..Day::new(date)
+        })
+    }
+
     /// Applies `change` to the day of `file` and saves it, creating the file
     /// if needed. Returns the day as saved.
     ///
@@ -113,7 +121,7 @@ impl Vault {
         } else if let Some(text) = &current {
             DayFile::read(&path, text)?
         } else {
-            DayFile::new(file.day.date)
+            self.new_day(file.day.date)
         };
         let mut day = base.day.clone();
         change(&mut day)?;
@@ -431,7 +439,7 @@ mod tests {
     #[test]
     fn update_new_day() {
         let (_dir, vault) = sample_copy();
-        let file = DayFile::new(date(2026, 10, 1));
+        let file = vault.new_day(date(2026, 10, 1));
         let saved = vault
             .update_day(&file, |day| {
                 day.note = "First.".to_owned();
@@ -439,6 +447,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(saved.day.note, "First.");
+        assert_eq!(saved.day.location, Some("remote".parse().unwrap()));
         assert_eq!(
             vault.load_day(date(2026, 10, 1)).unwrap().unwrap().day,
             saved.day
@@ -505,7 +514,7 @@ mod tests {
 
         // Own writes, a new month folder included, are left out; only the
         // changes made afterwards are reported.
-        let file = DayFile::new(date(2026, 10, 1));
+        let file = vault.new_day(date(2026, 10, 1));
         vault
             .update_day(&file, |day| {
                 day.note = "Mine.".to_owned();

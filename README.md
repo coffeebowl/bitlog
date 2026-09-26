@@ -85,9 +85,17 @@ else the current folder or the closest folder above it that holds a
 `knotbook.toml`.
 
 ```sh
-knotbook today              # today's blocks, working time and location
+knotbook today              # today's blocks with their ids, working time and location
 knotbook day 2026-09-23     # the same for another day
+
+knotbook block add 09:00-10:30 webshop "Checkout flow"
+knotbook block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
+knotbook block note k7f3    # edit the block's text in $VISUAL or $EDITOR
+knotbook block rm k7f3 --move-text
+knotbook set --location office --work 08:30-16:45
 ```
+
+These commands change today unless `--date 2026-09-23` names another day.
 
 `knotbook --help` lists all commands.
 

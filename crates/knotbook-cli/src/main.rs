@@ -4,11 +4,14 @@ use std::env;
 use std::path::{self, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use chrono::{Local, NaiveDate};
-use clap::{Parser, Subcommand};
-use knotbook_core::Vault;
+use chrono::{Local, NaiveDate, NaiveTime};
+use clap::{ArgGroup, Args, Parser, Subcommand};
+use knotbook_core::{BlockId, LocationKey, ProjectSlug, RemovedText, Vault};
+
+use crate::edit::{BlockChanges, DayChanges, parse_span};
 
 mod day;
+mod edit;
 
 /// The environment variable naming the vault when --vault is missing.
 const VAULT_VARIABLE: &str = "KNOTBOOK_VAULT";
@@ -41,6 +44,87 @@ enum Command {
         /// The day, as in 2026-09-23 [default: today]
         date: Option<NaiveDate>,
     },
+    /// Add, change or remove the blocks of a day.
+    Block {
+        #[command(subcommand)]
+        command: BlockCommand,
+        #[command(flatten)]
+        date: DateArg,
+    },
+    /// Set the kind, location or working hours of a day.
+    #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
+    Set {
+        /// The kind of day, as in work or vacation
+        #[arg(long, group = "change")]
+        kind: Option<String>,
+        /// A location key from knotbook.toml, as in remote
+        #[arg(long, group = "change", conflicts_with = "no_location")]
+        location: Option<LocationKey>,
+        /// Remove the location
+        #[arg(long, group = "change")]
+        no_location: bool,
+        /// The working hours, as in 08:30-16:45
+        #[arg(long, group = "change", value_parser = parse_span, conflicts_with = "no_work")]
+        work: Option<(NaiveTime, NaiveTime)>,
+        /// Remove the working hours
+        #[arg(long, group = "change")]
+        no_work: bool,
+        #[command(flatten)]
+        date: DateArg,
+    },
+}
+
+#[derive(Args)]
+struct DateArg {
+    /// The day, as in 2026-09-23 [default: today]
+    #[arg(long, global = true)]
+    date: Option<NaiveDate>,
+}
+
+#[derive(Subcommand)]
+enum BlockCommand {
+    /// Add a block and print its id.
+    Add {
+        /// Start and end, as in 09:00-10:30; an earlier end is on the next day
+        #[arg(value_parser = parse_span)]
+        span: (NaiveTime, NaiveTime),
+        /// The slug of the project
+        project: ProjectSlug,
+        /// The title of the block
+        #[arg(default_value = "")]
+        title: String,
+    },
+    /// Change the time, project or title of a block.
+    #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
+    Edit {
+        /// The id of the block, as shown by `knotbook day`
+        id: BlockId,
+        /// New start and end, as in 09:00-10:30
+        #[arg(long, group = "change", value_parser = parse_span)]
+        time: Option<(NaiveTime, NaiveTime)>,
+        /// The slug of the new project
+        #[arg(long, group = "change")]
+        project: Option<ProjectSlug>,
+        /// The new title, empty to remove it
+        #[arg(long, group = "change")]
+        title: Option<String>,
+    },
+    /// Edit the text of a block in $VISUAL or $EDITOR.
+    Note {
+        /// The id of the block, as shown by `knotbook day`
+        id: BlockId,
+    },
+    /// Remove a block.
+    Rm {
+        /// The id of the block, as shown by `knotbook day`
+        id: BlockId,
+        /// Append the block's text to the day note
+        #[arg(long, conflicts_with = "discard_text")]
+        move_text: bool,
+        /// Drop the block's text
+        #[arg(long)]
+        discard_text: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -50,6 +134,63 @@ fn main() -> Result<()> {
         Command::Init { name } => init(cli.vault, name),
         Command::Today => show_day(&open_vault(cli.vault)?, today),
         Command::Day { date } => show_day(&open_vault(cli.vault)?, date.unwrap_or(today)),
+        Command::Block { command, date } => {
+            block(&open_vault(cli.vault)?, date.date.unwrap_or(today), command)
+        }
+        Command::Set {
+            kind,
+            location,
+            no_location,
+            work,
+            no_work,
+            date,
+        } => edit::set_day(
+            &open_vault(cli.vault)?,
+            date.date.unwrap_or(today),
+            DayChanges {
+                kind,
+                location: (location.is_some() || no_location).then_some(location),
+                work: (work.is_some() || no_work).then_some(work),
+            },
+        ),
+    }
+}
+
+fn block(vault: &Vault, date: NaiveDate, command: BlockCommand) -> Result<()> {
+    match command {
+        BlockCommand::Add {
+            span,
+            project,
+            title,
+        } => edit::add_block(vault, date, span, project, &title),
+        BlockCommand::Edit {
+            id,
+            time,
+            project,
+            title,
+        } => edit::edit_block(
+            vault,
+            date,
+            &id,
+            BlockChanges {
+                span: time,
+                project,
+                title,
+            },
+        ),
+        BlockCommand::Note { id } => edit::edit_block_text(vault, date, &id),
+        BlockCommand::Rm {
+            id,
+            move_text,
+            discard_text,
+        } => {
+            let text = if move_text {
+                Some(RemovedText::MoveToNote)
+            } else {
+                discard_text.then_some(RemovedText::Discard)
+            };
+            edit::remove_block(vault, date, &id, text)
+        }
     }
 }
 
