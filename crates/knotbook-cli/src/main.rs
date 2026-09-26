@@ -12,7 +12,7 @@ use knotbook_core::{
     BlockId, LocationKey, Problem, ProjectSlug, ProjectStatus, RemovedText, TaskId, TaskStatus,
     Vault,
 };
-use knotbook_index::Index;
+use knotbook_index::{Index, export};
 
 use crate::edit::{BlockChanges, DayChanges, parse_span};
 use crate::project::ProjectChanges;
@@ -95,6 +95,12 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// Write blocks, remote work days or a week report to the exports
+    /// folder of the vault, replacing an earlier export of the same.
+    Export {
+        #[command(subcommand)]
+        command: ExportCommand,
+    },
     /// Show the time spent on each project in a period, the current month
     /// by default, and the remote work days of its years.
     #[command(group(ArgGroup::new("period").multiple(false)))]
@@ -135,6 +141,28 @@ enum Command {
         no_work: bool,
         #[command(flatten)]
         date: DateArg,
+    },
+}
+
+#[derive(Subcommand)]
+enum ExportCommand {
+    /// All blocks as CSV, or those from --from to --to.
+    Blocks {
+        /// The first day, as in 2026-09-01
+        #[arg(long, requires = "to")]
+        from: Option<NaiveDate>,
+        /// The last day, as in 2026-09-30
+        #[arg(long, requires = "from")]
+        to: Option<NaiveDate>,
+    },
+    /// The remote and hybrid work days of each year as CSV.
+    Remote,
+    /// A report of a week as Markdown: the time per project, then each day
+    /// with its blocks and their texts.
+    Week {
+        /// A day of the week, as in 2026-09-23 [default: today]
+        #[arg(long)]
+        date: Option<NaiveDate>,
     },
 }
 
@@ -310,6 +338,7 @@ fn main() -> Result<()> {
         Command::Search { query, limit } => {
             search(&open_vault(cli.vault)?, &query.join(" "), limit)
         }
+        Command::Export { command } => export(&open_vault(cli.vault)?, command, today),
         Command::Stats {
             week,
             month: _,
@@ -372,6 +401,36 @@ fn search(vault: &Vault, query: &str, limit: u32) -> Result<()> {
         "{}",
         search::format_hits(&hits, color && io::stdout().is_terminal())
     );
+    Ok(())
+}
+
+fn export(vault: &Vault, command: ExportCommand, today: NaiveDate) -> Result<()> {
+    let (name, text) = match command {
+        ExportCommand::Blocks { from, to } => {
+            let period = from.zip(to);
+            if let Some((first, last)) = period
+                && last < first
+            {
+                bail!("the period ends on {last}, before it starts on {first}");
+            }
+            let text = open_index(vault)?.blocks_csv(vault, period)?;
+            (export::blocks_file_name(period), text)
+        }
+        ExportCommand::Remote => (
+            export::REMOTE_DAYS_FILE.to_owned(),
+            open_index(vault)?.remote_days_csv()?,
+        ),
+        ExportCommand::Week { date } => {
+            let date = date.unwrap_or(today);
+            let (first, _) = stats::current(Period::Week, date, vault.config().week.first_day);
+            (
+                export::week_file_name(first),
+                export::week_report(vault, first)?,
+            )
+        }
+    };
+    let path = vault.write_export(&name, &text)?;
+    println!("Wrote {}", path.display());
     Ok(())
 }
 
@@ -611,6 +670,11 @@ mod tests {
         assert!(parse("knotbook task move t9x2 0").is_err());
         parse("knotbook search release notes --limit 5").unwrap();
         assert!(parse("knotbook search").is_err());
+        parse("knotbook export blocks").unwrap();
+        parse("knotbook export blocks --from 2026-09-01 --to 2026-09-30").unwrap();
+        assert!(parse("knotbook export blocks --from 2026-09-01").is_err());
+        parse("knotbook export week --date 2026-09-23").unwrap();
+        parse("knotbook export remote").unwrap();
         parse("knotbook stats").unwrap();
         parse("knotbook stats --week").unwrap();
         parse("knotbook stats --from 2026-09-01 --to 2026-09-30").unwrap();

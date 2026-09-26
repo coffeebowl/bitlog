@@ -5,6 +5,7 @@
 //! deleted and rebuilt from them at any time.
 
 mod content;
+pub mod export;
 mod queries;
 mod search;
 

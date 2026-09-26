@@ -93,6 +93,30 @@ impl Index {
         Ok(days)
     }
 
+    /// All blocks with their projects from `first` to `last`, both included
+    /// and each open if `None`, oldest first.
+    pub fn blocks_between(
+        &self,
+        first: Option<NaiveDate>,
+        last: Option<NaiveDate>,
+    ) -> Result<Vec<(ProjectSlug, ProjectBlock)>, IndexError> {
+        let mut statement = self.connection.prepare_cached(&format!(
+            "SELECT {PROJECT_BLOCK_COLUMNS}, project FROM blocks
+             WHERE (?1 IS NULL OR date >= ?1) AND (?2 IS NULL OR date <= ?2)
+             ORDER BY date, start_minute"
+        ))?;
+        let blocks = statement
+            .query_map((first, last), |row| {
+                let project: String = row.get(6)?;
+                Ok((
+                    project.parse().expect("the index holds valid slugs"),
+                    project_block(row)?,
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(blocks)
+    }
+
     /// The blocks of `project`, newest first, leaving out the first `skip`
     /// and returning at most `limit`.
     pub fn project_blocks(

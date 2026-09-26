@@ -187,6 +187,19 @@ impl Vault {
         Ok(&self.projects[index])
     }
 
+    /// Where exports go. Knotbook may overwrite anything in there.
+    pub fn exports_path(&self) -> PathBuf {
+        self.root.join("exports")
+    }
+
+    /// Writes `text` to the file `name` in the exports folder, replacing
+    /// what is there. Returns the path written.
+    pub fn write_export(&self, name: &str, text: &str) -> Result<PathBuf, SaveError> {
+        let path = self.exports_path().join(name);
+        self.write(&path, text)?;
+        Ok(path)
+    }
+
     /// Where the global task list lives.
     pub fn tasks_path(&self) -> PathBuf {
         self.root.join("tasks.toml")

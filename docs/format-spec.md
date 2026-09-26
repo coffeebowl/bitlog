@@ -429,6 +429,24 @@ Without a template, or if the file is missing, a new note is empty.
 wiki links to it in all notes as well; it then replaces only the link targets
 and keeps the rest of each link.
 
+## Exports: `exports/`
+
+Knotbook writes exports on request and overwrites an earlier export of the
+same name. Nothing reads them back.
+
+| File | Content |
+| --- | --- |
+| `blocks-FIRST-LAST.csv`, `blocks.csv` | the blocks from `FIRST` to `LAST` (`YYYY-MM-DD`), or all of them |
+| `remote-days.csv` | the work days with the location `remote` or `hybrid`, per year |
+| `week-FIRST.md` | a report of the week starting on `FIRST` |
+
+The CSV files follow RFC 4180 (UTF-8, comma, CRLF, a header line). The
+blocks have the columns `date`, `start`, `end`, `minutes`, `project`,
+`project_name`, `category`, `title` and `text`; an `end` before `start` is on
+the next day, as in the day files. The week report lists the time per project
+without breaks, then each day with its details, day note and blocks with
+their texts.
+
 ## Writing rules
 
 | File or part | Written by | When |

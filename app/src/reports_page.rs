@@ -6,8 +6,9 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta};
 use gettextrs::gettext;
-use gtk::{gdk, glib};
+use gtk::{gdk, gio, glib};
 use knotbook_core::{ProjectSlug, Vault};
+use knotbook_index::export;
 
 use crate::calendar_view::week_start;
 use crate::format::{format_date, format_duration, format_share, format_short_date};
@@ -25,6 +26,14 @@ const CATEGORY_COLORS: [&str; 9] = [
 
 /// For projects that are not in the vault.
 const UNKNOWN_COLOR: &str = "#9a9996";
+
+/// What the export menu offers.
+#[derive(Debug, Clone, Copy)]
+enum Export {
+    Blocks,
+    Week,
+    Remote,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Period {
@@ -75,6 +84,15 @@ mod imp {
             ShareBar::ensure_type();
             Heatmap::ensure_type();
             klass.bind_template();
+            for (action, export) in [
+                ("reports.export-blocks", Export::Blocks),
+                ("reports.export-week", Export::Week),
+                ("reports.export-remote", Export::Remote),
+            ] {
+                klass.install_action_async(action, None, move |page, _, _| async move {
+                    page.export(export).await;
+                });
+            }
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -153,6 +171,8 @@ impl ReportsPage {
         let date = self.date();
         let period = self.range(&vault);
         self.show_title(period);
+        // A report covers one week.
+        self.action_set_enabled("reports.export-week", self.period() == Period::Week);
         let year = (
             NaiveDate::from_ymd_opt(date.year(), 1, 1).expect("years have a first day"),
             NaiveDate::from_ymd_opt(date.year(), 12, 31).expect("years have a last day"),
@@ -175,6 +195,70 @@ impl ReportsPage {
                 }
             }
         ));
+    }
+
+    /// Writes `what` of the period shown to the exports folder and says so
+    /// in a toast that leads to the file.
+    async fn export(&self, what: Export) {
+        let imp = self.imp();
+        let vault = imp.vault.borrow().clone().expect("reports need a vault");
+        let index = imp.index.borrow().clone();
+        let period = self.range(&vault);
+        let export = match what {
+            Export::Blocks => index
+                .blocks_csv(&vault, period)
+                .await
+                .map(|text| (export::blocks_file_name(Some(period)), text))
+                .map_err(|err| err.to_string()),
+            Export::Week => export::week_report(&vault, period.0)
+                .map(|text| (export::week_file_name(period.0), text))
+                .map_err(|err| err.to_string()),
+            Export::Remote => index
+                .remote_days_csv(&vault)
+                .await
+                .map(|text| (export::REMOTE_DAYS_FILE.to_owned(), text))
+                .map_err(|err| err.to_string()),
+        };
+        let written = export.and_then(|(name, text)| {
+            vault
+                .write_export(&name, &text)
+                .map_err(|err| err.to_string())
+        });
+        match written {
+            Ok(path) => {
+                let name = path.file_name().unwrap_or_default().to_string_lossy();
+                let toast = adw::Toast::builder()
+                    .title(gettext("Exported {name}").replace("{name}", &name))
+                    .button_label(gettext("_Show File"))
+                    .build();
+                let file = gio::File::for_path(&path);
+                toast.connect_button_clicked(glib::clone!(
+                    #[weak(rename_to = page)]
+                    self,
+                    move |_| {
+                        let window = page.root().and_downcast::<gtk::Window>();
+                        gtk::FileLauncher::new(Some(&file)).open_containing_folder(
+                            window.as_ref(),
+                            None::<&gio::Cancellable>,
+                            |result| {
+                                if let Err(err) = result {
+                                    glib::g_warning!("knotbook", "{err}");
+                                }
+                            },
+                        );
+                    }
+                ));
+                self.ancestor(adw::ToastOverlay::static_type())
+                    .and_downcast::<adw::ToastOverlay>()
+                    .expect("pages lie in the window's toast overlay")
+                    .add_toast(toast);
+            }
+            Err(message) => {
+                let dialog = adw::AlertDialog::new(Some(&gettext("Cannot Export")), Some(&message));
+                dialog.add_response("close", &gettext("_Close"));
+                dialog.present(Some(self));
+            }
+        }
     }
 
     fn period(&self) -> Period {

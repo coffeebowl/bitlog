@@ -36,6 +36,13 @@ template $KnotbookReportsPage: Adw.NavigationPage {
       }
 
       [end]
+      MenuButton {
+        icon-name: "document-save-symbolic";
+        tooltip-text: _("Export");
+        menu-model: export_menu;
+      }
+
+      [end]
       Adw.ToggleGroup period_toggle {
         active-name: "month";
 
@@ -93,4 +100,25 @@ template $KnotbookReportsPage: Adw.NavigationPage {
       }
     };
   };
+}
+
+menu export_menu {
+  section {
+    label: _("Export to the Exports Folder");
+
+    item {
+      label: _("_Blocks as CSV");
+      action: "reports.export-blocks";
+    }
+
+    item {
+      label: _("_Week Report as Markdown");
+      action: "reports.export-week";
+    }
+
+    item {
+      label: _("_Remote Work Days as CSV");
+      action: "reports.export-remote";
+    }
+  }
 }

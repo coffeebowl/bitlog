@@ -105,6 +105,30 @@ impl SearchIndex {
         .await
     }
 
+    /// The blocks from `period.0` to `period.1` as CSV, after bringing the
+    /// index up to date, see [`Index::blocks_csv`].
+    pub async fn blocks_csv(
+        &self,
+        vault: &Vault,
+        period: (NaiveDate, NaiveDate),
+    ) -> Result<String, IndexError> {
+        self.run(vault, move |index, vault| {
+            refresh(index, vault)?;
+            index.blocks_csv(vault, Some(period))
+        })
+        .await
+    }
+
+    /// The remote work days as CSV, after bringing the index up to date,
+    /// see [`Index::remote_days_csv`].
+    pub async fn remote_days_csv(&self, vault: &Vault) -> Result<String, IndexError> {
+        self.run(vault, |index, vault| {
+            refresh(index, vault)?;
+            index.remote_days_csv()
+        })
+        .await
+    }
+
     /// More blocks of `project`, see [`Index::project_blocks`].
     pub async fn project_blocks(
         &self,

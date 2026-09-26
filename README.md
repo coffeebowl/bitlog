@@ -110,6 +110,10 @@ knotbook search '"release notes"'  # the words as written, one after the other
 knotbook stats              # time per project this month, and remote work days
 knotbook stats --week       # also --year, or --from 2026-09-01 --to 2026-09-30
 
+knotbook export blocks --from 2026-09-01 --to 2026-09-30   # CSV in exports/, all without dates
+knotbook export week --date 2026-09-23                     # Markdown report of that week
+knotbook export remote                                     # remote work days per year as CSV
+
 knotbook doctor             # unknown projects, overlaps, headings in texts,
                             # broken wiki links in notes
 knotbook doctor --fix       # escape those headings so they read as text
