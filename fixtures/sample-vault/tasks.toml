@@ -1,0 +1,26 @@
+format = 1
+
+[[task]]
+id = "t9x2"
+title = "Get back to Kim about the handover"
+status = "open"
+created = 2026-09-22
+
+[[task]]
+id = "h4c8"
+title = "Renew the TLS certificate for staging"
+status = "open"
+created = 2026-09-23
+
+[[task]]
+id = "r3m7"
+title = "Take the keyboard to the office"
+status = "done"
+created = 2026-09-21
+done = 2026-09-22
+
+[[task]]
+id = "w5d1"
+title = "Book a meeting room for the retro"
+status = "dropped"
+created = 2026-09-21

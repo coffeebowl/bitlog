@@ -1,0 +1,7 @@
+format = 1
+name = "Meetings"
+color = "#f6d32d"
+status = "active"
+category = "overhead"
+pinned = true
+created = 2026-03-01

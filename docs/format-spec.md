@@ -188,9 +188,10 @@ outline of the document belongs to Knotbook:
 - Knotbook writes the sections in order of their start times.
 - If a block in the front matter has no heading, Knotbook adds it on the next
   write.
-- A heading with an ID marker whose ID is not in the front matter produces a
-  warning. The section is kept unchanged at the end of the file, and
-  `knotbook doctor` reports it.
+- A heading with an ID marker whose ID is not in the front matter is an
+  ordinary hand-written heading: it stays where it is and belongs to the text
+  of the preceding block, or to the day note if no block precedes it. It
+  produces a warning, and `knotbook doctor` reports it and offers to escape it.
 - When a block that has text is deleted, Knotbook asks whether to discard the
   text or move it to the day note.
 

@@ -1,0 +1,8 @@
+format = 1
+name = "Webshop"
+color = "#3584e4"
+status = "active"
+category = "work"
+pinned = true
+created = 2026-03-01
+homepage = "https://shop.example.com"

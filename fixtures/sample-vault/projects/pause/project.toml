@@ -1,0 +1,7 @@
+format = 1
+name = "Break"
+color = "#9a9996"
+status = "active"
+category = "break"
+pinned = true
+created = 2026-03-01

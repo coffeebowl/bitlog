@@ -1,0 +1,8 @@
+format = 1
+name = "Infrastructure"
+color = "#2ec27e"
+status = "active"
+# Shared with the ops team, time is billed separately.
+category = "work"
+pinned = false
+created = 2026-04-15
