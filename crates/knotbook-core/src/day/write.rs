@@ -176,6 +176,7 @@ mod tests {
             day.to_markdown(),
             "---\nformat: 1\ndate: \"2026-01-05\"\nkind: \"work\"\n---\n\n# 2026-01-05\n"
         );
+        assert_eq!(Day::new(day.date), day);
     }
 
     #[test]

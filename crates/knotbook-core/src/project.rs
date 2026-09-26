@@ -9,7 +9,8 @@ use serde::{Deserialize, Deserializer};
 use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::ProjectSlug;
-use crate::error::{ReadError, read_file};
+use crate::error::ReadError;
+use crate::file::{content_hash, parse_text, read_file};
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;
@@ -36,6 +37,8 @@ pub struct Project {
     /// The file as read, so that writing keeps comments, formatting and
     /// fields this version does not know.
     document: DocumentMut,
+    /// Of the file as read, `None` for new projects.
+    hash: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -106,6 +109,7 @@ impl Project {
             pinned: false,
             created: Some(created),
             document: DocumentMut::new(),
+            hash: None,
         }
     }
 
@@ -144,6 +148,18 @@ impl Project {
 
     pub fn load(vault: &Path, slug: ProjectSlug) -> Result<Self, ReadError> {
         read_file(&Self::path(vault, &slug), |text| Self::parse(slug, text))
+    }
+
+    /// Reads the content `text` of the file of the project `slug`.
+    pub(crate) fn read(vault: &Path, slug: ProjectSlug, text: &str) -> Result<Self, ReadError> {
+        parse_text(&Self::path(vault, &slug), text, |text| {
+            Self::parse(slug, text)
+        })
+    }
+
+    /// Whether this project was read from a file with the content `text`.
+    pub(crate) fn is_read_from(&self, text: &str) -> bool {
+        self.hash == Some(content_hash(text))
     }
 
     /// Loads all projects of `vault`, sorted by slug.
@@ -203,6 +219,7 @@ impl Project {
             pinned: file.pinned,
             created: file.created,
             document,
+            hash: Some(content_hash(text)),
         })
     }
 

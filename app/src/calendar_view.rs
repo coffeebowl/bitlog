@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{gdk, glib, pango};
-use knotbook_core::{ProjectSlug, Vault};
+use knotbook_core::{DayFile, ProjectSlug, Vault};
 
 use crate::format::{capitalize, format_date, format_duration, format_full_date};
 use crate::week_chart::{ChartDay, WeekChart};
@@ -197,7 +197,7 @@ impl CalendarView {
         for offset in 0..7 {
             let date = first + Days::new(offset);
             // Unreadable days count as empty here, the month view shows why.
-            let day = vault.load_day(date).ok().flatten().map(|(day, _)| day);
+            let day = vault.load_day(date).ok().flatten().map(|file| file.day);
             let times = day
                 .as_ref()
                 .map(|day| day.time_per_project(vault.projects()))
@@ -287,7 +287,7 @@ fn day_card(vault: &Vault, date: NaiveDate, in_month: bool, is_today: bool) -> g
     };
     content.append(&label(&date.day().to_string(), number_classes));
     match vault.load_day(date) {
-        Ok(Some((day, _))) => {
+        Ok(Some(DayFile { day, .. })) => {
             content.append(&label(
                 &format_duration(day.working_time(vault.projects())),
                 &["caption"],

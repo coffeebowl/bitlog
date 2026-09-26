@@ -5,7 +5,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate};
 use gtk::glib;
-use knotbook_core::{Day, Vault};
+use knotbook_core::{Day, DayFile, Vault};
 
 use crate::format::{capitalize, format_date, format_duration, format_full_date, format_time};
 use crate::markdown_view::MarkdownView;
@@ -126,7 +126,7 @@ impl DayView {
             .as_ref()
             .expect("a day is only shown once a vault is open");
         match vault.load_day(date) {
-            Ok(Some((day, _))) => {
+            Ok(Some(DayFile { day, .. })) => {
                 self.show_details(vault, &day);
                 imp.day.replace(Some(day));
                 imp.stack.set_visible_child_name("day");

@@ -374,7 +374,9 @@ Every write:
 2. Check the hash before saving. A difference means an external change: reload
    the file and apply the own change again. If the same block text or note was
    changed on both sides, offer a comparison.
-3. Write to a temporary file in the same folder, then rename it atomically.
+3. Write to a temporary file in the same folder, named
+   `.<file name>.<random>.tmp`, then rename it atomically. A file whose
+   content does not change is not written at all.
 4. An unchanged day file in canonical form must be **byte-identical** after
    reading and writing.
 

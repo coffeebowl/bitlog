@@ -10,7 +10,8 @@ use std::path::Path;
 use chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
 use serde::{Deserialize, Deserializer};
 
-use crate::error::{ReadError, read_file};
+use crate::error::ReadError;
+use crate::file::parse_text;
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
 /// The only format version this code knows.
@@ -176,9 +177,26 @@ fn optional_time<'de, D: Deserializer<'de>>(
 }
 
 impl Day {
-    /// Reads a day file. Its date has to match the file name.
-    pub fn load(path: &Path) -> Result<(Self, Vec<DayWarning>), ReadError> {
-        read_file(path, |text| {
+    /// A day without any entries.
+    pub fn new(date: NaiveDate) -> Self {
+        Self {
+            date,
+            kind: DEFAULT_KIND.to_owned(),
+            location: None,
+            tags: Vec::new(),
+            energy: None,
+            work_start: None,
+            work_end: None,
+            blocks: Vec::new(),
+            note: String::new(),
+            unknown_fields: serde_json::Map::new(),
+        }
+    }
+
+    /// Reads the content `text` of the day file `path`. Its date has to match
+    /// the file name.
+    pub(crate) fn read(path: &Path, text: &str) -> Result<(Self, Vec<DayWarning>), ReadError> {
+        parse_text(path, text, |text| {
             let (day, warnings) = Self::parse(text)?;
             let file_date = path.file_stem().and_then(|stem| stem.to_str());
             if file_date != Some(day.date.format("%Y-%m-%d").to_string().as_str()) {
@@ -345,7 +363,6 @@ fn overlaps(blocks: &[Block]) -> Vec<DayWarning> {
 #[cfg(test)]
 mod tests {
     use std::fs;
-    use std::path::PathBuf;
 
     use super::*;
 
@@ -353,7 +370,7 @@ mod tests {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../fixtures/sample-vault/daily/2026/09")
             .join(format!("{date}.md"));
-        Day::load(&path).unwrap()
+        Day::read(&path, &fs::read_to_string(&path).unwrap()).unwrap()
     }
 
     fn time(hour: u32, minute: u32) -> NaiveTime {
@@ -590,12 +607,10 @@ mod tests {
 
     #[test]
     fn date_has_to_match_file_name() {
-        let dir = std::env::temp_dir().join(format!("knotbook-test-{}", std::process::id()));
-        fs::create_dir_all(&dir).unwrap();
-        let path: PathBuf = dir.join("2026-01-06.md");
-        fs::write(&path, "---\nformat: 1\ndate: \"2026-01-05\"\n---\n").unwrap();
-        let err = Day::load(&path).unwrap_err().to_string();
-        fs::remove_dir_all(&dir).unwrap();
+        let path = Path::new("/vault/2026-01-06.md");
+        let err = Day::read(path, "---\nformat: 1\ndate: \"2026-01-05\"\n---\n")
+            .unwrap_err()
+            .to_string();
         assert!(err.contains("2026-01-06.md"), "{err}");
         assert!(err.contains("does not match the file name"), "{err}");
     }

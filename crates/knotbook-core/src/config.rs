@@ -7,7 +7,8 @@ use chrono::{NaiveTime, Weekday};
 use serde::{Deserialize, Deserializer};
 
 use crate::LocationKey;
-use crate::error::{ReadError, read_file};
+use crate::error::ReadError;
+use crate::file::read_file;
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;

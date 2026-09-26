@@ -1,6 +1,5 @@
-use std::fs;
 use std::io;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use thiserror::Error;
 
@@ -13,17 +12,12 @@ pub enum ReadError {
     Invalid { path: PathBuf, message: String },
 }
 
-/// Reads `path` and parses it, attaching the path to any error.
-pub(crate) fn read_file<T>(
-    path: &Path,
-    parse: impl FnOnce(&str) -> Result<T, String>,
-) -> Result<T, ReadError> {
-    let text = fs::read_to_string(path).map_err(|source| ReadError::Io {
-        path: path.to_owned(),
-        source,
-    })?;
-    parse(&text).map_err(|message| ReadError::Invalid {
-        path: path.to_owned(),
-        message,
-    })
+/// A vault file that cannot be saved. Saving reads the file again first if
+/// it was changed elsewhere, which can fail as well.
+#[derive(Debug, Error)]
+pub enum SaveError {
+    #[error(transparent)]
+    Read(#[from] ReadError),
+    #[error("cannot write {path}: {source}")]
+    Write { path: PathBuf, source: io::Error },
 }
