@@ -80,6 +80,21 @@ location = "homeoffice"
 note_template = "templates/note.md"
 ```
 
+Only `format` is required. Missing fields take these defaults:
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `name` | `"Knotbook"` | |
+| `week.first_day` | `"mon"` | weekday, short (`mon`) or long (`monday`) |
+| `week.workdays` | `["mon", "tue", "wed", "thu", "fri"]` | weekdays |
+| `week.target_hours` | `40.0` | not negative |
+| `grid.slot_minutes` | `15` | divides 60 |
+| `grid.day_start` | `07:00:00` | TOML local time, before `day_end` |
+| `grid.day_end` | `19:00:00` | TOML local time |
+| `locations` | none | keys are location keys, values display names |
+| `defaults.location` | none | a key from `[locations]` |
+| `defaults.note_template` | none | path relative to the vault |
+
 ## Day file: `YYYY-MM-DD.md`
 
 A day is **one Markdown file** with a YAML front matter. The front matter holds
