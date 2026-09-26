@@ -1,6 +1,7 @@
 //! Day files, `daily/YYYY/MM/YYYY-MM-DD.md`.
 
 mod sections;
+mod write;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;

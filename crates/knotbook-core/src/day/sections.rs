@@ -54,14 +54,20 @@ pub(super) fn split<'a>(body: &'a str, date: NaiveDate, ids: &[BlockId]) -> Body
     }
 }
 
-/// Finds the level 2 headings that start a block: at the start of a line,
-/// outside code blocks and quotes, ending in the marker of a known block.
-fn find_boundaries<'a>(body: &'a str, ids: &[BlockId]) -> (Vec<Boundary<'a>>, Vec<DayWarning>) {
-    let mut boundaries = Vec::new();
-    let mut warnings = Vec::new();
-    let mut seen = HashSet::new();
+/// A level 2 heading with an ID marker: where its line starts and ends, its
+/// title and the marker.
+struct MarkerHeading<'a> {
+    start: usize,
+    end: usize,
+    title: &'a str,
+    marker: &'a str,
+}
 
-    for (event, range) in Parser::new(body).into_offset_iter() {
+/// Finds the level 2 headings with an ID marker at the start of a line,
+/// outside code blocks and quotes.
+fn marker_headings(text: &str) -> Vec<MarkerHeading<'_>> {
+    let mut headings = Vec::new();
+    for (event, range) in Parser::new(text).into_offset_iter() {
         let Event::Start(Tag::Heading {
             level: HeadingLevel::H2,
             ..
@@ -69,26 +75,54 @@ fn find_boundaries<'a>(body: &'a str, ids: &[BlockId]) -> (Vec<Boundary<'a>>, Ve
         else {
             continue;
         };
-        let at_line_start = range.start == 0 || body[..range.start].ends_with('\n');
-        let line = body[range.start..].lines().next().unwrap_or_default();
-        let Some((title, marker)) = parse_heading(line).filter(|_| at_line_start) else {
-            continue;
-        };
-
-        match ids.iter().find(|id| id.as_str() == marker) {
-            Some(id) if seen.insert(id) => boundaries.push(Boundary {
+        let at_line_start = range.start == 0 || text[..range.start].ends_with('\n');
+        let line = text[range.start..].lines().next().unwrap_or_default();
+        if let Some((title, marker)) = parse_heading(line).filter(|_| at_line_start) {
+            headings.push(MarkerHeading {
                 start: range.start,
                 end: range.start + line.len(),
                 title,
+                marker,
+            });
+        }
+    }
+    headings
+}
+
+/// Finds the headings that start a block: the first marker heading of each
+/// known block.
+fn find_boundaries<'a>(body: &'a str, ids: &[BlockId]) -> (Vec<Boundary<'a>>, Vec<DayWarning>) {
+    let mut boundaries = Vec::new();
+    let mut warnings = Vec::new();
+    let mut seen = HashSet::new();
+    for heading in marker_headings(body) {
+        match ids.iter().find(|id| id.as_str() == heading.marker) {
+            Some(id) if seen.insert(id) => boundaries.push(Boundary {
+                start: heading.start,
+                end: heading.end,
+                title: heading.title,
                 id: id.clone(),
             }),
             Some(id) => warnings.push(DayWarning::DuplicateMarker { id: id.clone() }),
             None => warnings.push(DayWarning::UnknownMarker {
-                id: marker.to_owned(),
+                id: heading.marker.to_owned(),
             }),
         }
     }
     (boundaries, warnings)
+}
+
+/// Escapes the headings in `text` that would start one of the blocks `ids`,
+/// so that they stay text wherever the text is written.
+pub(super) fn escape_block_headings(text: &str, ids: &[BlockId]) -> String {
+    let mut escaped = text.to_owned();
+    // From the back, so that earlier positions stay valid.
+    for heading in marker_headings(text).iter().rev() {
+        if ids.iter().any(|id| id.as_str() == heading.marker) {
+            escaped.insert(heading.start, '\\');
+        }
+    }
+    escaped
 }
 
 /// Splits `## Title {#id}` into title and id.

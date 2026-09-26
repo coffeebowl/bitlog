@@ -159,10 +159,14 @@ let token = refresh(&session).await?;
 - **Canonical form:** Knotbook rewrites the front matter completely on every
   save, in a fixed field order, with **all strings in double quotes**. This
   avoids the well-known YAML pitfalls (`no` as a boolean, `10:30` as a number).
+  The order is `format`, `date`, `kind`, `location`, `tags`, `energy`, `work`,
+  `blocks`, as in the example above. `kind` is always written; the other
+  optional fields only when they have a value.
 - **Tolerant reading:** Unquoted values, multi-line lists and other valid YAML
   notations are accepted, for example after Obsidian has reformatted the front
   matter. Unknown fields are preserved and written back at the end of the front
-  matter. Comments in the front matter are lost on writing.
+  matter, in their order, with their values in JSON notation (valid YAML 1.2,
+  strings in double quotes). Comments in the front matter are lost on writing.
 
 | Field | Type | Required |
 | --- | --- | --- |
@@ -217,7 +221,8 @@ outline of the document belongs to Knotbook:
   of a line, outside code blocks, quotes and lists. All other headings belong
   to the text of the preceding block (see block Markdown).
 - If a block has more than one heading, the first one counts. The others are
-  read as text, with a warning.
+  read as text, with a warning. Knotbook escapes them on writing
+  (`\## Title {#id}`), so that they stay text when sections are reordered.
 - Blank lines around the day note and around a block text are layout, not
   text; Knotbook writes exactly one blank line there.
 - The text below a block heading is the **block text**. It belongs to the user
