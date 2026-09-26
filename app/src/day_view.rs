@@ -6,13 +6,15 @@ use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, NaiveTime, Timelike};
 use gettextrs::gettext;
 use gtk::{gio, glib};
-use knotbook_core::{Day, DayFile, EditError, LocationKey, ProjectSlug, SaveError, Vault};
+use knotbook_core::{
+    BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, SaveError, Vault,
+};
 
 use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_time, kind_name,
 };
 use crate::markdown_view::MarkdownView;
-use crate::project_picker::project_popover;
+use crate::project_picker::{project_markup, project_popover};
 use crate::timeline::Timeline;
 
 mod imp {
@@ -25,6 +27,8 @@ mod imp {
         pub date: Cell<NaiveDate>,
         /// The day shown, if it has a file.
         pub file: RefCell<Option<DayFile>>,
+        /// The block shown in the panel, kept there when the day is saved.
+        pub shown_block: RefCell<Option<BlockId>>,
         /// The stateful actions `day.kind` and `day.location`, whose state
         /// is the value of the day shown.
         pub actions: gio::SimpleActionGroup,
@@ -51,6 +55,8 @@ mod imp {
         #[template_child]
         pub work_end: TemplateChild<gtk::SpinButton>,
         #[template_child]
+        pub day_scroll: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
         pub note_view: TemplateChild<MarkdownView>,
         #[template_child]
         pub timeline: TemplateChild<Timeline>,
@@ -61,7 +67,17 @@ mod imp {
         #[template_child]
         pub block_title: TemplateChild<gtk::Label>,
         #[template_child]
-        pub block_details: TemplateChild<gtk::Label>,
+        pub block_time_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub block_time_popover: TemplateChild<gtk::Popover>,
+        #[template_child]
+        pub block_start: TemplateChild<gtk::SpinButton>,
+        #[template_child]
+        pub block_end: TemplateChild<gtk::SpinButton>,
+        #[template_child]
+        pub block_project_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub block_project_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub block_text: TemplateChild<MarkdownView>,
     }
@@ -90,6 +106,20 @@ mod imp {
                     Ok(())
                 });
             });
+            klass.install_action("day.new-block", None, |view, _, _| view.new_block());
+            klass.install_action("day.delete-block", None, |view, _, _| view.delete_block());
+            klass.install_action("day.set-block-time", None, |view, _, _| {
+                let imp = view.imp();
+                let id = imp
+                    .shown_block
+                    .borrow()
+                    .clone()
+                    .expect("the time popover belongs to the block shown");
+                let start = spin_time(&imp.block_start);
+                let end = spin_time(&imp.block_end);
+                imp.block_time_popover.popdown();
+                view.update(|day| day.move_block(&id, start, end));
+            });
             klass.install_action("day.remove-work-hours", None, |view, _, _| {
                 view.imp().work_popover.popdown();
                 view.update(|day| {
@@ -116,16 +146,14 @@ mod imp {
             self.timeline.connect_span_selected(glib::clone!(
                 #[weak]
                 view,
-                move |timeline, start, end| {
-                    let popover = project_popover(
-                        &view.vault(),
-                        glib::clone!(
-                            #[weak]
-                            view,
-                            move |project| view.add_block(start, end, project)
-                        ),
-                    );
-                    timeline.show_popover(&popover);
+                move |_, start, end| view.choose_project(start, end)
+            ));
+            self.timeline.connect_block_moved(glib::clone!(
+                #[weak]
+                view,
+                move |_, index, start, end| {
+                    let id = view.block_id(index);
+                    view.update(|day| day.move_block(&id, time_of(start), time_of(end)));
                 }
             ));
             // In the narrow layout the panel also closes by tapping beside it.
@@ -139,7 +167,7 @@ mod imp {
                 }
             ));
             view.setup_detail_actions();
-            view.setup_work_hours();
+            view.setup_time_popovers();
         }
     }
     impl WidgetImpl for DayView {}
@@ -160,7 +188,12 @@ impl DayView {
         imp.location_button
             .set_menu_model(Some(&location_menu(&vault)));
         let slot = vault.config().grid.slot_minutes.into();
-        for spin in [&imp.work_start, &imp.work_end] {
+        for spin in [
+            &imp.work_start,
+            &imp.work_end,
+            &imp.block_start,
+            &imp.block_end,
+        ] {
             spin.adjustment().set_step_increment(slot);
         }
         imp.vault.replace(Some(vault));
@@ -179,17 +212,18 @@ impl DayView {
         imp.window_title.set_subtitle(&full_date);
         self.set_title(&weekday);
 
+        imp.split_view.set_show_sidebar(false);
         let loaded = self.vault().load_day(date);
         match loaded {
             Ok(Some(file)) => self.show_day(file),
             Ok(None) => {
-                imp.split_view.set_show_sidebar(false);
                 imp.file.replace(None);
+                self.action_set_enabled("day.new-block", false);
                 imp.stack.set_visible_child_name("empty");
             }
             Err(err) => {
-                imp.split_view.set_show_sidebar(false);
                 imp.file.replace(None);
+                self.action_set_enabled("day.new-block", false);
                 imp.error_page
                     .set_description(Some(&glib::markup_escape_text(&err.to_string())));
                 imp.stack.set_visible_child_name("error");
@@ -208,7 +242,7 @@ impl DayView {
     /// Shows the day of `file` with its blocks, none of them selected.
     fn show_day(&self, file: DayFile) {
         let imp = self.imp();
-        imp.split_view.set_show_sidebar(false);
+        self.action_set_enabled("day.new-block", true);
         self.show_details(&file.day);
         let is_today = file.day.date == Local::now().date_naive();
         imp.timeline.set_day(&self.vault(), &file.day, is_today);
@@ -272,8 +306,15 @@ impl DayView {
             .clone()
             .expect("only a day with a file can be changed");
         match self.vault().update_day(&file, change) {
-            // The file may have been changed elsewhere in the meantime.
-            Ok(saved) if saved.day.blocks != file.day.blocks => self.show_day(saved),
+            Ok(saved) if saved.day.blocks != file.day.blocks => {
+                self.show_day(saved);
+                // The block in the panel may have changed or be gone.
+                let shown = imp.shown_block.borrow().clone();
+                match shown {
+                    Some(id) if imp.split_view.shows_sidebar() => self.show_block_by_id(&id),
+                    _ => imp.split_view.set_show_sidebar(false),
+                }
+            }
             Ok(saved) => {
                 self.show_details(&saved.day);
                 imp.file.replace(Some(saved));
@@ -295,13 +336,146 @@ impl DayView {
                 Some(day.add_block(time_of(start), time_of(end), project, "", vault.projects())?);
             Ok(())
         });
-        let index = self.imp().file.borrow().as_ref().and_then(|file| {
-            let id = id?;
-            file.day.blocks.iter().position(|block| block.id == id)
-        });
-        if let Some(index) = index {
-            self.imp().timeline.select(Some(index));
-            self.show_block(index);
+        if let Some(id) = id {
+            self.show_block_by_id(&id);
+        }
+    }
+
+    /// Asks for the project of a new block from `start` to `end`, in minutes
+    /// of the day.
+    fn choose_project(&self, start: u32, end: u32) {
+        let popover = project_popover(
+            &self.vault(),
+            glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |project| view.add_block(start, end, project)
+            ),
+        );
+        self.imp().timeline.show_popover(&popover);
+    }
+
+    /// Offers one slot for a new block after the last one, or at the start
+    /// of work or of the grid.
+    fn new_block(&self) {
+        let imp = self.imp();
+        let anchor = {
+            let file = imp.file.borrow();
+            let day = &file
+                .as_ref()
+                .expect("new blocks need a day with a file")
+                .day;
+            let start = day
+                .work_start
+                .unwrap_or(self.vault().config().grid.day_start);
+            // A block into the next day leaves no room after it.
+            day.blocks
+                .iter()
+                .map(|block| block.span().1)
+                .filter(|&end| end < 24 * 60)
+                .max()
+                .unwrap_or(start.num_seconds_from_midnight() / 60)
+        };
+        let Some((start, end)) = imp.timeline.select_free_span(anchor) else {
+            self.error_bell();
+            return;
+        };
+        // Once the grid has its size, scroll to the span and ask there.
+        glib::idle_add_local_once(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move || {
+                let imp = view.imp();
+                let area = imp
+                    .timeline
+                    .pending_area()
+                    .expect("the span is still marked");
+                let point = gtk::graphene::Point::new(area.x(), area.y());
+                if let Some(point) = imp.timeline.compute_point(&*imp.day_scroll, &point) {
+                    let adjustment = imp.day_scroll.vadjustment();
+                    let top = adjustment.value() + f64::from(point.y());
+                    adjustment.clamp_page(top, top + f64::from(area.height()));
+                }
+                view.choose_project(start, end);
+            }
+        ));
+    }
+
+    /// Deletes the block shown, asking what happens to its text.
+    fn delete_block(&self) {
+        let imp = self.imp();
+        let id = imp
+            .shown_block
+            .borrow()
+            .clone()
+            .expect("the delete button belongs to the block shown");
+        let has_text = imp
+            .file
+            .borrow()
+            .as_ref()
+            .and_then(|file| file.day.blocks.iter().find(|block| block.id == id))
+            .is_some_and(|block| !block.text.is_empty());
+        if !has_text {
+            self.update(|day| day.remove_block(&id, RemovedText::Discard));
+            return;
+        }
+        let dialog = adw::AlertDialog::new(
+            Some(&gettext("Delete Block?")),
+            Some(&gettext(
+                "The text of the block can be moved to the end of the day note",
+            )),
+        );
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("discard", &gettext("_Delete Text")),
+            ("move", &gettext("_Move to Note")),
+        ]);
+        dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
+        dialog.set_response_appearance("move", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("move"));
+        dialog.set_close_response("cancel");
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |_, response| {
+                    let text = match response {
+                        "discard" => RemovedText::Discard,
+                        "move" => RemovedText::MoveToNote,
+                        _ => return,
+                    };
+                    view.update(|day| day.remove_block(&id, text));
+                }
+            ),
+        );
+        dialog.present(Some(self));
+    }
+
+    fn block_id(&self, index: usize) -> BlockId {
+        let file = self.imp().file.borrow();
+        let day = &file
+            .as_ref()
+            .expect("blocks are only shown with their day")
+            .day;
+        day.blocks[index].id.clone()
+    }
+
+    /// Shows the block `id` in the panel, or closes the panel if the day
+    /// has no such block.
+    fn show_block_by_id(&self, id: &BlockId) {
+        let imp = self.imp();
+        let index = imp
+            .file
+            .borrow()
+            .as_ref()
+            .and_then(|file| file.day.blocks.iter().position(|block| block.id == *id));
+        match index {
+            Some(index) => {
+                imp.timeline.select(Some(index));
+                self.show_block(index);
+            }
+            None => imp.split_view.set_show_sidebar(false),
         }
     }
 
@@ -357,10 +531,16 @@ impl DayView {
         self.insert_action_group("day", Some(&imp.actions));
     }
 
-    /// Lets the spin buttons of the work hours show and take times.
-    fn setup_work_hours(&self) {
+    /// Lets the spin buttons of work hours and block times show and take
+    /// times, and fills them when their popover opens.
+    fn setup_time_popovers(&self) {
         let imp = self.imp();
-        for spin in [&imp.work_start, &imp.work_end] {
+        for spin in [
+            &imp.work_start,
+            &imp.work_end,
+            &imp.block_start,
+            &imp.block_end,
+        ] {
             spin.connect_output(|spin| {
                 spin.set_text(&format_time(spin_time(spin)));
                 glib::Propagation::Stop
@@ -395,32 +575,66 @@ impl DayView {
                 set_spin_time(&imp.work_end, end);
             }
         ));
+        imp.block_time_popover.connect_show(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_| {
+                let imp = view.imp();
+                let id = imp.shown_block.borrow().clone();
+                let file = imp.file.borrow();
+                let day = &file.as_ref().expect("the popover belongs to a day").day;
+                let block = day
+                    .blocks
+                    .iter()
+                    .find(|block| Some(&block.id) == id.as_ref())
+                    .expect("the popover belongs to the block shown");
+                set_spin_time(&imp.block_start, block.start);
+                set_spin_time(&imp.block_end, block.end);
+            }
+        ));
     }
 
     /// Shows title, time, project and text of the block `index` in the panel.
     fn show_block(&self, index: usize) {
         let imp = self.imp();
+        let vault = self.vault();
         let file = imp.file.borrow();
         let block = &file
             .as_ref()
             .expect("blocks are only shown with their day")
             .day
             .blocks[index];
-        let project = self
-            .vault()
-            .project(&block.project)
-            .map_or_else(|| block.project.to_string(), |project| project.name.clone());
+        imp.shown_block.replace(Some(block.id.clone()));
+        let project = vault.project(&block.project);
+        let project_name =
+            project.map_or_else(|| block.project.to_string(), |project| project.name.clone());
         let title = if block.title.is_empty() {
-            &project
+            &project_name
         } else {
             &block.title
         };
         imp.block_title.set_label(title);
-        imp.block_details.set_label(&format!(
-            "{}–{} · {project}",
+        imp.block_time_button.set_label(&format!(
+            "{}–{}",
             format_time(block.start),
             format_time(block.end)
         ));
+        imp.block_project_label.set_label(&project.map_or_else(
+            || glib::markup_escape_text(&project_name).to_string(),
+            project_markup,
+        ));
+        let id = block.id.clone();
+        imp.block_project_button.set_popover(Some(&project_popover(
+            &vault,
+            glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |project| {
+                    let vault = view.vault();
+                    view.update(|day| day.set_block_project(&id, project, vault.projects()));
+                }
+            ),
+        )));
         imp.block_text.set_visible(!block.text.is_empty());
         imp.block_text.set_markdown(&block.text);
         imp.split_view.set_show_sidebar(true);

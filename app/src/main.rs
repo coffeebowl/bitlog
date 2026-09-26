@@ -45,6 +45,7 @@ fn main() -> glib::ExitCode {
     app.set_accels_for_action("win.previous", &["<Alt>Left"]);
     app.set_accels_for_action("win.next", &["<Alt>Right"]);
     app.set_accels_for_action("win.today", &["<Control>t"]);
+    app.set_accels_for_action("win.new-block", &["<Control>n"]);
 
     app.run()
 }

@@ -13,13 +13,14 @@ use crate::config;
 use crate::day_view::DayView;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 6] = [
+const VAULT_ACTIONS: [&str; 7] = [
     "win.previous",
     "win.next",
     "win.today",
     "win.show-today",
     "win.show-calendar",
     "win.show-day",
+    "win.new-block",
 ];
 
 mod imp {
@@ -88,6 +89,14 @@ mod imp {
             });
             klass.install_action("win.show-today", None, |window, _, _| {
                 window.show_day(Local::now().date_naive());
+            });
+            // Forwarded, so that the shortcut works wherever the focus is.
+            klass.install_action("win.new-block", None, |window, _, _| {
+                if !window.shows_calendar() {
+                    // Fails on days without a file, which have no blocks yet.
+                    let _ =
+                        WidgetExt::activate_action(&window.imp().day_view, "day.new-block", None);
+                }
             });
             klass.install_action("win.show-calendar", None, |window, _, _| {
                 window.show_calendar();

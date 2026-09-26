@@ -19,6 +19,8 @@ const LINE_X: f32 = 56.0;
 const BLOCK_X: f32 = 72.0;
 const KNOT_RADIUS: f32 = 5.0;
 const CURRENT_KNOT_RADIUS: f32 = 7.0;
+/// Height of the edges that change start or end of a block when dragged.
+const EDGE: f32 = 6.0;
 /// The accent colour of the brand, used sparingly.
 pub const SEA_GREEN: &str = "#3ba99c";
 
@@ -34,11 +36,30 @@ mod imp {
         pub is_today: Cell<bool>,
         /// Index of the selected block in `blocks`.
         pub selected: Cell<Option<usize>>,
-        /// The minute where a drag over free time began.
-        pub drag_anchor: Cell<Option<u32>>,
+        pub drag: Cell<Option<Drag>>,
         /// The span being dragged, or waiting for its block.
         pub pending: Cell<Option<(u32, u32)>>,
         pub popover: RefCell<Option<gtk::Popover>>,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    pub enum Drag {
+        /// Selecting free time from `anchor` on.
+        New { anchor: u32 },
+        /// Changing `part` of the block `index`, grabbed at `minute`.
+        Block {
+            index: usize,
+            part: Part,
+            minute: u32,
+        },
+    }
+
+    /// Where a block is grabbed.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum Part {
+        Start,
+        Body,
+        End,
     }
 
     #[derive(Debug)]
@@ -66,9 +87,14 @@ mod imp {
                         .param_types([u32::static_type()])
                         .build(),
                     // Emitted with the first and last minute of a span of
-                    // free time dragged out for a new block.
+                    // free time selected for a new block.
                     Signal::builder("span-selected")
                         .param_types([u32::static_type(), u32::static_type()])
+                        .build(),
+                    // Emitted with the index of a block dragged to a new
+                    // first and last minute.
+                    Signal::builder("block-moved")
+                        .param_types([u32::static_type(), u32::static_type(), u32::static_type()])
                         .build(),
                 ]
             })
@@ -85,14 +111,7 @@ mod imp {
                 #[weak]
                 timeline,
                 move |_, _, x, y| {
-                    let point = graphene::Point::new(x as f32, y as f32);
-                    let hit = timeline
-                        .imp()
-                        .blocks
-                        .borrow()
-                        .iter()
-                        .position(|entry| timeline.imp().area(entry).contains_point(&point));
-                    if let Some(index) = hit {
+                    if let Some((index, _)) = timeline.imp().hit(x as f32, y as f32) {
                         timeline.imp().blocks.borrow()[index].child.grab_focus();
                         timeline.activate(index);
                     }
@@ -101,26 +120,38 @@ mod imp {
             timeline.add_controller(click);
 
             // Dragging over free time, or just clicking it, selects a span
-            // of whole slots for a new block.
+            // of whole slots for a new block. Dragging a block moves it,
+            // dragging its edges changes its start or end. On touch
+            // screens dragging scrolls instead.
             let drag = gtk::GestureDrag::new();
             drag.connect_drag_begin(glib::clone!(
                 #[weak]
                 timeline,
-                move |drag, _, y| {
+                move |drag, x, y| {
                     let imp = timeline.imp();
+                    let is_touch = drag
+                        .device()
+                        .is_some_and(|device| device.source() == gdk::InputSource::Touchscreen);
                     let minute = imp.minute_at(y as f32);
-                    let is_free = minute < imp.range.get().1.min(24 * 60)
-                        && !imp
-                            .blocks
-                            .borrow()
-                            .iter()
-                            .any(|entry| (entry.span.0..entry.span.1).contains(&minute));
-                    if is_free && imp.popover.borrow().is_none() {
-                        imp.drag_anchor.set(Some(minute));
-                        imp.pending.set(Some(imp.free_span(minute, minute)));
-                        timeline.queue_draw();
+                    let grabbed = if is_touch || imp.popover.borrow().is_some() {
+                        None
+                    } else if let Some((index, part)) = imp.hit(x as f32, y as f32) {
+                        Some(Drag::Block {
+                            index,
+                            part,
+                            minute,
+                        })
                     } else {
-                        drag.set_state(gtk::EventSequenceState::Denied);
+                        imp.is_free(minute).then_some(Drag::New { anchor: minute })
+                    };
+                    match grabbed {
+                        Some(grabbed) => {
+                            imp.drag.set(Some(grabbed));
+                            imp.drag_to(minute);
+                        }
+                        None => {
+                            drag.set_state(gtk::EventSequenceState::Denied);
+                        }
                     }
                 }
             ));
@@ -128,15 +159,10 @@ mod imp {
                 #[weak]
                 timeline,
                 move |drag, _, dy| {
-                    let imp = timeline.imp();
-                    let (Some(anchor), Some((_, start_y))) =
-                        (imp.drag_anchor.get(), drag.start_point())
-                    else {
-                        return;
-                    };
-                    let minute = imp.minute_at((start_y + dy) as f32);
-                    imp.pending.set(Some(imp.free_span(anchor, minute)));
-                    timeline.queue_draw();
+                    if let Some((_, start_y)) = drag.start_point() {
+                        let imp = timeline.imp();
+                        imp.drag_to(imp.minute_at((start_y + dy) as f32));
+                    }
                 }
             ));
             drag.connect_drag_end(glib::clone!(
@@ -144,14 +170,54 @@ mod imp {
                 timeline,
                 move |_, _, _| {
                     let imp = timeline.imp();
-                    if imp.drag_anchor.take().is_none() {
+                    let Some(drag) = imp.drag.take() else {
                         return;
-                    }
+                    };
                     let (start, end) = imp.pending.get().expect("a drag always has a span");
-                    timeline.emit_by_name::<()>("span-selected", &[&start, &end]);
+                    match drag {
+                        // The span stays marked while its project is chosen.
+                        Drag::New { .. } => {
+                            timeline.emit_by_name::<()>("span-selected", &[&start, &end]);
+                        }
+                        Drag::Block { index, .. } => {
+                            imp.set_pending(None);
+                            if imp.blocks.borrow()[index].span != (start, end) {
+                                let index = u32::try_from(index).expect("a day has few blocks");
+                                timeline.emit_by_name::<()>("block-moved", &[&index, &start, &end]);
+                            }
+                        }
+                    }
                 }
             ));
             timeline.add_controller(drag);
+
+            let long_press = gtk::GestureLongPress::builder().touch_only(true).build();
+            long_press.connect_pressed(glib::clone!(
+                #[weak]
+                timeline,
+                move |_, _, y| {
+                    let minute = timeline.imp().minute_at(y as f32);
+                    if let Some((start, end)) = timeline.select_free_span(minute) {
+                        timeline.emit_by_name::<()>("span-selected", &[&start, &end]);
+                    }
+                }
+            ));
+            timeline.add_controller(long_press);
+
+            let motion = gtk::EventControllerMotion::new();
+            motion.connect_motion(glib::clone!(
+                #[weak]
+                timeline,
+                move |_, x, y| {
+                    let cursor = match timeline.imp().hit(x as f32, y as f32) {
+                        Some((_, Part::Body)) => Some("grab"),
+                        Some(_) => Some("ns-resize"),
+                        None => None,
+                    };
+                    timeline.set_cursor_from_name(cursor);
+                }
+            ));
+            timeline.add_controller(motion);
 
             let keys = gtk::EventControllerKey::new();
             keys.connect_key_pressed(glib::clone!(
@@ -250,15 +316,6 @@ mod imp {
             let line = graphene::Rect::new(LINE_X - 1.0, 0.0, 2.0, y_of(first, last) + PADDING);
             snapshot.append_color(&with_alpha(&foreground, 0.3), &line);
 
-            if let Some(span) = self.pending.get() {
-                let accent = adw::StyleManager::default().accent_color_rgba();
-                let rounded = gsk::RoundedRect::from_rect(self.span_area(span), 6.0);
-                snapshot.push_rounded_clip(&rounded);
-                snapshot.append_color(&with_alpha(&accent, 0.3), rounded.bounds());
-                snapshot.pop();
-                snapshot.append_border(&rounded, &[2.0; 4], &[accent; 4]);
-            }
-
             let now = self.is_today.get().then(|| minutes(Local::now().time()));
             let focus_visible = widget
                 .root()
@@ -299,6 +356,15 @@ mod imp {
                 };
                 append_knot(snapshot, y_of(first, start), radius, &knot_color);
             }
+
+            if let Some(span) = self.pending.get() {
+                let accent = adw::StyleManager::default().accent_color_rgba();
+                let rounded = gsk::RoundedRect::from_rect(self.span_area(span), 6.0);
+                snapshot.push_rounded_clip(&rounded);
+                snapshot.append_color(&with_alpha(&accent, 0.3), rounded.bounds());
+                snapshot.pop();
+                snapshot.append_border(&rounded, &[2.0; 4], &[accent; 4]);
+            }
         }
     }
 
@@ -326,11 +392,118 @@ mod imp {
             (first + offset).min(last)
         }
 
+        /// The block drawn at `x`, `y`, and where it is grabbed there.
+        pub fn hit(&self, x: f32, y: f32) -> Option<(usize, Part)> {
+            let point = graphene::Point::new(x, y);
+            let blocks = self.blocks.borrow();
+            let index = blocks
+                .iter()
+                .position(|entry| self.area(entry).contains_point(&point))?;
+            let area = self.area(&blocks[index]);
+            // Very short blocks can only be moved; their time changes in the panel.
+            let part = if area.height() < 3.0 * EDGE {
+                Part::Body
+            } else if y < area.y() + EDGE {
+                Part::Start
+            } else if y > area.y() + area.height() - EDGE {
+                Part::End
+            } else {
+                Part::Body
+            };
+            Some((index, part))
+        }
+
+        /// Whether a new block can start at `minute`.
+        pub fn is_free(&self, minute: u32) -> bool {
+            minute < 24 * 60
+                && !self
+                    .blocks
+                    .borrow()
+                    .iter()
+                    .any(|entry| (entry.span.0..entry.span.1).contains(&minute))
+        }
+
+        /// Marks `span`, growing the grid if it ends below it.
+        pub fn set_pending(&self, span: Option<(u32, u32)>) {
+            self.pending.set(span);
+            let (first, last) = self.range.get();
+            if let Some((_, end)) = span
+                && end > last
+            {
+                self.range.set((first, end.div_ceil(60) * 60));
+                self.obj().queue_resize();
+            }
+            self.obj().queue_draw();
+        }
+
+        /// Marks the span the drag going on gives with the pointer at `minute`.
+        pub fn drag_to(&self, minute: u32) {
+            let span = match self.drag.get() {
+                Some(Drag::New { anchor }) => self.free_span(anchor, minute),
+                Some(Drag::Block {
+                    index,
+                    part,
+                    minute: grabbed,
+                }) => self.changed_span(index, part, i64::from(minute) - i64::from(grabbed)),
+                None => return,
+            };
+            self.set_pending(Some(span));
+        }
+
+        /// The span of the block `index` with `part` moved by `delta`
+        /// minutes, rounded to whole slots, within the free time around it.
+        fn changed_span(&self, index: usize, part: Part, delta: i64) -> (u32, u32) {
+            let slot = i64::from(self.slot_minutes.get());
+            let delta = (delta + slot / 2).div_euclid(slot) * slot;
+            let (first, last) = self.range.get();
+            let blocks = self.blocks.borrow();
+            let (start, end) = blocks[index].span;
+            let others = || {
+                blocks
+                    .iter()
+                    .enumerate()
+                    .filter(move |(other, _)| *other != index)
+                    .map(|(_, entry)| entry.span)
+            };
+            let free_start = others()
+                .map(|(_, end)| end)
+                .filter(|&other_end| other_end <= start)
+                .max()
+                .unwrap_or(first)
+                .min(start);
+            let free_end = others()
+                .map(|(start, _)| start)
+                .filter(|&other_start| other_start >= end)
+                .min()
+                .unwrap_or(last)
+                .max(end);
+            let [start, end, free_start, free_end] =
+                [start, end, free_start, free_end].map(i64::from);
+            // A block starts on its day, so before midnight.
+            let latest_start = 24 * 60 - 1;
+            let shortest = slot.min(end - start);
+            let (start, end) = match part {
+                Part::Body => {
+                    let length = end - start;
+                    let start =
+                        (start + delta).clamp(free_start, (free_end - length).min(latest_start));
+                    (start, start + length)
+                }
+                Part::Start => (
+                    (start + delta).clamp(free_start, (end - shortest).min(latest_start)),
+                    end,
+                ),
+                Part::End => (start, (end + delta).clamp(start + shortest, free_end)),
+            };
+            let minute = |value: i64| u32::try_from(value).expect("spans stay within the grid");
+            (minute(start), minute(end))
+        }
+
         /// The whole slots from `anchor` to `minute`, at least one, cut to
         /// the free time around `anchor` and to the day.
         pub fn free_span(&self, anchor: u32, minute: u32) -> (u32, u32) {
             let slot = self.slot_minutes.get();
-            let (first, last) = self.range.get();
+            let (first, _) = self.range.get();
             let (low, high) = (anchor.min(minute), anchor.max(minute));
             let start = low / slot * slot;
             let end = (high.div_ceil(slot) * slot).max(start + slot);
@@ -346,8 +519,7 @@ mod imp {
                 .map(|entry| entry.span.0)
                 .filter(|&start| start > anchor)
                 .min()
-                .unwrap_or(last)
-                .min(last)
+                .unwrap_or(24 * 60)
                 .min(24 * 60);
             (start.max(free_start), end.min(free_end))
         }
@@ -406,6 +578,8 @@ impl Timeline {
         imp.slot_minutes.set(grid.slot_minutes);
         imp.is_today.set(is_today);
         imp.selected.set(None);
+        imp.drag.set(None);
+        imp.pending.set(None);
 
         for entry in imp.blocks.take() {
             entry.child.unparent();
@@ -450,6 +624,24 @@ impl Timeline {
         self.emit_by_name::<()>("block-activated", &[&index]);
     }
 
+    /// Marks one slot of free time from `minute` on for a new block, if it
+    /// is free, and returns it.
+    pub fn select_free_span(&self, minute: u32) -> Option<(u32, u32)> {
+        let imp = self.imp();
+        if !imp.is_free(minute) || imp.popover.borrow().is_some() {
+            return None;
+        }
+        let span = imp.free_span(minute, minute);
+        imp.set_pending(Some(span));
+        Some(span)
+    }
+
+    /// Where the span marked for a new block is drawn.
+    pub fn pending_area(&self) -> Option<graphene::Rect> {
+        let imp = self.imp();
+        imp.pending.get().map(|span| imp.span_area(span))
+    }
+
     /// Shows `popover` at the span selected last, which stays marked until
     /// the popover closes.
     pub fn show_popover(&self, popover: &gtk::Popover) {
@@ -487,6 +679,16 @@ impl Timeline {
             false,
             glib::closure_local!(move |timeline: &Self, start: u32, end: u32| {
                 callback(timeline, start, end);
+            }),
+        );
+    }
+
+    pub fn connect_block_moved(&self, callback: impl Fn(&Self, usize, u32, u32) + 'static) {
+        self.connect_closure(
+            "block-moved",
+            false,
+            glib::closure_local!(move |timeline: &Self, index: u32, start: u32, end: u32| {
+                callback(timeline, index as usize, start, end);
             }),
         );
     }

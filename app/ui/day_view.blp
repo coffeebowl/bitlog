@@ -40,6 +40,13 @@ template $KnotbookDayView: Adw.NavigationPage {
           }
         }
 
+        [start]
+        Button {
+          icon-name: "list-add-symbolic";
+          tooltip-text: _("New Block");
+          action-name: "day.new-block";
+        }
+
         [end]
         Button {
           label: _("_Today");
@@ -58,7 +65,7 @@ template $KnotbookDayView: Adw.NavigationPage {
           StackPage {
             name: "day";
 
-            child: ScrolledWindow {
+            child: ScrolledWindow day_scroll {
               hscrollbar-policy: never;
 
               child: Adw.Clamp {
@@ -340,6 +347,18 @@ template $KnotbookDayView: Adw.NavigationPage {
               }
 
               Button {
+                icon-name: "user-trash-symbolic";
+                tooltip-text: _("Delete Block");
+                valign: start;
+                action-name: "day.delete-block";
+
+                styles [
+                  "flat",
+                  "circular",
+                ]
+              }
+
+              Button {
                 icon-name: "window-close-symbolic";
                 tooltip-text: _("Close");
                 valign: start;
@@ -352,13 +371,113 @@ template $KnotbookDayView: Adw.NavigationPage {
               }
             }
 
-            Label block_details {
-              xalign: 0;
-              wrap: true;
+            Box {
+              spacing: 6;
 
-              styles [
-                "dim-label",
-              ]
+              MenuButton block_time_button {
+                tooltip-text: _("Change Time");
+                always-show-arrow: true;
+
+                styles [
+                  "flat",
+                ]
+
+                popover: Popover block_time_popover {
+                  default-widget: set_block_time_button;
+
+                  child: Box {
+                    orientation: vertical;
+                    spacing: 12;
+                    margin-top: 6;
+                    margin-bottom: 6;
+                    margin-start: 6;
+                    margin-end: 6;
+
+                    Grid {
+                      column-spacing: 12;
+                      row-spacing: 6;
+
+                      Label {
+                        label: _("_Start");
+                        use-underline: true;
+                        mnemonic-widget: block_start;
+                        xalign: 0;
+
+                        layout {
+                          column: 0;
+                          row: 0;
+                        }
+                      }
+
+                      SpinButton block_start {
+                        adjustment: Adjustment {
+                          upper: 1439;
+                          page-increment: 60;
+                        };
+
+                        wrap: true;
+                        activates-default: true;
+
+                        layout {
+                          column: 1;
+                          row: 0;
+                        }
+                      }
+
+                      Label {
+                        label: _("_End");
+                        use-underline: true;
+                        mnemonic-widget: block_end;
+                        xalign: 0;
+
+                        layout {
+                          column: 0;
+                          row: 1;
+                        }
+                      }
+
+                      SpinButton block_end {
+                        adjustment: Adjustment {
+                          upper: 1439;
+                          page-increment: 60;
+                        };
+
+                        wrap: true;
+                        activates-default: true;
+
+                        layout {
+                          column: 1;
+                          row: 1;
+                        }
+                      }
+                    }
+
+                    Button set_block_time_button {
+                      label: _("_Set");
+                      use-underline: true;
+                      action-name: "day.set-block-time";
+
+                      styles [
+                        "suggested-action",
+                      ]
+                    }
+                  };
+                };
+              }
+
+              MenuButton block_project_button {
+                tooltip-text: _("Change Project");
+                always-show-arrow: true;
+
+                styles [
+                  "flat",
+                ]
+
+                child: Label block_project_label {
+                  use-markup: true;
+                  ellipsize: end;
+                };
+              }
             }
 
             $KnotbookMarkdownView block_text {
