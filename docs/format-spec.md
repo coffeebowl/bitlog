@@ -54,6 +54,12 @@ my-vault/
     device.toml                      # per device, e.g. repository paths
 ```
 
+A new vault is created in a folder that is missing or holds only hidden
+entries, such as `.git` or a sync tool's marker. It gets `knotbook.toml`, the
+default projects, `templates/note.md` and `README.md`. `/.knotbook/` is added
+to `.gitignore` and `/.knotbook` to `.stignore`, extending files that already
+exist. The other files and folders are created when first needed.
+
 ## Vault configuration: `knotbook.toml`
 
 ```toml
