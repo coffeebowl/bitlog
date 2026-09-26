@@ -5,6 +5,7 @@
 //! deleted and rebuilt from them at any time.
 
 mod content;
+mod search;
 
 use std::collections::HashSet;
 use std::fs::{self, Metadata};
@@ -20,10 +21,13 @@ use thiserror::Error;
 
 use crate::content::{insert, remove, sync_projects};
 
+pub use search::{Found, SearchHit};
+
 /// The schema, one step per migration. Add steps, never change them.
 const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/01-content.sql")),
     M::up(include_str!("migrations/02-files.sql")),
+    M::up(include_str!("migrations/03-search.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
@@ -582,5 +586,90 @@ mod tests {
             .unwrap();
         assert_eq!(name, "Shop");
         assert_eq!(count(&index, "notes"), 3);
+    }
+
+    fn found(hits: &[SearchHit]) -> Vec<&Found> {
+        hits.iter().map(|hit| &hit.found).collect()
+    }
+
+    fn block(day: u32, id: &str) -> Found {
+        Found::Block {
+            date: date(day),
+            id: id.parse().unwrap(),
+        }
+    }
+
+    #[test]
+    fn search_finds_parts_of_words_everywhere() {
+        let mut index = in_memory();
+        index.rebuild(&sample()).unwrap();
+        let hits = index.search("deploy", 10).unwrap();
+        let note = |project: &str, name| {
+            Found::Note(NotePath::new(project.parse().unwrap(), name).unwrap())
+        };
+        assert_eq!(
+            found(&hits),
+            [
+                &block(23, "ff66"),
+                &block(23, "cc33"),
+                &note("infra", "deployment"),
+                &note("webshop", "checkout-flow"),
+            ]
+        );
+        assert_eq!(hits[0].snippet, "Release deployment");
+        assert_eq!(&hits[0].snippet[hits[0].matches[0].clone()], "deploy");
+        assert_eq!(hits[0].matches.len(), 1);
+        let hits = index.search("vacation", 10).unwrap();
+        assert_eq!(found(&hits), [&Found::DayNote(date(21))]);
+        let hits = index.search("tls", 10).unwrap();
+        assert_eq!(found(&hits), [&Found::Task("h4c8".parse().unwrap())]);
+    }
+
+    #[test]
+    fn search_needs_all_words_and_phrases() {
+        let mut index = in_memory();
+        index.rebuild(&sample()).unwrap();
+        assert_eq!(index.search("release deployment", 10).unwrap().len(), 4);
+        let hits = index.search("\"release deploy\"", 10).unwrap();
+        assert_eq!(found(&hits), [&block(23, "ff66"), &block(23, "cc33")]);
+        assert_eq!(index.search("deploy", 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn search_leaves_out_short_words_and_syntax() {
+        let mut index = in_memory();
+        index.rebuild(&sample()).unwrap();
+        assert!(index.search("to", 10).unwrap().is_empty());
+        assert_eq!(index.search("TLS to", 10).unwrap().len(), 1);
+        for query in ["", "\"", "NOT OR", "title:tls", "tls*", "(tls", "tls\"x"] {
+            index.search(query, 10).unwrap();
+        }
+    }
+
+    #[test]
+    fn search_follows_changes_and_ignores_accents() {
+        let (_dir, vault, mut index) = sample_copy();
+        append(&vault.day_path(date(23)), "Coffee at the Café.\n");
+        fs::remove_file(vault.day_path(date(21))).unwrap();
+        index.refresh(&vault).unwrap();
+        let hits = index.search("cafe", 10).unwrap();
+        assert_eq!(found(&hits), [&block(23, "ff66")]);
+        assert!(index.search("vacation", 10).unwrap().is_empty());
+        assert!(
+            index
+                .search("\"checkout validation\"", 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn search_covers_content_indexed_before() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut connection, 2).unwrap();
+        let mut index = Index { connection };
+        index.rebuild(&sample()).unwrap();
+        MIGRATIONS.to_latest(&mut index.connection).unwrap();
+        assert_eq!(index.search("deploy", 10).unwrap().len(), 4);
     }
 }
