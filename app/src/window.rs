@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -6,7 +7,7 @@ use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gio, glib};
-use knotbook_core::Vault;
+use knotbook_core::{ReadError, Vault, VaultChange, VaultWatcher, WatchError};
 
 use crate::calendar_view::CalendarView;
 use crate::config;
@@ -46,6 +47,9 @@ mod imp {
         /// in the split view at a time.
         pub day_view: DayView,
         pub calendar_view: CalendarView,
+        /// The folder of the open vault.
+        pub vault_path: RefCell<Option<PathBuf>>,
+        pub watcher: RefCell<Option<VaultWatcher>>,
     }
 
     impl Default for Window {
@@ -60,6 +64,8 @@ mod imp {
                 calendar_row: TemplateChild::default(),
                 day_view: glib::Object::new(),
                 calendar_view: glib::Object::new(),
+                vault_path: RefCell::default(),
+                watcher: RefCell::default(),
             }
         }
     }
@@ -198,16 +204,13 @@ impl Window {
     /// On failure the window keeps showing what it showed before.
     fn open_vault(&self, path: &Path) {
         let imp = self.imp();
-        let vault = match Vault::open(path) {
-            Ok(vault) => Rc::new(vault),
-            Err(err) => {
-                self.show_error(&err.to_string());
-                return;
-            }
-        };
-        imp.sidebar.set_title(&vault.config().name);
-        imp.calendar_view.set_vault(vault.clone());
-        imp.day_view.set_vault(vault);
+        if let Err(err) = self.load_vault(path) {
+            self.show_error(&err.to_string());
+            return;
+        }
+        let today = Local::now().date_naive();
+        imp.calendar_view.show(today);
+        imp.day_view.show_date(today);
         imp.split_view.set_content(Some(&imp.day_view));
         imp.sidebar_list.select_row(Some(&*imp.today_row));
         imp.stack.set_visible_child_name("vault");
@@ -217,6 +220,81 @@ impl Window {
         imp.settings
             .set_string("last-vault", &gio::File::for_path(path).uri())
             .expect("the last vault can be stored");
+    }
+
+    /// Reads the vault in `path` for both pages and watches it for changes
+    /// made elsewhere. On failure everything stays as it was.
+    fn load_vault(&self, path: &Path) -> Result<(), ReadError> {
+        let imp = self.imp();
+        let vault = Rc::new(Vault::open(path)?);
+        imp.sidebar.set_title(&vault.config().name);
+        imp.calendar_view.set_vault(vault.clone());
+        imp.day_view.set_vault(vault.clone());
+        imp.vault_path.replace(Some(path.to_owned()));
+        // The watcher tells its own writes apart through the vault it
+        // belongs to, so every vault gets a new one.
+        let window: glib::SendWeakRef<Self> = self.downgrade().into();
+        let watcher = vault.watch(move |changes| {
+            let window = window.clone();
+            glib::MainContext::default().invoke(move || {
+                if let Some(window) = window.upgrade() {
+                    window.vault_changed(changes);
+                }
+            });
+        });
+        match watcher {
+            Ok(watcher) => {
+                imp.watcher.replace(Some(watcher));
+            }
+            Err(err) => {
+                imp.watcher.replace(None);
+                self.show_watch_error(&err);
+            }
+        }
+        Ok(())
+    }
+
+    /// Shows what was changed elsewhere, by sync or the CLI.
+    fn vault_changed(&self, changes: Result<Vec<VaultChange>, WatchError>) {
+        let imp = self.imp();
+        let changes = match changes {
+            Ok(changes) => changes,
+            // Watching goes on, a later change may be seen again.
+            Err(err) => {
+                glib::g_warning!("knotbook", "{err}");
+                return;
+            }
+        };
+        let changes_vault =
+            |change: &VaultChange| matches!(change, VaultChange::Config | VaultChange::Project(_));
+        if changes.iter().any(changes_vault) {
+            self.reload_vault();
+            return;
+        }
+        if changes.contains(&VaultChange::Day(imp.day_view.date())) {
+            imp.day_view.reload();
+        }
+        if self.shows_calendar() {
+            imp.calendar_view.reload();
+        }
+    }
+
+    /// Reads settings and projects again, keeping the pages where they are.
+    fn reload_vault(&self) {
+        let imp = self.imp();
+        let path = imp
+            .vault_path
+            .borrow()
+            .clone()
+            .expect("changes are only watched in an open vault");
+        let date = imp.day_view.date();
+        match self.load_vault(&path) {
+            Ok(()) => {
+                imp.day_view.show_date(date);
+                imp.calendar_view.reload();
+            }
+            Err(err) => self.show_error(&err.to_string()),
+        }
     }
 
     fn shows_calendar(&self) -> bool {
@@ -252,6 +330,18 @@ impl Window {
         imp.split_view.set_content(Some(&imp.calendar_view));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.calendar_row));
+    }
+
+    fn show_watch_error(&self, err: &WatchError) {
+        let dialog = adw::AlertDialog::new(
+            Some(&gettext("Cannot Watch Vault")),
+            Some(&format!(
+                "{}\n\n{err}",
+                gettext("Changes made elsewhere only show up after going to another day.")
+            )),
+        );
+        dialog.add_response("close", &gettext("_Close"));
+        dialog.present(Some(self));
     }
 
     fn show_error(&self, message: &str) {

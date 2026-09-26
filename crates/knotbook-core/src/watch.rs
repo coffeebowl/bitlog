@@ -1,10 +1,10 @@
 //! Watching a vault for changes made elsewhere.
 
 use std::collections::{BTreeSet, HashMap};
-use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{fmt, fs};
 
 use chrono::{Datelike, NaiveDate};
 use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
@@ -36,6 +36,12 @@ pub struct WatchError {
 /// Watches a vault until it is dropped.
 pub struct VaultWatcher {
     _debouncer: Debouncer<RecommendedWatcher>,
+}
+
+impl fmt::Debug for VaultWatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VaultWatcher").finish_non_exhaustive()
+    }
 }
 
 /// The content this program last wrote to each file, by path relative to the

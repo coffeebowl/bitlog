@@ -189,7 +189,7 @@ glib::wrapper! {
 }
 
 impl DayView {
-    /// Shows today of `vault`.
+    /// Shows the days of `vault` from the next call of `show_date` on.
     pub fn set_vault(&self, vault: Rc<Vault>) {
         let imp = self.imp();
         if imp.vault.borrow().is_some() {
@@ -207,7 +207,6 @@ impl DayView {
             spin.adjustment().set_step_increment(slot);
         }
         imp.vault.replace(Some(vault));
-        self.show_date(Local::now().date_naive());
     }
 
     pub fn date(&self) -> NaiveDate {
@@ -331,19 +330,46 @@ impl DayView {
             .clone()
             .expect("only a day with a file can be changed");
         let saved = self.vault().update_day(&file, change)?;
-        if saved.day.blocks == file.day.blocks {
-            self.show_details(&saved.day);
-            imp.file.replace(Some(saved));
-            return Ok(());
+        self.show_file(saved);
+        Ok(())
+    }
+
+    /// Shows the day again as its file is now, after it was changed
+    /// elsewhere, keeping what is being typed.
+    pub fn reload(&self) {
+        let imp = self.imp();
+        if imp.text_save.borrow().is_some() {
+            // Saving reads the changed file and keeps both changes.
+            self.save_texts_now();
+            return;
         }
-        self.show_day(saved);
-        // The block in the panel may have changed or be gone.
+        let loaded = self.vault().load_day(self.date());
+        match loaded {
+            Ok(Some(file)) if imp.file.borrow().is_some() => self.show_file(file),
+            _ => self.show_date(self.date()),
+        }
+    }
+
+    /// Shows `file`, a new state of the day shown, with the same block in
+    /// the panel if it is still there.
+    fn show_file(&self, file: DayFile) {
+        let imp = self.imp();
+        let same_blocks = imp
+            .file
+            .borrow()
+            .as_ref()
+            .is_some_and(|shown| shown.day.blocks == file.day.blocks);
+        if same_blocks {
+            self.show_details(&file.day);
+            imp.file.replace(Some(file));
+            return;
+        }
+        self.show_day(file);
         let shown = imp.shown_block.borrow().clone();
         match shown {
             Some(id) if imp.split_view.shows_sidebar() => self.show_block_by_id(&id),
             _ => imp.split_view.set_show_sidebar(false),
         }
-        Ok(())
     }
 
     /// Saves the texts a second after the last change, or when they are left.

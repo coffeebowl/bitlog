@@ -83,10 +83,9 @@ glib::wrapper! {
 }
 
 impl CalendarView {
-    /// Shows the current month of `vault`.
+    /// Shows the days of `vault` from the next call of `show` or `reload` on.
     pub fn set_vault(&self, vault: Rc<Vault>) {
         self.imp().vault.replace(Some(vault));
-        self.show(Local::now().date_naive());
     }
 
     /// Shows the month or week `date` lies in.
