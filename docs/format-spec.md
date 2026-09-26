@@ -71,12 +71,12 @@ day_start = 07:00:00             # visible range
 day_end = 19:00:00
 
 [locations]
-homeoffice = "Home office"
+remote = "Remote"
 office = "Office"
-travel = "Travelling"
+hybrid = "Hybrid"                # partly remote, partly in the office
 
 [defaults]
-location = "homeoffice"
+location = "remote"
 note_template = "templates/note.md"
 ```
 
@@ -95,6 +95,9 @@ Only `format` is required. Missing fields take these defaults:
 | `defaults.location` | none | a key from `[locations]` |
 | `defaults.note_template` | none | path relative to the vault |
 
+A new vault is created with the locations `remote`, `office` and `hybrid`
+as in the example; `hybrid` is meant for days spent partly in each place.
+
 ## Day file: `YYYY-MM-DD.md`
 
 A day is **one Markdown file** with a YAML front matter. The front matter holds
@@ -107,7 +110,7 @@ blocks, and below them there is only text without headings.
 format: 1
 date: "2026-09-23"
 kind: "work"
-location: "homeoffice"
+location: "remote"
 tags: ["refactoring"]
 energy: 4
 work: { start: "08:30", end: "16:45" }
@@ -167,7 +170,7 @@ let token = refresh(&session).await?;
 | `energy` | 1–5 | no |
 | `work.start`, `work.end` | `"HH:MM"` | no |
 | `blocks[].id` | 4 characters `[a-z0-9]`, unique within the day | yes |
-| `blocks[].start`, `.end` | `"HH:MM"` | yes |
+| `blocks[].start`, `.end` | `"HH:MM"`, not equal | yes |
 | `blocks[].project` | project slug | yes |
 
 ### Date heading
@@ -206,9 +209,13 @@ outline of the document belongs to Knotbook:
 - Every block has a level 2 heading: `## Title {#id}`. The heading is the title
   of the block. Without a title it reads `## {#id}`.
 - **Only** a level 2 heading that ends in `{#id}` and whose ID is listed in the
-  front matter **counts as a block boundary.** All other headings belong to the
-  text of the preceding block (see block Markdown). Headings inside code blocks
-  are ignored.
+  front matter **counts as a block boundary.** It has to start at the beginning
+  of a line, outside code blocks, quotes and lists. All other headings belong
+  to the text of the preceding block (see block Markdown).
+- If a block has more than one heading, the first one counts. The others are
+  read as text, with a warning.
+- Blank lines around the day note and around a block text are layout, not
+  text; Knotbook writes exactly one blank line there.
 - The text below a block heading is the **block text**. It belongs to the user
   and is written back character for character.
 - Knotbook writes the sections in order of their start times.

@@ -13,10 +13,10 @@ day_start = 07:00:00
 day_end = 19:00:00
 
 [locations]
-homeoffice = "Home office"
+remote = "Remote"
 office = "Office"
-travel = "Travelling"
+hybrid = "Hybrid"
 
 [defaults]
-location = "homeoffice"
+location = "remote"
 note_template = "templates/note.md"

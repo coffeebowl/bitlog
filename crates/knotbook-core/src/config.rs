@@ -1,26 +1,16 @@
 //! The vault configuration, `knotbook.toml`.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{NaiveTime, Weekday};
 use serde::{Deserialize, Deserializer};
-use thiserror::Error;
 
 use crate::LocationKey;
+use crate::error::{ReadError, read_file};
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;
-
-#[derive(Debug, Error)]
-pub enum ConfigError {
-    #[error("cannot read {path}: {source}")]
-    Io { path: PathBuf, source: io::Error },
-    #[error("invalid {path}: {message}")]
-    Invalid { path: PathBuf, message: String },
-}
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct VaultConfig {
@@ -115,15 +105,8 @@ fn local_time<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveTime, D
 }
 
 impl VaultConfig {
-    pub fn load(path: &Path) -> Result<Self, ConfigError> {
-        let text = fs::read_to_string(path).map_err(|source| ConfigError::Io {
-            path: path.to_owned(),
-            source,
-        })?;
-        Self::parse(&text).map_err(|message| ConfigError::Invalid {
-            path: path.to_owned(),
-            message,
-        })
+    pub fn load(path: &Path) -> Result<Self, ReadError> {
+        read_file(path, Self::parse)
     }
 
     fn parse(text: &str) -> Result<Self, String> {
@@ -185,10 +168,7 @@ mod tests {
         assert_eq!(config.locations.len(), 3);
         let office: LocationKey = "office".parse().unwrap();
         assert_eq!(config.locations[&office], "Office");
-        assert_eq!(
-            config.defaults.location,
-            Some("homeoffice".parse().unwrap())
-        );
+        assert_eq!(config.defaults.location, Some("remote".parse().unwrap()));
         assert_eq!(
             config.defaults.note_template,
             Some(PathBuf::from("templates/note.md"))

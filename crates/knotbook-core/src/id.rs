@@ -46,6 +46,15 @@ fn is_short_id(value: &str) -> bool {
     value.len() == SHORT_ID_LEN && value.bytes().all(|b| SHORT_ID_ALPHABET.contains(&b))
 }
 
+/// Deserializes a string and validates it through `FromStr`.
+fn deserialize_parsed<'de, D: Deserializer<'de>, T: FromStr<Err = InvalidId>>(
+    deserializer: D,
+) -> Result<T, D::Error> {
+    String::deserialize(deserializer)?
+        .parse()
+        .map_err(serde::de::Error::custom)
+}
+
 fn random_short_id() -> String {
     (0..SHORT_ID_LEN)
         .map(|_| char::from(SHORT_ID_ALPHABET[fastrand::usize(..SHORT_ID_ALPHABET.len())]))
@@ -80,6 +89,12 @@ impl fmt::Display for ProjectSlug {
     }
 }
 
+impl<'de> Deserialize<'de> for ProjectSlug {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_parsed(deserializer)
+    }
+}
+
 /// A key of the `[locations]` table in `knotbook.toml`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LocationKey(String);
@@ -110,9 +125,7 @@ impl fmt::Display for LocationKey {
 
 impl<'de> Deserialize<'de> for LocationKey {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer)?
-            .parse()
-            .map_err(serde::de::Error::custom)
+        deserialize_parsed(deserializer)
     }
 }
 
@@ -151,6 +164,12 @@ impl FromStr for BlockId {
 impl fmt::Display for BlockId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for BlockId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_parsed(deserializer)
     }
 }
 
