@@ -1,0 +1,5 @@
+/* Markdown views blend into the page instead of looking like text fields. */
+.markdown-view,
+.markdown-view text {
+  background: none;
+}

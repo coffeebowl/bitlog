@@ -4,163 +4,240 @@ using Adw 1;
 template $KnotbookDayView: Adw.NavigationPage {
   title: _("Day");
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      title-widget: Adw.WindowTitle window_title {};
+  child: Adw.BreakpointBin {
+    width-request: 360;
+    height-request: 294;
 
-      [start]
-      Box {
-        styles [
-          "linked",
-        ]
+    Adw.Breakpoint {
+      condition ("max-width: 640sp")
 
-        Button {
-          icon-name: "go-previous-symbolic";
-          tooltip-text: _("Previous Day");
-          action-name: "win.previous-day";
-        }
-
-        Button {
-          icon-name: "go-next-symbolic";
-          tooltip-text: _("Next Day");
-          action-name: "win.next-day";
-        }
-      }
-
-      [end]
-      Button {
-        label: _("_Today");
-        use-underline: true;
-        action-name: "win.today";
+      setters {
+        split_view.collapsed: true;
       }
     }
 
-    content: Stack stack {
-      StackPage {
-        name: "day";
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+        title-widget: Adw.WindowTitle window_title {};
 
-        child: ScrolledWindow {
+        [start]
+        Box {
+          styles [
+            "linked",
+          ]
+
+          Button {
+            icon-name: "go-previous-symbolic";
+            tooltip-text: _("Previous Day");
+            action-name: "win.previous-day";
+          }
+
+          Button {
+            icon-name: "go-next-symbolic";
+            tooltip-text: _("Next Day");
+            action-name: "win.next-day";
+          }
+        }
+
+        [end]
+        Button {
+          label: _("_Today");
+          use-underline: true;
+          action-name: "win.today";
+        }
+      }
+
+      content: Adw.OverlaySplitView split_view {
+        sidebar-position: end;
+        show-sidebar: false;
+        min-sidebar-width: 260;
+        max-sidebar-width: 360;
+
+        content: Stack stack {
+          StackPage {
+            name: "day";
+
+            child: ScrolledWindow {
+              hscrollbar-policy: never;
+
+              child: Adw.Clamp {
+                margin-top: 24;
+                margin-bottom: 24;
+                margin-start: 12;
+                margin-end: 12;
+
+                child: Box {
+                  orientation: vertical;
+                  spacing: 24;
+
+                  Box {
+                    homogeneous: true;
+                    spacing: 12;
+
+                    Box {
+                      orientation: vertical;
+
+                      Label {
+                        label: _("Kind");
+                        xalign: 0;
+
+                        styles [
+                          "caption-heading",
+                          "dim-label",
+                        ]
+                      }
+
+                      Label kind_label {
+                        xalign: 0;
+                        ellipsize: end;
+
+                        styles [
+                          "title-4",
+                        ]
+                      }
+                    }
+
+                    Box {
+                      orientation: vertical;
+
+                      Label {
+                        label: _("Location");
+                        xalign: 0;
+
+                        styles [
+                          "caption-heading",
+                          "dim-label",
+                        ]
+                      }
+
+                      Label location_label {
+                        xalign: 0;
+                        ellipsize: end;
+
+                        styles [
+                          "title-4",
+                        ]
+                      }
+                    }
+
+                    Box {
+                      orientation: vertical;
+
+                      Label {
+                        label: _("Working Time");
+                        xalign: 0;
+
+                        styles [
+                          "caption-heading",
+                          "dim-label",
+                        ]
+                      }
+
+                      Label working_time_label {
+                        xalign: 0;
+                        ellipsize: end;
+
+                        styles [
+                          "title-4",
+                        ]
+                      }
+
+                      Label work_hours_label {
+                        xalign: 0;
+                        ellipsize: end;
+
+                        styles [
+                          "caption",
+                          "dim-label",
+                        ]
+                      }
+                    }
+                  }
+
+                  $KnotbookMarkdownView note_view {
+                    visible: false;
+                  }
+
+                  $KnotbookTimeline timeline {}
+                };
+              };
+            };
+          }
+
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "x-office-calendar-symbolic";
+              title: _("Nothing Logged");
+              description: _("There is no entry for this day");
+            };
+          }
+
+          StackPage {
+            name: "error";
+
+            child: Adw.StatusPage error_page {
+              icon-name: "dialog-warning-symbolic";
+              title: _("Cannot Read Day");
+            };
+          }
+        };
+
+        sidebar: ScrolledWindow {
           hscrollbar-policy: never;
 
-          child: Adw.Clamp {
-            margin-top: 24;
-            margin-bottom: 24;
+          child: Box {
+            orientation: vertical;
+            spacing: 6;
+            margin-top: 12;
+            margin-bottom: 12;
             margin-start: 12;
             margin-end: 12;
 
-            child: Box {
-              orientation: vertical;
-              spacing: 24;
+            Box {
+              spacing: 6;
 
-              Box {
-                homogeneous: true;
-                spacing: 12;
+              Label block_title {
+                xalign: 0;
+                hexpand: true;
+                wrap: true;
+                wrap-mode: word_char;
 
-                Box {
-                  orientation: vertical;
-
-                  Label {
-                    label: _("Kind");
-                    xalign: 0;
-
-                    styles [
-                      "caption-heading",
-                      "dim-label",
-                    ]
-                  }
-
-                  Label kind_label {
-                    xalign: 0;
-                    ellipsize: end;
-
-                    styles [
-                      "title-4",
-                    ]
-                  }
-                }
-
-                Box {
-                  orientation: vertical;
-
-                  Label {
-                    label: _("Location");
-                    xalign: 0;
-
-                    styles [
-                      "caption-heading",
-                      "dim-label",
-                    ]
-                  }
-
-                  Label location_label {
-                    xalign: 0;
-                    ellipsize: end;
-
-                    styles [
-                      "title-4",
-                    ]
-                  }
-                }
-
-                Box {
-                  orientation: vertical;
-
-                  Label {
-                    label: _("Working Time");
-                    xalign: 0;
-
-                    styles [
-                      "caption-heading",
-                      "dim-label",
-                    ]
-                  }
-
-                  Label working_time_label {
-                    xalign: 0;
-                    ellipsize: end;
-
-                    styles [
-                      "title-4",
-                    ]
-                  }
-
-                  Label work_hours_label {
-                    xalign: 0;
-                    ellipsize: end;
-
-                    styles [
-                      "caption",
-                      "dim-label",
-                    ]
-                  }
-                }
+                styles [
+                  "title-3",
+                ]
               }
 
-              $KnotbookTimeline timeline {}
-            };
+              Button {
+                icon-name: "window-close-symbolic";
+                tooltip-text: _("Close");
+                valign: start;
+                action-name: "day.close-block";
+
+                styles [
+                  "flat",
+                  "circular",
+                ]
+              }
+            }
+
+            Label block_details {
+              xalign: 0;
+              wrap: true;
+
+              styles [
+                "dim-label",
+              ]
+            }
+
+            $KnotbookMarkdownView block_text {
+              margin-top: 12;
+            }
           };
         };
-      }
-
-      StackPage {
-        name: "empty";
-
-        child: Adw.StatusPage {
-          icon-name: "x-office-calendar-symbolic";
-          title: _("Nothing Logged");
-          description: _("There is no entry for this day");
-        };
-      }
-
-      StackPage {
-        name: "error";
-
-        child: Adw.StatusPage error_page {
-          icon-name: "dialog-warning-symbolic";
-          title: _("Cannot Read Day");
-        };
-      }
+      };
     };
   };
 }

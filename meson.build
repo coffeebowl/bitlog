@@ -15,6 +15,7 @@ pkgdatadir = get_option('prefix') / get_option('datadir') / meson.project_name()
 
 dependency('gtk4', version: '>= 4.22')
 dependency('libadwaita-1', version: '>= 1.9')
+dependency('gtksourceview-5', version: '>= 5.20')
 
 cargo = find_program('cargo')
 blueprint_compiler = find_program('blueprint-compiler')

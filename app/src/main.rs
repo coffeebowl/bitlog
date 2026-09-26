@@ -1,5 +1,6 @@
 mod config;
 mod day_view;
+mod markdown_view;
 mod timeline;
 mod window;
 
@@ -23,6 +24,7 @@ fn main() -> glib::ExitCode {
     let app = adw::Application::builder()
         .application_id(config::app_id())
         .build();
+    app.connect_startup(|_| sourceview5::init());
     app.connect_activate(|app| Window::new(app).present());
 
     let quit = gio::ActionEntry::builder("quit")

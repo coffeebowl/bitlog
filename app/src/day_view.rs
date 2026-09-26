@@ -8,6 +8,7 @@ use gettextrs::gettext;
 use gtk::glib;
 use knotbook_core::{Day, Vault};
 
+use crate::markdown_view::MarkdownView;
 use crate::timeline::Timeline;
 
 mod imp {
@@ -18,6 +19,8 @@ mod imp {
     pub struct DayView {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub date: Cell<NaiveDate>,
+        /// The day shown, if it has a file.
+        pub day: RefCell<Option<Day>>,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
@@ -31,9 +34,19 @@ mod imp {
         #[template_child]
         pub work_hours_label: TemplateChild<gtk::Label>,
         #[template_child]
+        pub note_view: TemplateChild<MarkdownView>,
+        #[template_child]
         pub timeline: TemplateChild<Timeline>,
         #[template_child]
         pub error_page: TemplateChild<adw::StatusPage>,
+        #[template_child]
+        pub split_view: TemplateChild<adw::OverlaySplitView>,
+        #[template_child]
+        pub block_title: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub block_details: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub block_text: TemplateChild<MarkdownView>,
     }
 
     #[glib::object_subclass]
@@ -43,8 +56,12 @@ mod imp {
         type ParentType = adw::NavigationPage;
 
         fn class_init(klass: &mut Self::Class) {
+            MarkdownView::ensure_type();
             Timeline::ensure_type();
             klass.bind_template();
+            klass.install_action("day.close-block", None, |view, _, _| {
+                view.imp().split_view.set_show_sidebar(false);
+            });
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -52,7 +69,27 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for DayView {}
+    impl ObjectImpl for DayView {
+        fn constructed(&self) {
+            self.parent_constructed();
+            let view = self.obj();
+            self.timeline.connect_block_activated(glib::clone!(
+                #[weak]
+                view,
+                move |_, index| view.show_block(index)
+            ));
+            // In the narrow layout the panel also closes by tapping beside it.
+            self.split_view.connect_show_sidebar_notify(glib::clone!(
+                #[weak]
+                view,
+                move |split_view| {
+                    if !split_view.shows_sidebar() {
+                        view.imp().timeline.select(None);
+                    }
+                }
+            ));
+        }
+    }
     impl WidgetImpl for DayView {}
     impl NavigationPageImpl for DayView {}
 }
@@ -82,6 +119,7 @@ impl DayView {
         imp.window_title.set_title(&weekday);
         imp.window_title.set_subtitle(&full_date);
         self.set_title(&weekday);
+        imp.split_view.set_show_sidebar(false);
 
         let vault = imp.vault.borrow();
         let vault = vault
@@ -90,10 +128,15 @@ impl DayView {
         match vault.load_day(date) {
             Ok(Some((day, _))) => {
                 self.show_details(vault, &day);
+                imp.day.replace(Some(day));
                 imp.stack.set_visible_child_name("day");
             }
-            Ok(None) => imp.stack.set_visible_child_name("empty"),
+            Ok(None) => {
+                imp.day.replace(None);
+                imp.stack.set_visible_child_name("empty");
+            }
             Err(err) => {
+                imp.day.replace(None);
                 imp.error_page
                     .set_description(Some(&glib::markup_escape_text(&err.to_string())));
                 imp.stack.set_visible_child_name("error");
@@ -123,8 +166,40 @@ impl DayView {
         };
         imp.work_hours_label.set_visible(!hours.is_empty());
         imp.work_hours_label.set_label(&hours);
+        imp.note_view.set_visible(!day.note.is_empty());
+        imp.note_view.set_markdown(&day.note);
         let is_today = day.date == Local::now().date_naive();
         imp.timeline.set_day(vault, day, is_today);
+    }
+
+    /// Shows title, time, project and text of the block `index` in the panel.
+    fn show_block(&self, index: usize) {
+        let imp = self.imp();
+        let day = imp.day.borrow();
+        let block = &day
+            .as_ref()
+            .expect("blocks are only shown with their day")
+            .blocks[index];
+        let vault = imp.vault.borrow();
+        let project = vault
+            .as_ref()
+            .expect("a day is only shown once a vault is open")
+            .project(&block.project)
+            .map_or_else(|| block.project.to_string(), |project| project.name.clone());
+        let title = if block.title.is_empty() {
+            &project
+        } else {
+            &block.title
+        };
+        imp.block_title.set_label(title);
+        imp.block_details.set_label(&format!(
+            "{}–{} · {project}",
+            format_time(block.start),
+            format_time(block.end)
+        ));
+        imp.block_text.set_visible(!block.text.is_empty());
+        imp.block_text.set_markdown(&block.text);
+        imp.split_view.set_show_sidebar(true);
     }
 }
 
