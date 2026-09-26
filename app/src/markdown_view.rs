@@ -1,7 +1,9 @@
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
+use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use glib::subclass::Signal;
 use glib::translate::IntoGlib;
 use gtk::{gdk, glib, pango};
 use knotbook_core::{MarkdownMode, MarkdownStyle, escape_headings, markdown_styles};
@@ -24,6 +26,11 @@ mod imp {
         /// them as text, project notes format them.
         #[property(get, set)]
         pub full: Cell<bool>,
+        /// Shown dimmed while the text is empty.
+        #[property(get, set = Self::set_placeholder)]
+        pub placeholder: RefCell<String>,
+        /// Whether the text is being replaced, which is no edit.
+        pub loading: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -48,6 +55,12 @@ mod imp {
 
     #[glib::derived_properties]
     impl ObjectImpl for MarkdownView {
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            // Emitted after every change of the text by the user.
+            SIGNALS.get_or_init(|| vec![Signal::builder("edited").build()])
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             let view = self.obj();
@@ -68,7 +81,12 @@ mod imp {
             view.buffer().connect_changed(glib::clone!(
                 #[weak]
                 view,
-                move |_| view.restyle()
+                move |_| {
+                    view.restyle();
+                    if !view.imp().loading.get() {
+                        view.emit_by_name::<()>("edited", &[]);
+                    }
+                }
             ));
             view.connect_full_notify(|view| view.restyle());
 
@@ -98,9 +116,34 @@ mod imp {
             self.parent_map();
             self.update_markup_color();
         }
+
+        fn snapshot(&self, snapshot: &gtk::Snapshot) {
+            self.parent_snapshot(snapshot);
+            let view = self.obj();
+            let placeholder = self.placeholder.borrow();
+            if placeholder.is_empty() || view.buffer().char_count() > 0 {
+                return;
+            }
+            let layout = view.create_pango_layout(Some(&placeholder));
+            let start = view.iter_location(&view.buffer().start_iter());
+            let (x, y) =
+                view.buffer_to_window_coords(gtk::TextWindowType::Widget, start.x(), start.y());
+            let color = view.color();
+            snapshot.save();
+            snapshot.translate(&gtk::graphene::Point::new(x as f32, y as f32));
+            snapshot.append_layout(&layout, &color.with_alpha(color.alpha() * MARKUP_ALPHA));
+            snapshot.restore();
+        }
     }
 
     impl MarkdownView {
+        fn set_placeholder(&self, placeholder: String) {
+            self.obj()
+                .update_property(&[gtk::accessible::Property::Placeholder(&placeholder)]);
+            self.placeholder.replace(placeholder);
+            self.obj().queue_draw();
+        }
+
         /// Dims Markdown syntax relative to the text colour of the theme.
         fn update_markup_color(&self) {
             let view = self.obj();
@@ -121,7 +164,7 @@ mod imp {
 glib::wrapper! {
     /// Markdown with live formatting: the syntax stays visible, but dimmed.
     ///
-    /// Read-only unless made editable. When editable, Ctrl+B, Ctrl+I and
+    /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
     /// Ctrl+E make the selection bold, italic or code, or undo that.
     pub struct MarkdownView(ObjectSubclass<imp::MarkdownView>)
         @extends sourceview5::View, gtk::TextView, gtk::Widget,
@@ -133,9 +176,19 @@ impl MarkdownView {
     /// Shows `text`, which cannot be undone.
     pub fn set_markdown(&self, text: &str) {
         let buffer = self.buffer();
+        self.imp().loading.set(true);
         buffer.begin_irreversible_action();
         buffer.set_text(text);
         buffer.end_irreversible_action();
+        self.imp().loading.set(false);
+    }
+
+    pub fn connect_edited(&self, callback: impl Fn(&Self) + 'static) {
+        self.connect_closure(
+            "edited",
+            false,
+            glib::closure_local!(move |view: &Self| callback(view)),
+        );
     }
 
     /// The text as it is saved: in block Markdown, headings are escaped
@@ -147,6 +200,12 @@ impl MarkdownView {
         } else {
             escape_headings(&text)
         }
+    }
+
+    /// Whether the view shows `text` as saved, which may differ only by
+    /// headings not escaped yet.
+    pub fn shows(&self, text: &str) -> bool {
+        self.text() == text || self.markdown() == text
     }
 
     fn text(&self) -> String {

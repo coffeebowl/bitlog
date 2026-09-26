@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
+use std::time::Duration;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -7,7 +8,8 @@ use chrono::{Local, NaiveDate, NaiveTime, Timelike};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 use knotbook_core::{
-    BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, SaveError, Vault,
+    Block, BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, SaveError,
+    Vault,
 };
 
 use crate::format::{
@@ -29,6 +31,8 @@ mod imp {
         pub file: RefCell<Option<DayFile>>,
         /// The block shown in the panel, kept there when the day is saved.
         pub shown_block: RefCell<Option<BlockId>>,
+        /// The pending save of the texts being typed.
+        pub text_save: RefCell<Option<glib::SourceId>>,
         /// The stateful actions `day.kind` and `day.location`, whose state
         /// is the value of the day shown.
         pub actions: gio::SimpleActionGroup,
@@ -65,7 +69,7 @@ mod imp {
         #[template_child]
         pub split_view: TemplateChild<adw::OverlaySplitView>,
         #[template_child]
-        pub block_title: TemplateChild<gtk::Label>,
+        pub block_title: TemplateChild<gtk::Entry>,
         #[template_child]
         pub block_time_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
@@ -162,12 +166,15 @@ mod imp {
                 view,
                 move |split_view| {
                     if !split_view.shows_sidebar() {
+                        view.save_texts_now();
+                        view.imp().shown_block.replace(None);
                         view.imp().timeline.select(None);
                     }
                 }
             ));
             view.setup_detail_actions();
             view.setup_time_popovers();
+            view.setup_text_editing();
         }
     }
     impl WidgetImpl for DayView {}
@@ -185,6 +192,9 @@ impl DayView {
     /// Shows today of `vault`.
     pub fn set_vault(&self, vault: Rc<Vault>) {
         let imp = self.imp();
+        if imp.vault.borrow().is_some() {
+            self.save_texts_now();
+        }
         imp.location_button
             .set_menu_model(Some(&location_menu(&vault)));
         let slot = vault.config().grid.slot_minutes.into();
@@ -206,6 +216,7 @@ impl DayView {
 
     pub fn show_date(&self, date: NaiveDate) {
         let imp = self.imp();
+        self.save_texts_now();
         imp.date.set(date);
         let (weekday, full_date) = date_titles(date);
         imp.window_title.set_title(&weekday);
@@ -280,8 +291,10 @@ impl DayView {
         };
         imp.work_hours_label.set_label(&hours);
         self.action_set_enabled("day.remove-work-hours", day.work_start.is_some());
-        imp.note_view.set_visible(!day.note.is_empty());
-        imp.note_view.set_markdown(&day.note);
+        // Keeps what is being typed.
+        if !imp.note_view.shows(&day.note) {
+            imp.note_view.set_markdown(&day.note);
+        }
     }
 
     /// Creates the file of the day shown, which has none yet.
@@ -299,31 +312,155 @@ impl DayView {
     /// On failure the day is read again, so that the view shows what is in
     /// the file.
     fn update(&self, change: impl FnOnce(&mut Day) -> Result<(), EditError>) {
+        self.save_texts_now();
+        if let Err(err) = self.save(change) {
+            self.show_save_error(&err);
+            self.show_date(self.date());
+        }
+    }
+
+    /// Applies `change` to the day shown, saves it and shows the result.
+    fn save(
+        &self,
+        change: impl FnOnce(&mut Day) -> Result<(), EditError>,
+    ) -> Result<(), SaveError> {
         let imp = self.imp();
         let file = imp
             .file
             .borrow()
             .clone()
             .expect("only a day with a file can be changed");
-        match self.vault().update_day(&file, change) {
-            Ok(saved) if saved.day.blocks != file.day.blocks => {
-                self.show_day(saved);
-                // The block in the panel may have changed or be gone.
-                let shown = imp.shown_block.borrow().clone();
-                match shown {
-                    Some(id) if imp.split_view.shows_sidebar() => self.show_block_by_id(&id),
-                    _ => imp.split_view.set_show_sidebar(false),
+        let saved = self.vault().update_day(&file, change)?;
+        if saved.day.blocks == file.day.blocks {
+            self.show_details(&saved.day);
+            imp.file.replace(Some(saved));
+            return Ok(());
+        }
+        self.show_day(saved);
+        // The block in the panel may have changed or be gone.
+        let shown = imp.shown_block.borrow().clone();
+        match shown {
+            Some(id) if imp.split_view.shows_sidebar() => self.show_block_by_id(&id),
+            _ => imp.split_view.set_show_sidebar(false),
+        }
+        Ok(())
+    }
+
+    /// Saves the texts a second after the last change, or when they are left.
+    fn setup_text_editing(&self) {
+        let imp = self.imp();
+        for view in [&*imp.note_view, &*imp.block_text] {
+            view.connect_edited(glib::clone!(
+                #[weak(rename_to = day_view)]
+                self,
+                move |_| day_view.save_texts_later()
+            ));
+        }
+        imp.block_title.connect_changed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |entry| {
+                // Filling in the title of the block shown is no edit.
+                if view
+                    .shown_block()
+                    .is_some_and(|block| block.title != entry.text())
+                {
+                    view.save_texts_later();
                 }
             }
-            Ok(saved) => {
-                self.show_details(&saved.day);
-                imp.file.replace(Some(saved));
-            }
-            Err(err) => {
-                self.show_save_error(&err);
-                self.show_date(self.date());
-            }
+        ));
+        imp.block_title.connect_activate(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_| view.save_texts_now()
+        ));
+        let editors: [&gtk::Widget; 3] = [
+            imp.note_view.upcast_ref(),
+            imp.block_text.upcast_ref(),
+            imp.block_title.upcast_ref(),
+        ];
+        for editor in editors {
+            let focus = gtk::EventControllerFocus::new();
+            focus.connect_leave(glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |_| view.save_texts_now()
+            ));
+            editor.add_controller(focus);
         }
+    }
+
+    fn save_texts_later(&self) {
+        let imp = self.imp();
+        if let Some(source) = imp.text_save.take() {
+            source.remove();
+        }
+        let source = glib::timeout_add_local_once(
+            Duration::from_secs(1),
+            glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move || {
+                    view.imp().text_save.take();
+                    view.save_texts();
+                }
+            ),
+        );
+        imp.text_save.replace(Some(source));
+    }
+
+    /// Saves the texts being typed, if there are unsaved changes.
+    pub fn save_texts_now(&self) {
+        if let Some(source) = self.imp().text_save.take() {
+            source.remove();
+            self.save_texts();
+        }
+    }
+
+    /// Saves day note, title and text of the block shown as they are typed.
+    /// Texts that were not edited are left alone, with any headings written
+    /// outside the app.
+    ///
+    /// On failure the typed texts stay, so that nothing gets lost.
+    fn save_texts(&self) {
+        let imp = self.imp();
+        let Some(note) = imp.file.borrow().as_ref().map(|file| file.day.note.clone()) else {
+            return;
+        };
+        let edited =
+            |view: &MarkdownView, saved: &str| (!view.shows(saved)).then(|| view.markdown());
+        let note = edited(&imp.note_view, &note);
+        let block = self.shown_block().map(|block| {
+            let title = imp.block_title.text().to_string();
+            (block.id, title, edited(&imp.block_text, &block.text))
+        });
+        let result = self.save(|day| {
+            if let Some(note) = note {
+                day.note = note;
+            }
+            if let Some((id, title, text)) = block {
+                day.set_block_title(&id, &title)?;
+                if let Some(text) = text {
+                    day.set_block_text(&id, &text)?;
+                }
+            }
+            Ok(())
+        });
+        if let Err(err) = result {
+            self.show_save_error(&err);
+        }
+    }
+
+    /// The block shown in the panel, as saved.
+    fn shown_block(&self) -> Option<Block> {
+        let imp = self.imp();
+        let id = imp.shown_block.borrow();
+        let file = imp.file.borrow();
+        let blocks = &file.as_ref()?.day.blocks;
+        blocks
+            .iter()
+            .find(|block| Some(&block.id) == id.as_ref())
+            .cloned()
     }
 
     /// Adds a block of `project` from `start` to `end`, in minutes of the
@@ -471,10 +608,7 @@ impl DayView {
             .as_ref()
             .and_then(|file| file.day.blocks.iter().position(|block| block.id == *id));
         match index {
-            Some(index) => {
-                imp.timeline.select(Some(index));
-                self.show_block(index);
-            }
+            Some(index) => self.show_block(index),
             None => imp.split_view.set_show_sidebar(false),
         }
     }
@@ -597,6 +731,9 @@ impl DayView {
     /// Shows title, time, project and text of the block `index` in the panel.
     fn show_block(&self, index: usize) {
         let imp = self.imp();
+        // Saving texts does not reorder the blocks, so `index` stays valid.
+        self.save_texts_now();
+        imp.timeline.select(Some(index));
         let vault = self.vault();
         let file = imp.file.borrow();
         let block = &file
@@ -604,16 +741,16 @@ impl DayView {
             .expect("blocks are only shown with their day")
             .day
             .blocks[index];
+        let is_other = imp.shown_block.borrow().as_ref() != Some(&block.id);
         imp.shown_block.replace(Some(block.id.clone()));
         let project = vault.project(&block.project);
         let project_name =
             project.map_or_else(|| block.project.to_string(), |project| project.name.clone());
-        let title = if block.title.is_empty() {
-            &project_name
-        } else {
-            &block.title
-        };
-        imp.block_title.set_label(title);
+        // Keeps what is being typed into the same block, see `show_details`.
+        if is_other || imp.block_title.text() != block.title {
+            imp.block_title.set_text(&block.title);
+        }
+        imp.block_title.set_placeholder_text(Some(&project_name));
         imp.block_time_button.set_label(&format!(
             "{}–{}",
             format_time(block.start),
@@ -635,8 +772,9 @@ impl DayView {
                 }
             ),
         )));
-        imp.block_text.set_visible(!block.text.is_empty());
-        imp.block_text.set_markdown(&block.text);
+        if is_other || !imp.block_text.shows(&block.text) {
+            imp.block_text.set_markdown(&block.text);
+        }
         imp.split_view.set_show_sidebar(true);
     }
 }

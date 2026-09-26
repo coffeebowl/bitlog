@@ -32,7 +32,13 @@ fn main() -> glib::ExitCode {
     app.connect_activate(|app| Window::new(app).present());
 
     let quit = gio::ActionEntry::builder("quit")
-        .activate(|app: &adw::Application, _, _| app.quit())
+        .activate(|app: &adw::Application, _, _| {
+            // Closing the windows lets them save what is being typed; the
+            // app ends with the last one.
+            for window in app.windows() {
+                window.close();
+            }
+        })
         .build();
     let about = gio::ActionEntry::builder("about")
         .activate(|app: &adw::Application, _, _| show_about(app))

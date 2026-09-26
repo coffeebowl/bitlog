@@ -122,6 +122,10 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             self.split_view.set_content(Some(&self.day_view));
+            self.obj().connect_close_request(|window| {
+                window.imp().day_view.save_texts_now();
+                glib::Propagation::Proceed
+            });
             for action in VAULT_ACTIONS {
                 self.obj().action_set_enabled(action, false);
             }
@@ -243,6 +247,7 @@ impl Window {
 
     fn show_calendar(&self) {
         let imp = self.imp();
+        imp.day_view.save_texts_now();
         imp.calendar_view.reload();
         imp.split_view.set_content(Some(&imp.calendar_view));
         imp.split_view.set_show_content(true);

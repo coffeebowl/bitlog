@@ -280,7 +280,8 @@ template $KnotbookDayView: Adw.NavigationPage {
                   }
 
                   $KnotbookMarkdownView note_view {
-                    visible: false;
+                    editable: true;
+                    placeholder: _("Add a note");
                   }
 
                   $KnotbookTimeline timeline {}
@@ -335,13 +336,16 @@ template $KnotbookDayView: Adw.NavigationPage {
             Box {
               spacing: 6;
 
-              Label block_title {
-                xalign: 0;
+              Entry block_title {
                 hexpand: true;
-                wrap: true;
-                wrap-mode: word_char;
+                truncate-multiline: true;
+
+                accessibility {
+                  label: _("Title");
+                }
 
                 styles [
+                  "flat",
                   "title-3",
                 ]
               }
@@ -482,6 +486,8 @@ template $KnotbookDayView: Adw.NavigationPage {
 
             $KnotbookMarkdownView block_text {
               margin-top: 12;
+              editable: true;
+              placeholder: _("Add text");
             }
           };
         };
