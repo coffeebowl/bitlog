@@ -16,8 +16,8 @@ use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_time, kind_name,
 };
 use crate::markdown_view::MarkdownView;
-use crate::open_tasks::OpenTasks;
 use crate::project_picker::{project_markup, project_popover};
+use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
 
 mod imp {
@@ -64,11 +64,11 @@ mod imp {
         #[template_child]
         pub note_view: TemplateChild<MarkdownView>,
         #[template_child]
-        pub tasks: TemplateChild<OpenTasks>,
+        pub tasks: TemplateChild<TaskListView>,
         #[template_child]
         pub timeline: TemplateChild<Timeline>,
         #[template_child]
-        pub empty_tasks: TemplateChild<OpenTasks>,
+        pub empty_tasks: TemplateChild<TaskListView>,
         #[template_child]
         pub error_page: TemplateChild<adw::StatusPage>,
         #[template_child]
@@ -99,7 +99,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             MarkdownView::ensure_type();
-            OpenTasks::ensure_type();
+            TaskListView::ensure_type();
             Timeline::ensure_type();
             klass.bind_template();
             klass.install_action("day.close-block", None, |view, _, _| {

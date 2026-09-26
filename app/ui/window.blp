@@ -124,6 +124,23 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                       }
                     };
                   }
+
+                  ListBoxRow tasks_row {
+                    action-name: "win.show-tasks";
+
+                    child: Box {
+                      spacing: 12;
+
+                      Image {
+                        icon-name: "checkbox-checked-symbolic";
+                      }
+
+                      Label {
+                        label: _("Tasks");
+                        xalign: 0;
+                      }
+                    };
+                  }
                 };
               };
             };

@@ -1,0 +1,33 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookTasksPage: Adw.NavigationPage {
+  title: _("Tasks");
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      [end]
+      ToggleButton show_finished {
+        icon-name: "view-reveal-symbolic";
+        tooltip-text: _("Show Finished Tasks");
+      }
+    }
+
+    content: ScrolledWindow {
+      hscrollbar-policy: never;
+
+      child: Adw.Clamp {
+        margin-top: 24;
+        margin-bottom: 24;
+        margin-start: 12;
+        margin-end: 12;
+
+        child: $KnotbookTaskListView list {
+          full: true;
+          show-finished: bind show_finished.active;
+        };
+      };
+    };
+  };
+}

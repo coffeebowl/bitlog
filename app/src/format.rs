@@ -7,6 +7,14 @@ use gtk::glib;
 /// `date` formatted with the codes of g_date_time_format(), in the user's
 /// language.
 pub fn format_date(date: NaiveDate, format: &str) -> String {
+    glib_date(date)
+        .format(format)
+        .expect("the date format is valid")
+        .to_string()
+}
+
+/// The start of `date` in local time, as GTK takes dates.
+pub fn glib_date(date: NaiveDate) -> glib::DateTime {
     glib::DateTime::from_local(
         date.year(),
         date.month() as i32,
@@ -16,9 +24,23 @@ pub fn format_date(date: NaiveDate, format: &str) -> String {
         0.0,
     )
     .expect("every date chrono knows is valid in GLib")
-    .format(format)
-    .expect("the date format is valid")
-    .to_string()
+}
+
+/// The date of `date`, a date as GTK gives it.
+pub fn naive_date(date: &glib::DateTime) -> NaiveDate {
+    NaiveDate::from_ymd_opt(
+        date.year(),
+        date.month().unsigned_abs(),
+        date.day_of_month().unsigned_abs(),
+    )
+    .expect("GLib dates are valid")
+}
+
+/// A date without the year, as in "Sep 30".
+pub fn format_short_date(date: NaiveDate) -> String {
+    // Translators: A date without the year, as in "Sep 30". See the GLib
+    // documentation of g_date_time_format() for the codes.
+    format_date(date, &gettext("%b %-d"))
 }
 
 /// A date without the weekday, as in "September 22, 2026".

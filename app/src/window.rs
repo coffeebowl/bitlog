@@ -12,14 +12,16 @@ use knotbook_core::{ReadError, Vault, VaultChange, VaultWatcher, WatchError};
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
+use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 7] = [
+const VAULT_ACTIONS: [&str; 8] = [
     "win.previous",
     "win.next",
     "win.today",
     "win.show-today",
     "win.show-calendar",
+    "win.show-tasks",
     "win.show-day",
     "win.new-block",
 ];
@@ -43,10 +45,13 @@ mod imp {
         pub today_row: TemplateChild<gtk::ListBoxRow>,
         #[template_child]
         pub calendar_row: TemplateChild<gtk::ListBoxRow>,
+        #[template_child]
+        pub tasks_row: TemplateChild<gtk::ListBoxRow>,
         /// The pages of the content, owned here because only one of them is
         /// in the split view at a time.
         pub day_view: DayView,
         pub calendar_view: CalendarView,
+        pub tasks_page: TasksPage,
         /// The folder of the open vault.
         pub vault_path: RefCell<Option<PathBuf>>,
         pub watcher: RefCell<Option<VaultWatcher>>,
@@ -62,8 +67,10 @@ mod imp {
                 sidebar_list: TemplateChild::default(),
                 today_row: TemplateChild::default(),
                 calendar_row: TemplateChild::default(),
+                tasks_row: TemplateChild::default(),
                 day_view: glib::Object::new(),
                 calendar_view: glib::Object::new(),
+                tasks_page: glib::Object::new(),
                 vault_path: RefCell::default(),
                 watcher: RefCell::default(),
             }
@@ -84,7 +91,8 @@ mod imp {
             klass.install_action_async("win.new-vault", None, |window, _, _| async move {
                 window.create_vault().await;
             });
-            // Previous, next and today move by the unit of the page shown.
+            // Previous, next and today move by the unit of the page shown,
+            // and do nothing on the task page.
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
             klass.install_action("win.today", None, |window, _, _| {
@@ -92,7 +100,7 @@ mod imp {
                 let imp = window.imp();
                 if window.shows_calendar() {
                     imp.calendar_view.show(today);
-                } else {
+                } else if window.shows_day() {
                     imp.day_view.show_date(today);
                 }
             });
@@ -101,7 +109,7 @@ mod imp {
             });
             // Forwarded, so that the shortcut works wherever the focus is.
             klass.install_action("win.new-block", None, |window, _, _| {
-                if !window.shows_calendar() {
+                if window.shows_day() {
                     // Fails on days without a file, which have no blocks yet.
                     let _ =
                         WidgetExt::activate_action(&window.imp().day_view, "day.new-block", None);
@@ -109,6 +117,9 @@ mod imp {
             });
             klass.install_action("win.show-calendar", None, |window, _, _| {
                 window.show_calendar();
+            });
+            klass.install_action("win.show-tasks", None, |window, _, _| {
+                window.show_tasks();
             });
             klass.install_action(
                 "win.show-day",
@@ -272,6 +283,7 @@ impl Window {
         imp.sidebar.set_title(&vault.config().name);
         imp.calendar_view.set_vault(vault.clone());
         imp.day_view.set_vault(vault.clone());
+        imp.tasks_page.set_vault(vault.clone());
         imp.vault_path.replace(Some(path.to_owned()));
         // The watcher tells its own writes apart through the vault it
         // belongs to, so every vault gets a new one.
@@ -318,6 +330,9 @@ impl Window {
         }
         if changes.contains(&VaultChange::Tasks) {
             imp.day_view.show_tasks();
+            if self.shows_tasks() {
+                imp.tasks_page.reload();
+            }
         }
         if self.shows_calendar() {
             imp.calendar_view.reload();
@@ -337,9 +352,15 @@ impl Window {
             Ok(()) => {
                 imp.day_view.show_date(date);
                 imp.calendar_view.reload();
+                imp.tasks_page.reload();
             }
             Err(err) => self.show_error(&gettext("Cannot Open Vault"), &err.to_string()),
         }
+    }
+
+    fn shows_day(&self) -> bool {
+        let imp = self.imp();
+        imp.split_view.content().as_ref() == Some(imp.day_view.upcast_ref())
     }
 
     fn shows_calendar(&self) -> bool {
@@ -347,12 +368,17 @@ impl Window {
         imp.split_view.content().as_ref() == Some(imp.calendar_view.upcast_ref())
     }
 
+    fn shows_tasks(&self) -> bool {
+        let imp = self.imp();
+        imp.split_view.content().as_ref() == Some(imp.tasks_page.upcast_ref())
+    }
+
     /// Shows the day, week or month `steps` steps after the one shown now.
     fn step(&self, steps: i32) {
         let imp = self.imp();
         if self.shows_calendar() {
             imp.calendar_view.step(steps);
-        } else {
+        } else if self.shows_day() {
             let date = imp.day_view.date();
             let date = date.checked_add_signed(TimeDelta::days(steps.into()));
             imp.day_view
@@ -375,6 +401,15 @@ impl Window {
         imp.split_view.set_content(Some(&imp.calendar_view));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.calendar_row));
+    }
+
+    fn show_tasks(&self) {
+        let imp = self.imp();
+        imp.day_view.save_texts_now();
+        imp.tasks_page.reload();
+        imp.split_view.set_content(Some(&imp.tasks_page));
+        imp.split_view.set_show_content(true);
+        imp.sidebar_list.select_row(Some(&*imp.tasks_row));
     }
 
     fn show_watch_error(&self, err: &WatchError) {
