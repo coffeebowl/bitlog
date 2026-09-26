@@ -15,7 +15,13 @@ mod imp {
     #[template(resource = "/dev/knotbook/Knotbook/conflict_dialog.ui")]
     pub struct ConflictDialog {
         #[template_child]
+        pub header_bar: TemplateChild<adw::HeaderBar>,
+        #[template_child]
         pub message: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub mine_heading: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub theirs_heading: TemplateChild<gtk::Label>,
         #[template_child]
         pub mine: TemplateChild<MarkdownView>,
         #[template_child]
@@ -77,8 +83,9 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// Shows both versions of a note that was changed elsewhere while it
-    /// was being edited, to choose the one to keep.
+    /// Shows two versions of a text side by side, to choose the one to
+    /// keep: of a note that was changed elsewhere while it was being edited,
+    /// or of a file and its sync conflict copy.
     pub struct ConflictDialog(ObjectSubclass<imp::ConflictDialog>)
         @extends adw::Dialog, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -94,6 +101,22 @@ impl ConflictDialog {
         );
         imp.mine.set_markdown(mine);
         imp.theirs.set_markdown(theirs);
+        dialog
+    }
+
+    /// Compares `original`, a text of a file, with `copy`, the same text of
+    /// its sync conflict copy. It can be closed without choosing.
+    pub fn compare(message: &str, original: &str, copy: &str) -> Self {
+        let dialog = Self::new("", original, copy);
+        let imp = dialog.imp();
+        dialog.set_title(&gettext("Compare Versions"));
+        dialog.set_can_close(true);
+        imp.header_bar.set_show_end_title_buttons(true);
+        imp.message.set_label(message);
+        imp.mine_heading.set_label(&gettext("Original"));
+        imp.theirs_heading.set_label(&gettext("Copy"));
+        imp.keep_mine.set_label(&gettext("Keep _Original"));
+        imp.keep_theirs.set_label(&gettext("Keep _Copy"));
         dialog
     }
 

@@ -7,7 +7,7 @@ use chrono::NaiveDate;
 use serde::Deserialize;
 use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
-use crate::conflict::take;
+use crate::conflict::Merger;
 use crate::error::ReadError;
 use crate::file::{content_hash, parse_text};
 use crate::toml_values::{local_date, same_item, set, set_date};
@@ -220,14 +220,15 @@ impl TaskList {
     /// Takes from `other`, a conflict copy of this list, what does not
     /// contradict it: tasks by their ids, and each field that is the same
     /// on both sides or missing on one. Tasks with an id in `archived` that
-    /// only one side has were archived on the other and are left out.
-    /// Returns what contradicts, which stays as it is here.
+    /// only one side has were archived on the other and are left out. What
+    /// contradicts is noted in `merger` and taken from `other` only if
+    /// decided so.
     pub(crate) fn merge(
         &mut self,
         other: &TaskList,
         archived: &HashSet<TaskId>,
-    ) -> Vec<Contradiction> {
-        let mut contradictions = Vec::new();
+        merger: &mut Merger,
+    ) {
         let theirs_ids: HashSet<&TaskId> = other.tasks.iter().map(|task| &task.id).collect();
         self.tasks
             .retain(|task| theirs_ids.contains(&task.id) || !archived.contains(&task.id));
@@ -239,34 +240,35 @@ impl TaskList {
                 continue;
             };
             let id = ours.id.clone();
-            let mut field = |name: &str, agreed: bool| {
-                if !agreed {
-                    contradictions.push(Contradiction::TaskField(id.clone(), name.to_owned()));
-                }
+            let field = |name: &str| {
+                let (id, name) = (id.clone(), name.to_owned());
+                move || Contradiction::TaskField(id, name)
             };
-            field(
-                "title",
-                take(&mut ours.title, &theirs.title, &String::new()),
-            );
-            field("status", ours.status == theirs.status);
-            field("created", take(&mut ours.created, &theirs.created, &None));
-            field("due", take(&mut ours.due, &theirs.due, &None));
-            field("done", take(&mut ours.done, &theirs.done, &None));
+            let (title, status) = (field("title"), field("status"));
+            let (created, due, done) = (field("created"), field("due"), field("done"));
+            merger.value(&mut ours.title, &theirs.title, &String::new(), title);
+            if ours.status != theirs.status && merger.contradiction(status()) {
+                ours.status = theirs.status;
+            }
+            merger.value(&mut ours.created, &theirs.created, &None, created);
+            merger.value(&mut ours.due, &theirs.due, &None, due);
+            merger.value(&mut ours.done, &theirs.done, &None, done);
             for (key, item) in theirs.table.iter() {
                 if KNOWN_FIELDS.contains(&key) {
                     continue;
                 }
-                match ours.table.get(key) {
-                    None => {
-                        ours.table.insert(key, item.clone());
-                    }
-                    Some(value) => field(key, same_item(value, item)),
+                let agreed = ours
+                    .table
+                    .get(key)
+                    .is_none_or(|value| same_item(value, item));
+                if ours.table.get(key).is_none() || (!agreed && merger.contradiction(field(key)()))
+                {
+                    ours.table.insert(key, item.clone());
                 }
             }
         }
         // Stable, so that tasks added from the copy follow the others.
         self.tasks.sort_by_key(|task| !task.is_open());
-        contradictions
     }
 
     /// Reads the content `text` of the task file at `path`.

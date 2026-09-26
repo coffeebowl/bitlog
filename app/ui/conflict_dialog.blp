@@ -20,7 +20,7 @@ template $KnotbookConflictDialog: Adw.Dialog {
 
   child: Adw.ToolbarView {
     [top]
-    Adw.HeaderBar {
+    Adw.HeaderBar header_bar {
       show-start-title-buttons: false;
       show-end-title-buttons: false;
     }
@@ -46,7 +46,7 @@ template $KnotbookConflictDialog: Adw.Dialog {
           orientation: vertical;
           spacing: 6;
 
-          Label {
+          Label mine_heading {
             label: _("Your Version");
             xalign: 0;
 
@@ -86,7 +86,7 @@ template $KnotbookConflictDialog: Adw.Dialog {
           orientation: vertical;
           spacing: 6;
 
-          Label {
+          Label theirs_heading {
             label: _("Other Version");
             xalign: 0;
 

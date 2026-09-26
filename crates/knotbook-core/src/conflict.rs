@@ -2,7 +2,7 @@
 //!
 //! A copy has no common ancestor with its original, so merging cannot tell
 //! which side changed something. What both sides agree on or only one side
-//! has is taken; everything else is a [`Contradiction`] left to the user.
+//! has is taken; everything else is a [`Contradiction`] the user decides.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -31,13 +31,14 @@ pub enum Contradiction {
     /// The time, project or title of a block.
     Block(BlockId),
     BlockText(BlockId),
-    /// A block of the copy, the second, overlaps one of the original.
-    Overlap(BlockId, BlockId),
+    /// A block only the copy has overlaps blocks of the original. Taking
+    /// it removes them.
+    Overlap(BlockId),
     DayNote,
     /// A field of a task, by its name in the file.
     TaskField(TaskId, String),
-    /// Notes, projects and the vault configuration are never merged, only
-    /// kept as they are when both files are the same.
+    /// Notes, projects and the vault configuration are never merged: one
+    /// of the files is kept as a whole.
     Content,
 }
 
@@ -47,7 +48,7 @@ impl fmt::Display for Contradiction {
             Self::DayField(field) => write!(f, "the field {field} differs"),
             Self::Block(id) => write!(f, "block {id} differs"),
             Self::BlockText(id) => write!(f, "the text of block {id} differs"),
-            Self::Overlap(ours, theirs) => write!(f, "blocks {ours} and {theirs} overlap"),
+            Self::Overlap(id) => write!(f, "block {id} overlaps others"),
             Self::DayNote => write!(f, "the day note differs"),
             Self::TaskField(id, field) => write!(f, "the field {field} of task {id} differs"),
             Self::Content => write!(f, "the files differ"),
@@ -55,14 +56,69 @@ impl fmt::Display for Contradiction {
     }
 }
 
-/// What merging a copy into its original gives, if nothing contradicts.
+/// A conflict copy and its original, to compare them.
+#[derive(Debug, Clone)]
+pub enum ConflictVersions {
+    Days(Day, Day),
+    Tasks(TaskList, TaskList),
+    /// The files as they are, the original empty if it is missing.
+    Texts(String, String),
+}
+
+/// A copy and its original as read for merging.
+enum Versions {
+    /// There is no original, the text of the copy takes its place.
+    Missing(String),
+    Same(String),
+    Days(DayFile, Day),
+    Tasks(TaskList, TaskList),
+    Texts(String, String),
+}
+
+/// What merging a copy into its original gives.
 enum Merged {
-    /// Both files are the same, or the original holds everything already.
+    /// The original holds everything already.
     Kept,
     Day(DayFile, Day),
     Tasks(TaskList, TaskList),
-    /// There is no original: the copy takes its place.
-    Moved(String),
+    /// The text of the copy takes the original's place.
+    Replaced(String),
+}
+
+/// The contradictions found while merging, and those decided for the copy.
+pub(crate) struct Merger<'a> {
+    theirs: &'a [Contradiction],
+    pub found: Vec<Contradiction>,
+}
+
+impl<'a> Merger<'a> {
+    pub fn new(theirs: &'a [Contradiction]) -> Self {
+        Self {
+            theirs,
+            found: Vec::new(),
+        }
+    }
+
+    /// Notes `contradiction` and returns whether the copy wins it.
+    pub fn contradiction(&mut self, contradiction: Contradiction) -> bool {
+        let wins = self.theirs.contains(&contradiction);
+        self.found.push(contradiction);
+        wins
+    }
+
+    /// Merges a value as [`take`] does. If both sides contradict, notes
+    /// `contradiction` and takes `theirs` if the copy wins it.
+    pub fn value<T: PartialEq + Clone>(
+        &mut self,
+        ours: &mut T,
+        theirs: &T,
+        empty: &T,
+        contradiction: impl FnOnce() -> Contradiction,
+    ) {
+        if !take(ours, theirs, empty) && self.contradiction(contradiction()) {
+            *ours = theirs.clone();
+        }
+    }
 }
 
 impl Vault {
@@ -91,9 +147,7 @@ impl Vault {
             }
             if entry.file_type().map_err(io_error)?.is_dir() {
                 self.find_copies(&folder.join(&name), copies)?;
-            } else if let Some(original) = original_name(&name)
-                && let Some(of) = VaultChange::from_path(&folder.join(original))
-            {
+            } else if let Some(of) = copy_of(&folder.join(&name)) {
                 copies.push(ConflictCopy {
                     path: folder.join(&name),
                     of,
@@ -103,39 +157,53 @@ impl Vault {
         Ok(())
     }
 
-    /// What keeps `copy` from being merged into its original by
-    /// [`Vault::merge_conflict`]; nothing if it can be.
+    /// What `copy` and its original disagree on, to be decided before
+    /// [`Vault::merge_conflict`]; nothing if they can be merged as they are.
     pub fn contradictions(&self, copy: &ConflictCopy) -> Result<Vec<Contradiction>, ReadError> {
-        Ok(self.merged(copy)?.err().unwrap_or_default())
+        Ok(self.merged(copy, &[])?.1)
     }
 
-    /// Merges `copy` into its original and removes it, unless something
-    /// contradicts. Then nothing is changed and the contradictions are
-    /// returned.
-    pub fn merge_conflict(&self, copy: &ConflictCopy) -> Result<Vec<Contradiction>, SaveError> {
-        match self.merged(copy)? {
-            Err(contradictions) => return Ok(contradictions),
-            Ok(Merged::Kept) => {}
-            Ok(Merged::Day(file, day)) => {
+    /// `copy` and its original, to compare them.
+    pub fn conflict_versions(&self, copy: &ConflictCopy) -> Result<ConflictVersions, ReadError> {
+        Ok(match self.versions(copy)? {
+            Versions::Missing(text) => ConflictVersions::Texts(String::new(), text),
+            Versions::Same(text) => ConflictVersions::Texts(text.clone(), text),
+            Versions::Days(file, theirs) => ConflictVersions::Days(file.day, theirs),
+            Versions::Tasks(ours, theirs) => ConflictVersions::Tasks(ours, theirs),
+            Versions::Texts(ours, theirs) => ConflictVersions::Texts(ours, theirs),
+        })
+    }
+
+    /// Merges `copy` into its original and removes it. Of the
+    /// [contradictions](Vault::contradictions), the copy wins those in
+    /// `theirs` and the original all others.
+    pub fn merge_conflict(
+        &self,
+        copy: &ConflictCopy,
+        theirs: &[Contradiction],
+    ) -> Result<(), SaveError> {
+        match self.merged(copy, theirs)?.0 {
+            Merged::Kept => {}
+            Merged::Day(file, day) => {
                 self.update_day(&file, |current| {
                     *current = day;
                     Ok(())
                 })?;
             }
-            Ok(Merged::Tasks(tasks, merged)) => {
+            Merged::Tasks(tasks, merged) => {
                 self.update_tasks(&tasks, |current| {
                     *current = merged;
                     Ok(())
                 })?;
             }
-            Ok(Merged::Moved(text)) => self.write(&self.original_path(copy), &text)?,
+            Merged::Replaced(text) => self.write(&self.original_path(copy), &text)?,
         }
         // Only now, so that nothing of the copy is lost if saving fails.
         let path = self.root().join(&copy.path);
         self.record_write(&path, None);
         match fs::remove_file(&path) {
-            Ok(()) => Ok(Vec::new()),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(source) => Err(SaveError::Write { path, source }),
         }
     }
@@ -150,16 +218,16 @@ impl Vault {
         self.root().join(copy.path.with_file_name(name))
     }
 
-    fn merged(&self, copy: &ConflictCopy) -> Result<Result<Merged, Vec<Contradiction>>, ReadError> {
+    fn versions(&self, copy: &ConflictCopy) -> Result<Versions, ReadError> {
         let copy_path = self.root().join(&copy.path);
         let theirs = read_text(&copy_path)?;
         let Some(ours) = read_optional(&self.original_path(copy))? else {
-            return Ok(Ok(Merged::Moved(theirs)));
+            return Ok(Versions::Missing(theirs));
         };
         if ours == theirs {
-            return Ok(Ok(Merged::Kept));
+            return Ok(Versions::Same(theirs));
         }
-        match &copy.of {
+        Ok(match &copy.of {
             VaultChange::Day(date) => {
                 let file = self
                     .load_day(*date)?
@@ -172,29 +240,47 @@ impl Vault {
                         Err(format!("date {} does not match the original", day.date))
                     }
                 })?;
-                let mut day = file.day.clone();
-                let contradictions = day.merge(&other);
-                Ok(if contradictions.is_empty() {
-                    Ok(Merged::Day(file, day))
-                } else {
-                    Err(contradictions)
-                })
+                Versions::Days(file, other)
             }
             VaultChange::Tasks => {
-                let tasks = self.load_tasks()?;
-                let other = TaskList::read(&copy_path, &theirs)?;
-                let mut merged = tasks.clone();
-                let contradictions = merged.merge(&other, &self.archived_task_ids()?);
-                Ok(if contradictions.is_empty() {
-                    Ok(Merged::Tasks(tasks, merged))
-                } else {
-                    Err(contradictions)
-                })
+                Versions::Tasks(self.load_tasks()?, TaskList::read(&copy_path, &theirs)?)
             }
             VaultChange::Config | VaultChange::Project(_) | VaultChange::Note(_) => {
-                Ok(Err(vec![Contradiction::Content]))
+                Versions::Texts(ours, theirs)
             }
-        }
+        })
+    }
+
+    /// The merge of `copy` into its original, where the copy wins the
+    /// contradictions in `theirs`, and all contradictions found.
+    fn merged(
+        &self,
+        copy: &ConflictCopy,
+        theirs: &[Contradiction],
+    ) -> Result<(Merged, Vec<Contradiction>), ReadError> {
+        let mut merger = Merger::new(theirs);
+        let merged = match self.versions(copy)? {
+            Versions::Missing(text) => Merged::Replaced(text),
+            Versions::Same(_) => Merged::Kept,
+            Versions::Days(file, other) => {
+                let mut day = file.day.clone();
+                day.merge(&other, &mut merger);
+                Merged::Day(file, day)
+            }
+            Versions::Tasks(tasks, other) => {
+                let mut merged = tasks.clone();
+                merged.merge(&other, &self.archived_task_ids()?, &mut merger);
+                Merged::Tasks(tasks, merged)
+            }
+            Versions::Texts(_, text) => {
+                if merger.contradiction(Contradiction::Content) {
+                    Merged::Replaced(text)
+                } else {
+                    Merged::Kept
+                }
+            }
+        };
+        Ok((merged, merger.found))
     }
 
     /// The ids of all archived tasks.
@@ -232,6 +318,13 @@ pub(crate) fn original_name(name: &str) -> Option<String> {
     let (stem, rest) = name.split_once(" (conflicted copy")?;
     let (_, extension) = rest.split_once(')')?;
     Some(format!("{stem}{extension}"))
+}
+
+/// The file that the file at `relative`, a path inside the vault, is a
+/// conflict copy of, if it is one.
+pub(crate) fn copy_of(relative: &Path) -> Option<VaultChange> {
+    let original = original_name(relative.file_name()?.to_str()?)?;
+    VaultChange::from_path(&relative.with_file_name(original))
 }
 
 /// Makes `ours` the value both sides agree on, where `empty` on one side
@@ -350,7 +443,8 @@ mod tests {
         let text = fs::read_to_string(&copy).unwrap();
         fs::write(&copy, text.replace(" Edited on the laptop.", "")).unwrap();
         // The copy is in another form, but holds the same.
-        assert_eq!(vault.merge_conflict(&day_copy()).unwrap(), []);
+        assert_eq!(vault.contradictions(&day_copy()).unwrap(), []);
+        vault.merge_conflict(&day_copy(), &[]).unwrap();
         assert!(!copy.exists());
         let original = vault.day_path(date(2026, 9, 22));
         let before = fs::read_to_string(
@@ -377,7 +471,8 @@ mod tests {
                 "## Early fix {#zz11}\n\nRestarted the runner.\n\n## Code review",
             );
         fs::write(&copy, text).unwrap();
-        assert_eq!(vault.merge_conflict(&day_copy()).unwrap(), []);
+        assert_eq!(vault.contradictions(&day_copy()).unwrap(), []);
+        vault.merge_conflict(&day_copy(), &[]).unwrap();
         let day = vault.load_day(date(2026, 9, 22)).unwrap().unwrap().day;
         let block = &day.blocks[0];
         assert_eq!(block.id.as_str(), "zz11");
@@ -392,27 +487,38 @@ mod tests {
         let original = vault.day_path(date(2026, 9, 22));
         let text = fs::read_to_string(vault.root().join(COPY)).unwrap();
         fs::remove_file(&original).unwrap();
-        assert_eq!(vault.merge_conflict(&day_copy()).unwrap(), []);
+        assert_eq!(vault.contradictions(&day_copy()).unwrap(), []);
+        vault.merge_conflict(&day_copy(), &[]).unwrap();
         assert_eq!(fs::read_to_string(original).unwrap(), text);
     }
 
     #[test]
-    fn notes_are_merged_only_when_equal() {
+    fn notes_are_kept_or_replaced_as_a_whole() {
         let (_dir, vault) = sample_copy();
         let note = vault.root().join("projects/infra/notes/deployment.md");
+        let original = fs::read_to_string(&note).unwrap();
         let copy = ConflictCopy {
             path: "projects/infra/notes/deployment (conflicted copy).md".into(),
             of: VaultChange::Note("projects/infra/notes/deployment.md".parse().unwrap()),
         };
         fs::write(vault.root().join(&copy.path), "Other text\n").unwrap();
         assert_eq!(
-            vault.merge_conflict(&copy).unwrap(),
+            vault.contradictions(&copy).unwrap(),
             [Contradiction::Content]
         );
-        assert!(vault.root().join(&copy.path).exists());
-        fs::copy(&note, vault.root().join(&copy.path)).unwrap();
-        assert_eq!(vault.merge_conflict(&copy).unwrap(), []);
+        assert!(matches!(
+            vault.conflict_versions(&copy).unwrap(),
+            ConflictVersions::Texts(ours, theirs) if ours == original && theirs == "Other text\n"
+        ));
+        vault.merge_conflict(&copy, &[]).unwrap();
+        assert_eq!(fs::read_to_string(&note).unwrap(), original);
         assert!(!vault.root().join(&copy.path).exists());
+
+        fs::write(vault.root().join(&copy.path), "Other text\n").unwrap();
+        vault
+            .merge_conflict(&copy, &[Contradiction::Content])
+            .unwrap();
+        assert_eq!(fs::read_to_string(&note).unwrap(), "Other text\n");
     }
 
     #[test]
@@ -429,7 +535,8 @@ mod tests {
             of: VaultChange::Tasks,
         };
         fs::write(vault.root().join(&copy.path), theirs.to_toml()).unwrap();
-        assert_eq!(vault.merge_conflict(&copy).unwrap(), []);
+        assert_eq!(vault.contradictions(&copy).unwrap(), []);
+        vault.merge_conflict(&copy, &[]).unwrap();
         let merged = vault.load_tasks().unwrap();
         assert_eq!(
             merged.task(&"t9x2".parse().unwrap()).unwrap().due,
@@ -455,7 +562,8 @@ mod tests {
         // Archived here, while the copy still holds the finished tasks.
         vault.archive_tasks(&tasks, date(2026, 9, 23)).unwrap();
         let copy = task_copy(&vault, &tasks);
-        assert_eq!(vault.merge_conflict(&copy).unwrap(), []);
+        assert_eq!(vault.contradictions(&copy).unwrap(), []);
+        vault.merge_conflict(&copy, &[]).unwrap();
         assert_eq!(vault.load_tasks().unwrap().tasks().len(), 2);
     }
 
@@ -468,13 +576,18 @@ mod tests {
         theirs.set_title(&id, "Renew all certificates").unwrap();
         theirs.set_due(&id, Some(date(2026, 10, 9))).unwrap();
         let copy = task_copy(&vault, &theirs);
+        let title = Contradiction::TaskField(id.clone(), "title".to_owned());
         assert_eq!(
-            vault.merge_conflict(&copy).unwrap(),
+            vault.contradictions(&copy).unwrap(),
             [
-                Contradiction::TaskField(id.clone(), "title".to_owned()),
-                Contradiction::TaskField(id, "due".to_owned()),
+                title.clone(),
+                Contradiction::TaskField(id.clone(), "due".to_owned())
             ]
         );
-        assert!(vault.root().join(&copy.path).exists());
+        vault.merge_conflict(&copy, &[title]).unwrap();
+        let merged = vault.load_tasks().unwrap();
+        let task = merged.task(&id).unwrap();
+        assert_eq!(task.title, "Renew all certificates");
+        assert_eq!(task.due, Some(date(2026, 9, 30)));
     }
 }

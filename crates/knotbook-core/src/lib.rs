@@ -19,7 +19,7 @@ mod watch;
 
 pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
-pub use conflict::{ConflictCopy, Contradiction};
+pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};
 pub use day::{Block, Day, DayWarning, RemovedText};
 pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;

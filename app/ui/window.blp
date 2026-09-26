@@ -14,7 +14,7 @@ template $KnotbookWindow: Adw.ApplicationWindow {
     }
   }
 
-  content: Adw.ToastOverlay {
+  content: Adw.ToastOverlay toast_overlay {
     child: Stack stack {
       StackPage {
         name: "welcome";
@@ -88,6 +88,12 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                   primary: true;
                   tooltip-text: _("Main Menu");
                 }
+              }
+
+              [top]
+              Adw.Banner conflict_banner {
+                button-label: _("_Resolve");
+                action-name: "win.resolve-conflict";
               }
 
               content: ScrolledWindow {

@@ -11,6 +11,7 @@ use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use thiserror::Error;
 
+use crate::conflict::copy_of;
 use crate::file::content_hash;
 use crate::vault::day_file_date;
 use crate::{NotePath, ProjectSlug};
@@ -92,7 +93,9 @@ pub(crate) fn watch(
                 .iter()
                 .filter_map(|event| {
                     let relative = event.path.strip_prefix(&watched).ok()?;
-                    let change = VaultChange::from_path(relative)?;
+                    // A conflict copy changes what there is to merge into
+                    // its original.
+                    let change = VaultChange::from_path(relative).or_else(|| copy_of(relative))?;
                     let text = fs::read_to_string(&event.path).ok();
                     (!own_writes.is_own(relative, text.as_deref())).then_some(change)
                 })

@@ -468,7 +468,7 @@ fn doctor(vault: &Vault, fix: bool) -> Result<()> {
             if let Problem::Conflict { copy, .. } = problem
                 && problem.can_be_merged()
             {
-                vault.merge_conflict(copy)?;
+                vault.merge_conflict(copy, &[])?;
                 merged += 1;
             }
         }

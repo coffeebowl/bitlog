@@ -294,7 +294,8 @@ impl Vault {
 
     /// Watches the vault for files changed elsewhere, such as by a sync tool
     /// or the CLI, and passes them to `on_change` on a thread of its own.
-    /// Writes through this vault or its clones are left out. Watching stops
+    /// A conflict copy is passed as a change of its original. Writes
+    /// through this vault or its clones are left out. Watching stops
     /// when the returned watcher is dropped.
     pub fn watch(
         &self,
@@ -801,8 +802,10 @@ mod tests {
         )
         .unwrap();
         fs::remove_file(vault.root().join("knotbook.toml")).unwrap();
+        // A conflict copy counts as a change of its original.
+        fs::write(vault.root().join("tasks (conflicted copy).toml"), "").unwrap();
         let mut reported = BTreeSet::new();
-        while !reported.contains(&VaultChange::Config) || reported.len() < 2 {
+        while !reported.contains(&VaultChange::Config) || reported.len() < 3 {
             reported.extend(next());
         }
         // The first change may be reported once more, split over two batches.
@@ -811,6 +814,7 @@ mod tests {
             Vec::from_iter(reported),
             [
                 VaultChange::Config,
+                VaultChange::Tasks,
                 VaultChange::Project("infra".parse().unwrap())
             ]
         );

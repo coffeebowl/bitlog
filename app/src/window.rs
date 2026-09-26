@@ -5,10 +5,11 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
-use gettextrs::gettext;
+use gettextrs::{gettext, ngettext};
 use gtk::{gio, glib};
 use knotbook_core::{
-    BlockId, NotePath, ReadError, TaskId, Vault, VaultChange, VaultWatcher, WatchError,
+    BlockId, ConflictCopy, NotePath, ReadError, TaskId, Vault, VaultChange, VaultWatcher,
+    WatchError,
 };
 
 use crate::calendar_view::CalendarView;
@@ -18,10 +19,11 @@ use crate::projects_page::ProjectsPage;
 use crate::reports_page::ReportsPage;
 use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
+use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 15] = [
+const VAULT_ACTIONS: [&str; 16] = [
     "win.previous",
     "win.next",
     "win.today",
@@ -37,6 +39,7 @@ const VAULT_ACTIONS: [&str; 15] = [
     "win.new-block",
     "win.new-project",
     "win.search",
+    "win.resolve-conflict",
 ];
 
 mod imp {
@@ -47,11 +50,15 @@ mod imp {
     pub struct Window {
         pub settings: gio::Settings,
         #[template_child]
+        pub toast_overlay: TemplateChild<adw::ToastOverlay>,
+        #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub split_view: TemplateChild<adw::NavigationSplitView>,
         #[template_child]
         pub sidebar: TemplateChild<adw::NavigationPage>,
+        #[template_child]
+        pub conflict_banner: TemplateChild<adw::Banner>,
         #[template_child]
         pub sidebar_list: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -77,15 +84,19 @@ mod imp {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub watcher: RefCell<Option<VaultWatcher>>,
         pub index: RefCell<SearchIndex>,
+        /// The sync conflict copies that need a decision.
+        pub conflicts: RefCell<Vec<ConflictCopy>>,
     }
 
     impl Default for Window {
         fn default() -> Self {
             Self {
                 settings: gio::Settings::new(config::app_id()),
+                toast_overlay: TemplateChild::default(),
                 stack: TemplateChild::default(),
                 split_view: TemplateChild::default(),
                 sidebar: TemplateChild::default(),
+                conflict_banner: TemplateChild::default(),
                 sidebar_list: TemplateChild::default(),
                 today_row: TemplateChild::default(),
                 calendar_row: TemplateChild::default(),
@@ -101,6 +112,7 @@ mod imp {
                 vault: RefCell::default(),
                 watcher: RefCell::default(),
                 index: RefCell::default(),
+                conflicts: RefCell::default(),
             }
         }
     }
@@ -123,6 +135,9 @@ mod imp {
             // and do nothing on the task and project pages.
             klass.install_action("win.show-reports", None, |window, _, _| {
                 window.show_reports();
+            });
+            klass.install_action("win.resolve-conflict", None, |window, _, _| {
+                window.resolve_conflict();
             });
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
@@ -352,6 +367,7 @@ impl Window {
         for action in VAULT_ACTIONS {
             self.action_set_enabled(action, true);
         }
+        self.check_conflicts();
         imp.settings
             .set_string("last-vault", &gio::File::for_path(path).uri())
             .expect("the last vault can be stored");
@@ -420,15 +436,88 @@ impl Window {
 
     /// Shows what was changed elsewhere, by sync or the CLI.
     fn vault_changed(&self, changes: Result<Vec<VaultChange>, WatchError>) {
-        let imp = self.imp();
-        let changes = match changes {
-            Ok(changes) => changes,
+        match changes {
+            Ok(changes) => {
+                self.show_changes(&changes);
+                self.check_conflicts();
+            }
             // Watching goes on, a later change may be seen again.
+            Err(err) => glib::g_warning!("knotbook", "{err}"),
+        }
+    }
+
+    /// Merges the sync conflict copies without contradictions, and offers
+    /// to resolve the others.
+    fn check_conflicts(&self) {
+        let imp = self.imp();
+        let vault = imp
+            .vault
+            .borrow()
+            .clone()
+            .expect("conflicts are checked in an open vault");
+        let copies = match vault.conflict_copies() {
+            Ok(copies) => copies,
             Err(err) => {
                 glib::g_warning!("knotbook", "{err}");
-                return;
+                Vec::new()
             }
         };
+        let mut open = Vec::new();
+        for copy in copies {
+            let merged = vault.contradictions(&copy).map(|contradictions| {
+                contradictions.is_empty() && vault.merge_conflict(&copy, &[]).is_ok()
+            });
+            match merged {
+                Ok(true) => {
+                    let toast = gettext("Merged a sync conflict of {file}")
+                        .replace("{file}", &file_title(&vault, &copy.of));
+                    imp.toast_overlay.add_toast(adw::Toast::new(&toast));
+                    // Own writes are not watched.
+                    self.show_changes(std::slice::from_ref(&copy.of));
+                }
+                Ok(false) => open.push(copy),
+                // An unreadable copy cannot be resolved here; `knotbook
+                // doctor` names it.
+                Err(err) => glib::g_warning!("knotbook", "{err}"),
+            }
+        }
+        let count = u32::try_from(open.len()).unwrap_or(u32::MAX);
+        imp.conflict_banner.set_title(
+            &ngettext("{count} sync conflict", "{count} sync conflicts", count)
+                .replace("{count}", &count.to_string()),
+        );
+        imp.conflict_banner.set_revealed(!open.is_empty());
+        imp.conflicts.replace(open);
+    }
+
+    /// Lets the user resolve the first sync conflict that needs a decision.
+    fn resolve_conflict(&self) {
+        let imp = self.imp();
+        let Some(copy) = imp.conflicts.borrow().first().cloned() else {
+            return;
+        };
+        self.save_texts_now();
+        let vault = imp.vault.borrow().clone().expect("conflicts need a vault");
+        match SyncConflictDialog::new(vault, copy.clone()) {
+            Ok(dialog) => {
+                dialog.connect_merged(glib::clone!(
+                    #[weak(rename_to = window)]
+                    self,
+                    move || {
+                        // Own writes are not watched.
+                        window.show_changes(std::slice::from_ref(&copy.of));
+                        window.check_conflicts();
+                    }
+                ));
+                dialog.present(Some(self));
+            }
+            Err(err) => self.show_error(&gettext("Cannot Read Sync Conflict"), &err.to_string()),
+        }
+    }
+
+    /// Shows the files of `changes` as they are now.
+    fn show_changes(&self, changes: &[VaultChange]) {
+        let imp = self.imp();
         let changes_vault =
             |change: &VaultChange| matches!(change, VaultChange::Config | VaultChange::Project(_));
         if changes.iter().any(changes_vault) {
@@ -481,6 +570,7 @@ impl Window {
                 if self.shows_reports() {
                     imp.reports_page.reload();
                 }
+                self.check_conflicts();
             }
             Err(err) => self.show_error(&gettext("Cannot Open Vault"), &err.to_string()),
         }

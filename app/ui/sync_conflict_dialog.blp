@@ -1,0 +1,37 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookSyncConflictDialog: Adw.Dialog {
+  title: _("Sync Conflict");
+  content-width: 600;
+  content-height: 560;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: Adw.WindowTitle window_title {
+        title: _("Sync Conflict");
+      };
+    }
+
+    content: Adw.PreferencesPage {
+      Adw.PreferencesGroup rows {
+        description: _("This file was changed on two devices at once. Where the two versions differ, choose the one to keep; everything else is merged.");
+      }
+    };
+
+    [bottom]
+    Button merge_button {
+      label: _("_Merge");
+      use-underline: true;
+      halign: center;
+      margin-top: 12;
+      margin-bottom: 12;
+
+      styles [
+        "pill",
+        "suggested-action",
+      ]
+    }
+  };
+}

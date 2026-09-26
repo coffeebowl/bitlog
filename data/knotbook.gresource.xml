@@ -11,6 +11,7 @@
     <file preprocess="xml-stripblanks">reports_page.ui</file>
     <file preprocess="xml-stripblanks">search_dialog.ui</file>
     <file preprocess="xml-stripblanks">standup_dialog.ui</file>
+    <file preprocess="xml-stripblanks">sync_conflict_dialog.ui</file>
     <file preprocess="xml-stripblanks">task_list_view.ui</file>
     <file preprocess="xml-stripblanks">tasks_page.ui</file>
     <file preprocess="xml-stripblanks">window.ui</file>

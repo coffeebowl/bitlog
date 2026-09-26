@@ -497,6 +497,10 @@ Every write:
   as the reason they cannot be read. They are resolved with Git.
 - `knotbook doctor` lists the conflict copies with their contradictions, and
   `knotbook doctor --fix` merges those without any.
+- The app merges copies without contradictions as soon as it sees them. For
+  the others, the user chooses the original's or the copy's side of each
+  contradiction, a text after comparing both versions. Taking a block that
+  only the copy has removes the blocks of the original it overlaps.
 
 ## Versioning
 
