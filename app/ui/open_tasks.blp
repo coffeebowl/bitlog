@@ -1,0 +1,40 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookOpenTasks: Adw.Bin {
+  child: Box {
+    orientation: vertical;
+    spacing: 12;
+
+    Label {
+      label: _("Tasks");
+      xalign: 0;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Label error_label {
+      visible: false;
+      wrap: true;
+      xalign: 0;
+
+      styles [
+        "error",
+      ]
+    }
+
+    ListBox list {
+      selection-mode: none;
+
+      styles [
+        "boxed-list",
+      ]
+
+      Adw.EntryRow new_task {
+        title: _("New Task");
+      }
+    }
+  };
+}

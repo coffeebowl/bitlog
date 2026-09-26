@@ -14,121 +14,123 @@ template $KnotbookWindow: Adw.ApplicationWindow {
     }
   }
 
-  content: Stack stack {
-    StackPage {
-      name: "welcome";
+  content: Adw.ToastOverlay {
+    child: Stack stack {
+      StackPage {
+        name: "welcome";
 
-      child: Adw.ToolbarView {
-        [top]
-        Adw.HeaderBar {
-          [end]
-          MenuButton {
-            icon-name: "open-menu-symbolic";
-            menu-model: primary_menu;
-            primary: true;
-            tooltip-text: _("Main Menu");
+        child: Adw.ToolbarView {
+          [top]
+          Adw.HeaderBar {
+            [end]
+            MenuButton {
+              icon-name: "open-menu-symbolic";
+              menu-model: primary_menu;
+              primary: true;
+              tooltip-text: _("Main Menu");
+            }
           }
-        }
 
-        content: Adw.StatusPage {
-          icon-name: "dev.knotbook.Knotbook";
-          title: _("Welcome to Knotbook");
-          description: _("Open a vault, the folder that holds your log, or start a new one");
+          content: Adw.StatusPage {
+            icon-name: "dev.knotbook.Knotbook";
+            title: _("Welcome to Knotbook");
+            description: _("Open a vault, the folder that holds your log, or start a new one");
 
-          child: Box {
-            orientation: vertical;
-            spacing: 12;
-            halign: center;
+            child: Box {
+              orientation: vertical;
+              spacing: 12;
+              halign: center;
 
-            Button {
-              label: _("_Open Vault…");
-              use-underline: true;
-              action-name: "win.open-vault";
+              Button {
+                label: _("_Open Vault…");
+                use-underline: true;
+                action-name: "win.open-vault";
 
-              styles [
-                "pill",
-                "suggested-action",
-              ]
-            }
+                styles [
+                  "pill",
+                  "suggested-action",
+                ]
+              }
 
-            Button {
-              label: _("_New Vault…");
-              use-underline: true;
-              action-name: "win.new-vault";
+              Button {
+                label: _("_New Vault…");
+                use-underline: true;
+                action-name: "win.new-vault";
 
-              styles [
-                "pill",
-              ]
-            }
+                styles [
+                  "pill",
+                ]
+              }
+            };
           };
         };
-      };
-    }
+      }
 
-    StackPage {
-      name: "vault";
+      StackPage {
+        name: "vault";
 
-      child: Adw.NavigationSplitView split_view {
-        sidebar: Adw.NavigationPage sidebar {
-          child: Adw.ToolbarView {
-            [top]
-            Adw.HeaderBar {
-              [end]
-              MenuButton {
-                icon-name: "open-menu-symbolic";
-                menu-model: primary_menu;
-                primary: true;
-                tooltip-text: _("Main Menu");
+        child: Adw.NavigationSplitView split_view {
+          sidebar: Adw.NavigationPage sidebar {
+            child: Adw.ToolbarView {
+              [top]
+              Adw.HeaderBar {
+                [end]
+                MenuButton {
+                  icon-name: "open-menu-symbolic";
+                  menu-model: primary_menu;
+                  primary: true;
+                  tooltip-text: _("Main Menu");
+                }
               }
-            }
 
-            content: ScrolledWindow {
-              hscrollbar-policy: never;
+              content: ScrolledWindow {
+                hscrollbar-policy: never;
 
-              child: ListBox sidebar_list {
-                styles [
-                  "navigation-sidebar",
-                ]
+                child: ListBox sidebar_list {
+                  styles [
+                    "navigation-sidebar",
+                  ]
 
-                ListBoxRow today_row {
-                  action-name: "win.show-today";
+                  ListBoxRow today_row {
+                    action-name: "win.show-today";
 
-                  child: Box {
-                    spacing: 12;
+                    child: Box {
+                      spacing: 12;
 
-                    Image {
-                      icon-name: "weather-clear-symbolic";
-                    }
+                      Image {
+                        icon-name: "weather-clear-symbolic";
+                      }
 
-                    Label {
-                      label: _("Today");
-                      xalign: 0;
-                    }
-                  };
-                }
+                      Label {
+                        label: _("Today");
+                        xalign: 0;
+                      }
+                    };
+                  }
 
-                ListBoxRow calendar_row {
-                  action-name: "win.show-calendar";
+                  ListBoxRow calendar_row {
+                    action-name: "win.show-calendar";
 
-                  child: Box {
-                    spacing: 12;
+                    child: Box {
+                      spacing: 12;
 
-                    Image {
-                      icon-name: "x-office-calendar-symbolic";
-                    }
+                      Image {
+                        icon-name: "x-office-calendar-symbolic";
+                      }
 
-                    Label {
-                      label: _("Calendar");
-                      xalign: 0;
-                    }
-                  };
-                }
+                      Label {
+                        label: _("Calendar");
+                        xalign: 0;
+                      }
+                    };
+                  }
+                };
               };
             };
           };
         };
-      };
-    }
+      }
+    };
   };
 }
 

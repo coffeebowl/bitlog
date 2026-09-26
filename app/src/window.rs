@@ -316,6 +316,9 @@ impl Window {
         if changes.contains(&VaultChange::Day(imp.day_view.date())) {
             imp.day_view.reload();
         }
+        if changes.contains(&VaultChange::Tasks) {
+            imp.day_view.show_tasks();
+        }
         if self.shows_calendar() {
             imp.calendar_view.reload();
         }

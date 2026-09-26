@@ -2,10 +2,12 @@ app/src/calendar_view.rs
 app/src/day_view.rs
 app/src/format.rs
 app/src/main.rs
+app/src/open_tasks.rs
 app/src/week_chart.rs
 app/src/window.rs
 app/ui/calendar_view.blp
 app/ui/day_view.blp
+app/ui/open_tasks.blp
 app/ui/window.blp
 data/dev.knotbook.Knotbook.desktop.in
 data/dev.knotbook.Knotbook.gschema.xml

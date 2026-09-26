@@ -16,6 +16,7 @@ use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_time, kind_name,
 };
 use crate::markdown_view::MarkdownView;
+use crate::open_tasks::OpenTasks;
 use crate::project_picker::{project_markup, project_popover};
 use crate::timeline::Timeline;
 
@@ -63,7 +64,11 @@ mod imp {
         #[template_child]
         pub note_view: TemplateChild<MarkdownView>,
         #[template_child]
+        pub tasks: TemplateChild<OpenTasks>,
+        #[template_child]
         pub timeline: TemplateChild<Timeline>,
+        #[template_child]
+        pub empty_tasks: TemplateChild<OpenTasks>,
         #[template_child]
         pub error_page: TemplateChild<adw::StatusPage>,
         #[template_child]
@@ -94,6 +99,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             MarkdownView::ensure_type();
+            OpenTasks::ensure_type();
             Timeline::ensure_type();
             klass.bind_template();
             klass.install_action("day.close-block", None, |view, _, _| {
@@ -206,6 +212,8 @@ impl DayView {
         ] {
             spin.adjustment().set_step_increment(slot);
         }
+        imp.tasks.set_vault(vault.clone());
+        imp.empty_tasks.set_vault(vault.clone());
         imp.vault.replace(Some(vault));
     }
 
@@ -237,6 +245,22 @@ impl DayView {
                 imp.error_page
                     .set_description(Some(&glib::markup_escape_text(&err.to_string())));
                 imp.stack.set_visible_child_name("error");
+            }
+        }
+        self.show_tasks();
+    }
+
+    /// Shows the open tasks, read again, on today only: they belong to no
+    /// day, and past days stay a plain log.
+    pub fn show_tasks(&self) {
+        let imp = self.imp();
+        let is_today = self.date() == Local::now().date_naive();
+        // One list is on the page of a day, the other on that of a day
+        // without a file.
+        for tasks in [&*imp.tasks, &*imp.empty_tasks] {
+            tasks.set_visible(is_today);
+            if is_today {
+                tasks.reload();
             }
         }
     }
@@ -301,7 +325,11 @@ impl DayView {
         let vault = self.vault();
         let file = vault.new_day(self.date());
         match vault.update_day(&file, |_| Ok(())) {
-            Ok(saved) => self.show_day(saved),
+            Ok(saved) => {
+                self.show_day(saved);
+                // Tasks may have changed on the page without a file.
+                self.show_tasks();
+            }
             Err(err) => self.show_save_error(&err),
         }
     }

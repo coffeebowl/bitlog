@@ -284,6 +284,8 @@ template $KnotbookDayView: Adw.NavigationPage {
                     placeholder: _("Add a note");
                   }
 
+                  $KnotbookOpenTasks tasks {}
+
                   $KnotbookTimeline timeline {}
                 };
               };
@@ -298,16 +300,23 @@ template $KnotbookDayView: Adw.NavigationPage {
               title: _("Nothing Logged");
               description: _("There is no entry for this day");
 
-              child: Button {
-                label: _("_Log Day");
-                use-underline: true;
-                halign: center;
-                action-name: "day.create";
+              child: Box {
+                orientation: vertical;
+                spacing: 36;
 
-                styles [
-                  "pill",
-                  "suggested-action",
-                ]
+                Button {
+                  label: _("_Log Day");
+                  use-underline: true;
+                  halign: center;
+                  action-name: "day.create";
+
+                  styles [
+                    "pill",
+                    "suggested-action",
+                  ]
+                }
+
+                $KnotbookOpenTasks empty_tasks {}
               };
             };
           }
