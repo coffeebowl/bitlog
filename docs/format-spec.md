@@ -26,6 +26,17 @@ A block refers to its project by slug. A project note belongs to its project
 only through the folder it lives in. There are no references between blocks
 and project notes.
 
+## Identifiers
+
+| Identifier | Rule | Example |
+| --- | --- | --- |
+| Project slug, location key | lowercase letters `a-z`, digits and single hyphens, not at the start or end | `project-a` |
+| Block ID, task ID | exactly 4 characters from `a-z` and `0-9` | `k7f3` |
+| Note name | the file name without `.md`; not empty, no `/` or `\`, not starting with `.` | `Auth middleware` |
+
+A project note is identified by its path relative to the vault,
+`projects/<slug>/notes/<name>.md`, always written with `/`.
+
 ## Folder structure
 
 ```
