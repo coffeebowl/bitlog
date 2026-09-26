@@ -17,7 +17,8 @@ Knotbook is written in Rust (stable). The app needs GTK 4.22 and libadwaita
 1.9 or newer, and is built with Meson and Blueprint. On Fedora:
 
 ```sh
-sudo dnf install gtk4-devel libadwaita-devel meson ninja-build blueprint-compiler gettext
+sudo dnf install gtk4-devel libadwaita-devel meson ninja-build blueprint-compiler gettext \
+  desktop-file-utils appstream
 ```
 
 Cargo alone is enough for checks and tests:
@@ -32,8 +33,12 @@ into `_install/` and start it:
 ```sh
 meson setup _build --prefix="$PWD/_install"
 meson install -C _build
-_install/bin/knotbook-gtk
+XDG_DATA_DIRS="$PWD/_install/share:$XDG_DATA_DIRS" _install/bin/knotbook-gtk
 ```
+
+`XDG_DATA_DIRS` lets the app find its settings schema and icon in `_install/`.
+`meson test -C _build` validates the desktop file, metainfo and settings
+schema.
 
 ## License
 

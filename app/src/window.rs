@@ -1,5 +1,8 @@
+use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gio, glib};
+
+use crate::config;
 
 mod imp {
     use super::*;
@@ -39,6 +42,20 @@ glib::wrapper! {
 
 impl Window {
     pub fn new(app: &adw::Application) -> Self {
-        glib::Object::builder().property("application", app).build()
+        let window: Self = glib::Object::builder().property("application", app).build();
+        window.remember_size();
+        window
+    }
+
+    /// Keeps the window size in GSettings, so that the next window starts with it.
+    fn remember_size(&self) {
+        let settings = gio::Settings::new(config::app_id());
+        settings.bind("window-width", self, "default-width").build();
+        settings
+            .bind("window-height", self, "default-height")
+            .build();
+        settings
+            .bind("window-is-maximized", self, "maximized")
+            .build();
     }
 }

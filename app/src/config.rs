@@ -25,3 +25,7 @@ pub fn localedir() -> &'static str {
 pub fn resources_file() -> &'static str {
     option_env!("MESON_RESOURCES_FILE").expect(UNSET)
 }
+
+pub fn version() -> &'static str {
+    option_env!("MESON_VERSION").expect(UNSET)
+}

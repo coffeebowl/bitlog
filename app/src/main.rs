@@ -2,7 +2,7 @@ mod config;
 mod window;
 
 use adw::prelude::*;
-use gettextrs::{bind_textdomain_codeset, bindtextdomain, textdomain};
+use gettextrs::{bind_textdomain_codeset, bindtextdomain, gettext, textdomain};
 use gtk::{gio, glib};
 
 use crate::window::Window;
@@ -26,9 +26,29 @@ fn main() -> glib::ExitCode {
     let quit = gio::ActionEntry::builder("quit")
         .activate(|app: &adw::Application, _, _| app.quit())
         .build();
-    app.add_action_entries([quit]);
+    let about = gio::ActionEntry::builder("about")
+        .activate(|app: &adw::Application, _, _| show_about(app))
+        .build();
+    app.add_action_entries([quit, about]);
     app.set_accels_for_action("app.quit", &["<Control>q"]);
     app.set_accels_for_action("window.close", &["<Control>w"]);
 
     app.run()
+}
+
+fn show_about(app: &adw::Application) {
+    let developer = "coffeebowl";
+    let dialog = adw::AboutDialog::builder()
+        .application_name("Knotbook")
+        .application_icon(config::app_id())
+        .comments(gettext("Keep a daily log of your work"))
+        .version(config::version())
+        .developer_name(developer)
+        .developers([developer])
+        .copyright(format!("© 2026 {developer}"))
+        .license_type(gtk::License::Gpl30)
+        // Translators: Replace "translator-credits" with your name, one per line.
+        .translator_credits(gettext("translator-credits"))
+        .build();
+    dialog.present(app.active_window().as_ref());
 }
