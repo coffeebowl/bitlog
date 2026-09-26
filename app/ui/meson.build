@@ -2,7 +2,7 @@
 # whenever a blueprint changes.
 blueprints = custom_target(
   'blueprints',
-  input: files('window.blp'),
-  output: ['window.ui'],
+  input: files('day_view.blp', 'window.blp'),
+  output: ['day_view.ui', 'window.ui'],
   command: [blueprint_compiler, 'batch-compile', '@OUTDIR@', '@CURRENT_SOURCE_DIR@', '@INPUT@'],
 )

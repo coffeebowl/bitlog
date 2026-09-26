@@ -3,24 +3,34 @@ using Adw 1;
 
 template $KnotbookWindow: Adw.ApplicationWindow {
   title: _("Knotbook");
+  width-request: 360;
+  height-request: 294;
 
-  content: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      [end]
-      MenuButton {
-        icon-name: "open-menu-symbolic";
-        menu-model: primary_menu;
-        primary: true;
-        tooltip-text: _("Main Menu");
-      }
+  Adw.Breakpoint {
+    condition ("max-width: 600sp")
+
+    setters {
+      split_view.collapsed: true;
     }
+  }
 
-    content: Stack stack {
-      StackPage {
-        name: "welcome";
+  content: Stack stack {
+    StackPage {
+      name: "welcome";
 
-        child: Adw.StatusPage {
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          [end]
+          MenuButton {
+            icon-name: "open-menu-symbolic";
+            menu-model: primary_menu;
+            primary: true;
+            tooltip-text: _("Main Menu");
+          }
+        }
+
+        content: Adw.StatusPage {
           icon-name: "dev.knotbook.Knotbook";
           title: _("Welcome to Knotbook");
           description: _("Open a vault, the folder that holds your log");
@@ -37,16 +47,58 @@ template $KnotbookWindow: Adw.ApplicationWindow {
             ]
           };
         };
-      }
+      };
+    }
 
-      StackPage {
-        name: "vault";
+    StackPage {
+      name: "vault";
 
-        child: Adw.StatusPage vault_page {
-          icon-name: "folder-symbolic";
+      child: Adw.NavigationSplitView split_view {
+        sidebar: Adw.NavigationPage sidebar {
+          child: Adw.ToolbarView {
+            [top]
+            Adw.HeaderBar {
+              [end]
+              MenuButton {
+                icon-name: "open-menu-symbolic";
+                menu-model: primary_menu;
+                primary: true;
+                tooltip-text: _("Main Menu");
+              }
+            }
+
+            content: ScrolledWindow {
+              hscrollbar-policy: never;
+
+              child: ListBox {
+                styles [
+                  "navigation-sidebar",
+                ]
+
+                ListBoxRow {
+                  action-name: "win.today";
+
+                  child: Box {
+                    spacing: 12;
+
+                    Image {
+                      icon-name: "x-office-calendar-symbolic";
+                    }
+
+                    Label {
+                      label: _("Today");
+                      xalign: 0;
+                    }
+                  };
+                }
+              };
+            };
+          };
         };
-      }
-    };
+
+        content: $KnotbookDayView day_view {};
+      };
+    }
   };
 }
 

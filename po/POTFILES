@@ -1,5 +1,7 @@
+app/src/day_view.rs
 app/src/main.rs
 app/src/window.rs
+app/ui/day_view.blp
 app/ui/window.blp
 data/dev.knotbook.Knotbook.desktop.in
 data/dev.knotbook.Knotbook.gschema.xml
