@@ -75,83 +75,200 @@ template $KnotbookDayView: Adw.NavigationPage {
                     homogeneous: true;
                     spacing: 12;
 
-                    Box {
-                      orientation: vertical;
+                    MenuButton kind_button {
+                      tooltip-text: _("Change Kind of Day");
 
-                      Label {
-                        label: _("Kind");
-                        xalign: 0;
+                      styles [
+                        "flat",
+                      ]
 
-                        styles [
-                          "caption-heading",
-                          "dim-label",
-                        ]
-                      }
+                      child: Box {
+                        orientation: vertical;
 
-                      Label kind_label {
-                        xalign: 0;
-                        ellipsize: end;
+                        Label {
+                          label: _("Kind");
+                          xalign: 0;
 
-                        styles [
-                          "title-4",
-                        ]
-                      }
+                          styles [
+                            "caption-heading",
+                            "dim-label",
+                          ]
+                        }
+
+                        Label kind_label {
+                          xalign: 0;
+                          ellipsize: end;
+
+                          styles [
+                            "title-4",
+                          ]
+                        }
+                      };
                     }
 
-                    Box {
-                      orientation: vertical;
+                    MenuButton location_button {
+                      tooltip-text: _("Change Location");
 
-                      Label {
-                        label: _("Location");
-                        xalign: 0;
+                      styles [
+                        "flat",
+                      ]
 
-                        styles [
-                          "caption-heading",
-                          "dim-label",
-                        ]
-                      }
+                      child: Box {
+                        orientation: vertical;
 
-                      Label location_label {
-                        xalign: 0;
-                        ellipsize: end;
+                        Label {
+                          label: _("Location");
+                          xalign: 0;
 
-                        styles [
-                          "title-4",
-                        ]
-                      }
+                          styles [
+                            "caption-heading",
+                            "dim-label",
+                          ]
+                        }
+
+                        Label location_label {
+                          xalign: 0;
+                          ellipsize: end;
+
+                          styles [
+                            "title-4",
+                          ]
+                        }
+                      };
                     }
 
-                    Box {
-                      orientation: vertical;
+                    MenuButton {
+                      tooltip-text: _("Change Work Hours");
 
-                      Label {
-                        label: _("Working Time");
-                        xalign: 0;
+                      styles [
+                        "flat",
+                      ]
 
-                        styles [
-                          "caption-heading",
-                          "dim-label",
-                        ]
-                      }
+                      popover: Popover work_popover {
+                        default-widget: set_work_button;
 
-                      Label working_time_label {
-                        xalign: 0;
-                        ellipsize: end;
+                        child: Box {
+                          orientation: vertical;
+                          spacing: 12;
+                          margin-top: 6;
+                          margin-bottom: 6;
+                          margin-start: 6;
+                          margin-end: 6;
 
-                        styles [
-                          "title-4",
-                        ]
-                      }
+                          Grid {
+                            column-spacing: 12;
+                            row-spacing: 6;
 
-                      Label work_hours_label {
-                        xalign: 0;
-                        ellipsize: end;
+                            Label {
+                              label: _("_Start");
+                              use-underline: true;
+                              mnemonic-widget: work_start;
+                              xalign: 0;
 
-                        styles [
-                          "caption",
-                          "dim-label",
-                        ]
-                      }
+                              layout {
+                                column: 0;
+                                row: 0;
+                              }
+                            }
+
+                            SpinButton work_start {
+                              adjustment: Adjustment {
+                                upper: 1439;
+                                page-increment: 60;
+                              };
+
+                              wrap: true;
+                              activates-default: true;
+
+                              layout {
+                                column: 1;
+                                row: 0;
+                              }
+                            }
+
+                            Label {
+                              label: _("_End");
+                              use-underline: true;
+                              mnemonic-widget: work_end;
+                              xalign: 0;
+
+                              layout {
+                                column: 0;
+                                row: 1;
+                              }
+                            }
+
+                            SpinButton work_end {
+                              adjustment: Adjustment {
+                                upper: 1439;
+                                page-increment: 60;
+                              };
+
+                              wrap: true;
+                              activates-default: true;
+
+                              layout {
+                                column: 1;
+                                row: 1;
+                              }
+                            }
+                          }
+
+                          Box {
+                            homogeneous: true;
+                            spacing: 6;
+
+                            Button {
+                              label: _("_Remove");
+                              use-underline: true;
+                              action-name: "day.remove-work-hours";
+                            }
+
+                            Button set_work_button {
+                              label: _("_Set");
+                              use-underline: true;
+                              action-name: "day.set-work-hours";
+
+                              styles [
+                                "suggested-action",
+                              ]
+                            }
+                          }
+                        };
+                      };
+
+                      child: Box {
+                        orientation: vertical;
+
+                        Label {
+                          label: _("Working Time");
+                          xalign: 0;
+
+                          styles [
+                            "caption-heading",
+                            "dim-label",
+                          ]
+                        }
+
+                        Label working_time_label {
+                          xalign: 0;
+                          ellipsize: end;
+
+                          styles [
+                            "title-4",
+                          ]
+                        }
+
+                        Label work_hours_label {
+                          xalign: 0;
+                          ellipsize: end;
+
+                          styles [
+                            "caption",
+                            "dim-label",
+                          ]
+                        }
+                      };
                     }
                   }
 
@@ -172,6 +289,18 @@ template $KnotbookDayView: Adw.NavigationPage {
               icon-name: "x-office-calendar-symbolic";
               title: _("Nothing Logged");
               description: _("There is no entry for this day");
+
+              child: Button {
+                label: _("_Log Day");
+                use-underline: true;
+                halign: center;
+                action-name: "day.create";
+
+                styles [
+                  "pill",
+                  "suggested-action",
+                ]
+              };
             };
           }
 

@@ -47,8 +47,21 @@ pub fn format_duration(duration: TimeDelta) -> String {
         .replace("{minutes}", &minutes.to_string())
 }
 
-/// `kind` is free text in the file, usually lowercase like `work`.
-pub fn capitalize(text: &str) -> String {
+/// The kinds of day the app offers. Files may have others, which are kept.
+pub const DAY_KINDS: [&str; 4] = ["work", "vacation", "sick", "holiday"];
+
+/// The name of the kind of day `kind`, which is free text in the file.
+pub fn kind_name(kind: &str) -> String {
+    match kind {
+        "work" => gettext("Work"),
+        "vacation" => gettext("Vacation"),
+        "sick" => gettext("Sick"),
+        "holiday" => gettext("Holiday"),
+        _ => capitalize(kind),
+    }
+}
+
+fn capitalize(text: &str) -> String {
     let mut chars = text.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),

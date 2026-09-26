@@ -10,7 +10,7 @@ use gettextrs::gettext;
 use gtk::{gdk, glib, pango};
 use knotbook_core::{DayFile, ProjectSlug, Vault};
 
-use crate::format::{capitalize, format_date, format_duration, format_full_date};
+use crate::format::{format_date, format_duration, format_full_date, kind_name};
 use crate::week_chart::{ChartDay, WeekChart};
 
 /// For blocks of projects the vault does not know.
@@ -298,7 +298,7 @@ fn day_card(vault: &Vault, date: NaiveDate, in_month: bool, is_today: bool) -> g
                     &["caption", "dim-label"],
                 ));
             }
-            content.append(&label(&capitalize(&day.kind), &["caption", "dim-label"]));
+            content.append(&label(&kind_name(&day.kind), &["caption", "dim-label"]));
         }
         Ok(None) => {}
         Err(err) => {
