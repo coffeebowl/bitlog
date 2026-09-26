@@ -8,6 +8,7 @@ use chrono::{Datelike, Months, NaiveDate};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_optional, read_text, write_atomic};
+use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
 use crate::{Day, DayWarning, EditError, Project, ProjectSlug, VaultConfig};
 
 #[derive(Debug, Clone)]
@@ -16,6 +17,8 @@ pub struct Vault {
     config: VaultConfig,
     /// Sorted by slug.
     projects: Vec<Project>,
+    /// Shared by all clones, so that watching knows about every write.
+    own_writes: OwnWrites,
 }
 
 /// A day as read from its file, remembering the file's content to notice
@@ -56,6 +59,7 @@ impl Vault {
             root: root.to_owned(),
             config: VaultConfig::load(&root.join("knotbook.toml"))?,
             projects: Project::load_all(root)?,
+            own_writes: OwnWrites::default(),
         })
     }
 
@@ -120,7 +124,7 @@ impl Vault {
         let text = day.to_markdown();
         // Read back before writing, so that a bug never leaves an unreadable file.
         let saved = DayFile::read(&path, &text).expect("changes keep a day valid and on its date");
-        write_atomic(&path, &text)?;
+        self.write(&path, &text)?;
         Ok(saved)
     }
 
@@ -151,10 +155,30 @@ impl Vault {
             Project::read(&self.root, slug.clone(), &text).expect("changes keep a project valid");
         // An unchanged project comes out byte-identical.
         if current != text {
-            write_atomic(&path, &text)?;
+            self.write(&path, &text)?;
         }
         self.projects[index] = saved;
         Ok(&self.projects[index])
+    }
+
+    /// Watches the vault for files changed elsewhere, such as by a sync tool
+    /// or the CLI, and passes them to `on_change` on a thread of its own.
+    /// Writes through this vault or its clones are left out. Watching stops
+    /// when the returned watcher is dropped.
+    pub fn watch(
+        &self,
+        on_change: impl Fn(Result<Vec<VaultChange>, WatchError>) + Send + 'static,
+    ) -> Result<VaultWatcher, WatchError> {
+        watch(&self.root, self.own_writes.clone(), on_change)
+    }
+
+    fn write(&self, path: &Path, text: &str) -> Result<(), SaveError> {
+        let relative = path
+            .strip_prefix(&self.root)
+            .expect("vault files lie in the vault");
+        // Before writing, so that watching never sees the file first.
+        self.own_writes.record(relative, text);
+        write_atomic(path, text)
     }
 
     /// The dates from `first` to `last`, both included, that have a day file.
@@ -179,6 +203,16 @@ impl Vault {
     }
 }
 
+/// The date of a day file named `name`. Only names of the exact form
+/// `YYYY-MM-DD.md` count, which leaves out sync conflict copies.
+pub(crate) fn day_file_date(name: &str) -> Option<NaiveDate> {
+    let stem = name.strip_suffix(".md")?;
+    // Parsing alone would also accept `2026-9-1`.
+    NaiveDate::parse_from_str(stem, "%Y-%m-%d")
+        .ok()
+        .filter(|date| date.format("%Y-%m-%d").to_string() == stem)
+}
+
 /// The dates of the day files in the month folder `folder`.
 ///
 /// Only names of the exact form `YYYY-MM-DD.md` of that month count, which
@@ -196,19 +230,7 @@ fn day_files(folder: &Path) -> Result<Vec<NaiveDate>, ReadError> {
     let mut dates = Vec::new();
     for entry in entries {
         let entry = entry.map_err(io_error)?;
-        let Some(stem) = entry
-            .file_name()
-            .to_str()
-            .and_then(|name| name.strip_suffix(".md"))
-            .map(str::to_owned)
-        else {
-            continue;
-        };
-        // Parsing alone would also accept `2026-9-1`.
-        let Some(date) = NaiveDate::parse_from_str(&stem, "%Y-%m-%d")
-            .ok()
-            .filter(|date| date.format("%Y-%m-%d").to_string() == stem)
-        else {
+        let Some(date) = entry.file_name().to_str().and_then(day_file_date) else {
             continue;
         };
         if folder.ends_with(format!("{:04}/{:02}", date.year(), date.month())) {
@@ -220,6 +242,8 @@ fn day_files(folder: &Path) -> Result<Vec<NaiveDate>, ReadError> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use chrono::TimeDelta;
 
     use super::*;
@@ -460,5 +484,53 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         assert_eq!(written, external.replace("\"Infrastructure\"", "\"Infra\""));
         assert_eq!(vault.project(&slug).unwrap().name, "Infra");
+    }
+
+    #[test]
+    fn watch_reports_only_changes_made_elsewhere() {
+        let (_dir, vault) = sample_copy();
+        let (sender, changes) = std::sync::mpsc::channel();
+        let _watcher = vault
+            .watch(move |result| sender.send(result.unwrap()).unwrap())
+            .unwrap();
+        let next = || {
+            changes
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap()
+        };
+
+        let path = vault.day_path(date(2026, 9, 22));
+        fs::write(&path, fs::read_to_string(&path).unwrap() + "\nMore.\n").unwrap();
+        assert_eq!(next(), [VaultChange::Day(date(2026, 9, 22))]);
+
+        // Own writes, a new month folder included, are left out; only the
+        // changes made afterwards are reported.
+        let file = DayFile::new(date(2026, 10, 1));
+        vault
+            .update_day(&file, |day| {
+                day.note = "Mine.".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let project = Project::path(vault.root(), &"infra".parse().unwrap());
+        fs::write(
+            &project,
+            fs::read_to_string(&project).unwrap() + "# Theirs.\n",
+        )
+        .unwrap();
+        fs::remove_file(vault.root().join("knotbook.toml")).unwrap();
+        let mut reported = BTreeSet::new();
+        while !reported.contains(&VaultChange::Config) || reported.len() < 2 {
+            reported.extend(next());
+        }
+        // The first change may be reported once more, split over two batches.
+        reported.remove(&VaultChange::Day(date(2026, 9, 22)));
+        assert_eq!(
+            Vec::from_iter(reported),
+            [
+                VaultChange::Config,
+                VaultChange::Project("infra".parse().unwrap())
+            ]
+        );
     }
 }
