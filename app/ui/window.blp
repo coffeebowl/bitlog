@@ -33,18 +33,33 @@ template $KnotbookWindow: Adw.ApplicationWindow {
         content: Adw.StatusPage {
           icon-name: "dev.knotbook.Knotbook";
           title: _("Welcome to Knotbook");
-          description: _("Open a vault, the folder that holds your log");
+          description: _("Open a vault, the folder that holds your log, or start a new one");
 
-          child: Button {
-            label: _("_Open Vault…");
-            use-underline: true;
-            action-name: "win.open-vault";
+          child: Box {
+            orientation: vertical;
+            spacing: 12;
             halign: center;
 
-            styles [
-              "pill",
-              "suggested-action",
-            ]
+            Button {
+              label: _("_Open Vault…");
+              use-underline: true;
+              action-name: "win.open-vault";
+
+              styles [
+                "pill",
+                "suggested-action",
+              ]
+            }
+
+            Button {
+              label: _("_New Vault…");
+              use-underline: true;
+              action-name: "win.new-vault";
+
+              styles [
+                "pill",
+              ]
+            }
           };
         };
       };
@@ -122,6 +137,11 @@ menu primary_menu {
     item {
       label: _("_Open Vault…");
       action: "win.open-vault";
+    }
+
+    item {
+      label: _("_New Vault…");
+      action: "win.new-vault";
     }
   }
 

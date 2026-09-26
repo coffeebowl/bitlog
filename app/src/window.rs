@@ -81,6 +81,9 @@ mod imp {
             klass.install_action_async("win.open-vault", None, |window, _, _| async move {
                 window.choose_vault().await;
             });
+            klass.install_action_async("win.new-vault", None, |window, _, _| async move {
+                window.create_vault().await;
+            });
             // Previous, next and today move by the unit of the page shown.
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
@@ -180,7 +183,10 @@ impl Window {
         let folder = gio::File::for_uri(&uri);
         match folder.path() {
             Some(path) => self.open_vault(&path),
-            None => self.show_error(&gettext("The vault is not on a local file system.")),
+            None => self.show_error(
+                &gettext("Cannot Open Vault"),
+                &gettext("The vault is not on a local file system."),
+            ),
         }
     }
 
@@ -195,7 +201,43 @@ impl Window {
         };
         match folder.path() {
             Some(path) => self.open_vault(&path),
-            None => self.show_error(&gettext("Choose a folder on a local file system.")),
+            None => self.show_error(
+                &gettext("Cannot Open Vault"),
+                &gettext("Choose a folder on a local file system."),
+            ),
+        }
+    }
+
+    /// Creates a vault in a folder the user chooses and opens it.
+    async fn create_vault(&self) {
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("New Vault"))
+            .accept_label(gettext("_Create"))
+            .modal(true)
+            .build();
+        // Dismissing the dialog is reported as an error, too.
+        let Ok(folder) = dialog.select_folder_future(Some(self)).await else {
+            return;
+        };
+        let Some(path) = folder.path() else {
+            self.show_error(
+                &gettext("Cannot Create Vault"),
+                &gettext("Choose a folder on a local file system."),
+            );
+            return;
+        };
+        self.create_vault_in(&path);
+    }
+
+    /// Creates a vault in `path` and opens it. Like the CLI, it is named
+    /// after its folder.
+    fn create_vault_in(&self, path: &Path) {
+        let name = path
+            .file_name()
+            .map_or("Knotbook".into(), |name| name.to_string_lossy());
+        match Vault::create(path, &name, Local::now().date_naive()) {
+            Ok(_) => self.open_vault(path),
+            Err(err) => self.show_error(&gettext("Cannot Create Vault"), &err.to_string()),
         }
     }
 
@@ -205,7 +247,7 @@ impl Window {
     fn open_vault(&self, path: &Path) {
         let imp = self.imp();
         if let Err(err) = self.load_vault(path) {
-            self.show_error(&err.to_string());
+            self.show_error(&gettext("Cannot Open Vault"), &err.to_string());
             return;
         }
         let today = Local::now().date_naive();
@@ -293,7 +335,7 @@ impl Window {
                 imp.day_view.show_date(date);
                 imp.calendar_view.reload();
             }
-            Err(err) => self.show_error(&err.to_string()),
+            Err(err) => self.show_error(&gettext("Cannot Open Vault"), &err.to_string()),
         }
     }
 
@@ -344,8 +386,8 @@ impl Window {
         dialog.present(Some(self));
     }
 
-    fn show_error(&self, message: &str) {
-        let dialog = adw::AlertDialog::new(Some(&gettext("Cannot Open Vault")), Some(message));
+    fn show_error(&self, heading: &str, message: &str) {
+        let dialog = adw::AlertDialog::new(Some(heading), Some(message));
         dialog.add_response("close", &gettext("_Close"));
         dialog.present(Some(self));
     }
