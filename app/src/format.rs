@@ -70,6 +70,15 @@ pub fn format_duration(duration: TimeDelta) -> String {
         .replace("{minutes}", &minutes.to_string())
 }
 
+/// `part` as a share of `whole`, rounded to whole percent, as in "45 %".
+/// `whole` must not be zero.
+pub fn format_share(part: TimeDelta, whole: TimeDelta) -> String {
+    let whole = whole.num_minutes();
+    let share = (part.num_minutes() * 100 + whole / 2) / whole;
+    // Translators: A share in percent, as in "45 %".
+    gettext("{share} %").replace("{share}", &share.to_string())
+}
+
 /// The kinds of day the app offers. Files may have others, which are kept.
 pub const DAY_KINDS: [&str; 4] = ["work", "vacation", "sick", "holiday"];
 

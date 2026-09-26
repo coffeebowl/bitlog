@@ -149,6 +149,23 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                     };
                   }
 
+                  ListBoxRow reports_row {
+                    action-name: "win.show-reports";
+
+                    child: Box {
+                      spacing: 12;
+
+                      Image {
+                        icon-name: "view-grid-symbolic";
+                      }
+
+                      Label {
+                        label: _("Reports");
+                        xalign: 0;
+                      }
+                    };
+                  }
+
                   ListBoxRow projects_row {
                     action-name: "win.show-projects";
 

@@ -15,12 +15,13 @@ use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
 use crate::projects_page::ProjectsPage;
+use crate::reports_page::ReportsPage;
 use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 14] = [
+const VAULT_ACTIONS: [&str; 15] = [
     "win.previous",
     "win.next",
     "win.today",
@@ -28,6 +29,7 @@ const VAULT_ACTIONS: [&str; 14] = [
     "win.show-calendar",
     "win.show-tasks",
     "win.show-projects",
+    "win.show-reports",
     "win.show-day",
     "win.show-block",
     "win.show-note",
@@ -60,12 +62,15 @@ mod imp {
         pub tasks_row: TemplateChild<gtk::ListBoxRow>,
         #[template_child]
         pub projects_row: TemplateChild<gtk::ListBoxRow>,
+        #[template_child]
+        pub reports_row: TemplateChild<gtk::ListBoxRow>,
         /// The pages of the content, owned here because only one of them is
         /// in the split view at a time.
         pub day_view: DayView,
         pub calendar_view: CalendarView,
         pub tasks_page: TasksPage,
         pub projects_page: ProjectsPage,
+        pub reports_page: ReportsPage,
         /// The folder of the open vault.
         pub vault_path: RefCell<Option<PathBuf>>,
         /// The open vault as the pages have it.
@@ -86,10 +91,12 @@ mod imp {
                 calendar_row: TemplateChild::default(),
                 tasks_row: TemplateChild::default(),
                 projects_row: TemplateChild::default(),
+                reports_row: TemplateChild::default(),
                 day_view: glib::Object::new(),
                 calendar_view: glib::Object::new(),
                 tasks_page: glib::Object::new(),
                 projects_page: glib::Object::new(),
+                reports_page: glib::Object::new(),
                 vault_path: RefCell::default(),
                 vault: RefCell::default(),
                 watcher: RefCell::default(),
@@ -114,6 +121,9 @@ mod imp {
             });
             // Previous, next and today move by the unit of the page shown,
             // and do nothing on the task and project pages.
+            klass.install_action("win.show-reports", None, |window, _, _| {
+                window.show_reports();
+            });
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
             klass.install_action("win.today", None, |window, _, _| {
@@ -121,6 +131,8 @@ mod imp {
                 let imp = window.imp();
                 if window.shows_calendar() {
                     imp.calendar_view.show(today);
+                } else if window.shows_reports() {
+                    imp.reports_page.show(today);
                 } else if window.shows_day() {
                     imp.day_view.show_date(today);
                 }
@@ -356,6 +368,7 @@ impl Window {
         let index = SearchIndex::default();
         imp.index.replace(index.clone());
         imp.projects_page.set_index(index.clone());
+        imp.reports_page.set_index(index.clone());
         let indexed = vault.clone();
         glib::spawn_future_local(async move {
             if let Err(err) = index.update(&indexed).await {
@@ -393,6 +406,7 @@ impl Window {
         imp.day_view.set_vault(vault.clone());
         imp.tasks_page.set_vault(vault.clone());
         imp.projects_page.set_vault(vault.clone());
+        imp.reports_page.set_vault(vault.clone());
     }
 
     /// Hands `vault`, with projects changed on the project page, to the
@@ -444,6 +458,9 @@ impl Window {
         if self.shows_calendar() && changes.iter().any(changes_day) {
             imp.calendar_view.reload();
         }
+        if self.shows_reports() && changes.iter().any(changes_day) {
+            imp.reports_page.reload();
+        }
     }
 
     /// Reads settings and projects again, keeping the pages where they are.
@@ -461,6 +478,9 @@ impl Window {
                 imp.calendar_view.reload();
                 imp.tasks_page.reload();
                 imp.projects_page.reload();
+                if self.shows_reports() {
+                    imp.reports_page.reload();
+                }
             }
             Err(err) => self.show_error(&gettext("Cannot Open Vault"), &err.to_string()),
         }
@@ -476,6 +496,11 @@ impl Window {
         imp.split_view.content().as_ref() == Some(imp.calendar_view.upcast_ref())
     }
 
+    fn shows_reports(&self) -> bool {
+        let imp = self.imp();
+        imp.split_view.content().as_ref() == Some(imp.reports_page.upcast_ref())
+    }
+
     fn shows_tasks(&self) -> bool {
         let imp = self.imp();
         imp.split_view.content().as_ref() == Some(imp.tasks_page.upcast_ref())
@@ -486,6 +511,8 @@ impl Window {
         let imp = self.imp();
         if self.shows_calendar() {
             imp.calendar_view.step(steps);
+        } else if self.shows_reports() {
+            imp.reports_page.step(steps);
         } else if self.shows_day() {
             let date = imp.day_view.date();
             let date = date.checked_add_signed(TimeDelta::days(steps.into()));
@@ -542,6 +569,17 @@ impl Window {
         let vault = imp.vault.borrow().clone().expect("search needs a vault");
         let dialog = SearchDialog::new(vault, imp.index.borrow().clone(), self.shows_day());
         dialog.present(Some(self));
+    }
+
+    /// Shows the reports of the period shown before, at first the current
+    /// month.
+    fn show_reports(&self) {
+        let imp = self.imp();
+        self.save_texts_now();
+        imp.reports_page.reload();
+        imp.split_view.set_content(Some(&imp.reports_page));
+        imp.split_view.set_show_content(true);
+        imp.sidebar_list.select_row(Some(&*imp.reports_row));
     }
 
     /// Saves what is being typed on any page, if there are unsaved changes.

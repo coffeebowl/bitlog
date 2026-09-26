@@ -839,4 +839,21 @@ mod tests {
         assert!(index.project_activity(&unknown).unwrap().is_empty());
         assert_eq!(index.longest_block(&unknown).unwrap(), None);
     }
+
+    #[test]
+    fn project_time_per_day_matches_the_sums() {
+        let mut index = in_memory();
+        index.rebuild(&sample()).unwrap();
+        let days = index.project_time_per_day(date(22), date(23)).unwrap();
+        assert!(days.iter().all(|(day, _, _)| *day != date(21)));
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        assert!(days.contains(&(date(23), infra.clone(), TimeDelta::minutes(255))));
+        let mut sums = std::collections::BTreeMap::<ProjectSlug, TimeDelta>::new();
+        for (_, project, time) in days {
+            *sums.entry(project).or_default() += time;
+        }
+        let mut times = index.project_time(date(22), date(23)).unwrap();
+        times.sort();
+        assert_eq!(times, sums.into_iter().collect::<Vec<_>>());
+    }
 }

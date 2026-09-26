@@ -51,6 +51,30 @@ fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
 }
 
 impl Index {
+    /// The time spent on each project on each day from `first` to `last`,
+    /// both included, oldest first. A block counts on the day it starts.
+    pub fn project_time_per_day(
+        &self,
+        first: NaiveDate,
+        last: NaiveDate,
+    ) -> Result<Vec<(NaiveDate, ProjectSlug, TimeDelta)>, IndexError> {
+        let mut statement = self.connection.prepare_cached(
+            "SELECT date, project, sum(end_minute - start_minute) FROM blocks
+             WHERE date BETWEEN ? AND ? GROUP BY date, project ORDER BY date, project",
+        )?;
+        let times = statement
+            .query_map((first, last), |row| {
+                let project: String = row.get(1)?;
+                Ok((
+                    row.get(0)?,
+                    project.parse().expect("the index holds valid slugs"),
+                    TimeDelta::minutes(row.get(2)?),
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(times)
+    }
+
     /// The time spent on `project` on each day it was worked on, oldest
     /// first. A block counts on the day it starts.
     pub fn project_activity(

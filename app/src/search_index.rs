@@ -20,6 +20,15 @@ pub struct ProjectData {
     pub blocks: Vec<ProjectBlock>,
 }
 
+/// What the reports page shows.
+#[derive(Debug)]
+pub struct ReportData {
+    /// The time spent on each project in the period.
+    pub times: Vec<(ProjectSlug, TimeDelta)>,
+    /// The time spent on each project on each day of the year.
+    pub year: Vec<(NaiveDate, ProjectSlug, TimeDelta)>,
+}
+
 /// Clones share the same index.
 #[derive(Debug, Clone, Default)]
 pub struct SearchIndex {
@@ -73,6 +82,24 @@ impl SearchIndex {
                 month_times: index.project_time(month.0, month.1)?,
                 longest: index.longest_block(&project)?,
                 blocks: index.project_blocks(&project, 0, limit)?,
+            })
+        })
+        .await
+    }
+
+    /// The time spent on each project from `period.0` to `period.1`, and
+    /// per day from `year.0` to `year.1`, after bringing the index up to date.
+    pub async fn report(
+        &self,
+        vault: &Vault,
+        period: (NaiveDate, NaiveDate),
+        year: (NaiveDate, NaiveDate),
+    ) -> Result<ReportData, IndexError> {
+        self.run(vault, move |index, vault| {
+            refresh(index, vault)?;
+            Ok(ReportData {
+                times: index.project_time(period.0, period.1)?,
+                year: index.project_time_per_day(year.0, year.1)?,
             })
         })
         .await

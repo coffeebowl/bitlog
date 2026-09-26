@@ -9,7 +9,7 @@ use knotbook_core::{NotePath, Project, ProjectSlug, Vault};
 use knotbook_index::ProjectBlock;
 
 use crate::calendar_view::week_start;
-use crate::format::{format_duration, format_full_date};
+use crate::format::{format_duration, format_full_date, format_share};
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::search_index::{ProjectData, SearchIndex};
@@ -227,9 +227,7 @@ impl ProjectView {
         imp.share_row.set_subtitle(&if work.is_zero() {
             none()
         } else {
-            let share = (month.num_minutes() * 100 + work.num_minutes() / 2) / work.num_minutes();
-            // Translators: A share in percent, as in "45 %".
-            gettext("{share} %").replace("{share}", &share.to_string())
+            format_share(month, work)
         });
         imp.days_row.set_subtitle(&days.to_string());
         imp.average_row.set_subtitle(&if days == 0 {
@@ -262,8 +260,13 @@ impl ProjectView {
             }
         }
         let color = gdk::RGBA::parse(project.color.as_str()).expect("project colors are valid");
-        imp.heatmap
-            .show(activity, color, today, vault.config().week.first_day);
+        let first_day = vault.config().week.first_day;
+        imp.heatmap.show(
+            activity,
+            color,
+            Heatmap::last_12_months(today, first_day),
+            first_day,
+        );
 
         imp.timeline_list.remove_all();
         imp.blocks_shown.set(0);

@@ -8,6 +8,7 @@ app/src/note_view.rs
 app/src/project_dialog.rs
 app/src/project_view.rs
 app/src/projects_page.rs
+app/src/reports_page.rs
 app/src/search_dialog.rs
 app/src/task_list_view.rs
 app/src/week_chart.rs
@@ -19,6 +20,7 @@ app/ui/note_view.blp
 app/ui/project_dialog.blp
 app/ui/project_view.blp
 app/ui/projects_page.blp
+app/ui/reports_page.blp
 app/ui/search_dialog.blp
 app/ui/task_list_view.blp
 app/ui/tasks_page.blp

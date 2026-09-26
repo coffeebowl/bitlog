@@ -158,6 +158,7 @@ fn commands(new_block: bool) -> Vec<Command> {
             "win.show-tasks",
         ),
         command(gettext("Projects"), "folder-symbolic", "win.show-projects"),
+        command(gettext("Reports"), "view-grid-symbolic", "win.show-reports"),
     ];
     if new_block {
         commands.push(command(

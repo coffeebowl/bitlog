@@ -10,18 +10,23 @@ use gtk::{gdk, glib, graphene, gsk};
 use crate::calendar_view::week_start;
 use crate::format::{format_date, format_duration, format_full_date};
 
+/// Weeks shown for the last 12 months, and before anything is shown.
 const WEEKS: u32 = 53;
-const CELL: f32 = 12.0;
-const GAP: f32 = 3.0;
+/// Small enough for a year to fit the width of a page.
+const CELL: f32 = 8.0;
+const GAP: f32 = 2.0;
 /// Room for the month labels.
-const TOP: f32 = 18.0;
+const TOP: f32 = 16.0;
 
 /// The days shown and how much they hold.
 #[derive(Debug, Clone)]
 pub struct Activity {
-    /// The first day of the first week.
+    /// The first day of the first week, which may lie before `first`.
+    start: NaiveDate,
+    weeks: u32,
+    /// The first and last day shown.
     first: NaiveDate,
-    today: NaiveDate,
+    last: NaiveDate,
     days: BTreeMap<NaiveDate, TimeDelta>,
     color: gdk::RGBA,
 }
@@ -51,7 +56,7 @@ mod imp {
             let widget = self.obj();
             widget.set_has_tooltip(true);
             widget.update_property(&[gtk::accessible::Property::Label(&gettext(
-                "Time spent per day in the last 12 months",
+                "Time spent per day",
             ))]);
             widget.connect_query_tooltip(|widget, x, y, _, tooltip| {
                 let Some((date, time)) = widget.day_at(x as f32, y as f32) else {
@@ -68,11 +73,20 @@ mod imp {
         }
     }
 
+    impl Heatmap {
+        fn weeks(&self) -> u32 {
+            self.activity
+                .borrow()
+                .as_ref()
+                .map_or(WEEKS, |activity| activity.weeks)
+        }
+    }
+
     impl WidgetImpl for Heatmap {
         fn measure(&self, orientation: gtk::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
             let size = match orientation {
                 gtk::Orientation::Vertical => TOP + 7.0 * (CELL + GAP) - GAP,
-                _ => WEEKS as f32 * (CELL + GAP) - GAP,
+                _ => self.weeks() as f32 * (CELL + GAP) - GAP,
             } as i32;
             (size, size, -1, -1)
         }
@@ -84,12 +98,15 @@ mod imp {
             };
             let empty = with_alpha(&widget.color(), 0.08);
             let mut month_shown = None;
-            for week in 0..WEEKS {
+            for week in 0..activity.weeks {
                 let x = week as f32 * (CELL + GAP);
                 for weekday in 0..7 {
-                    let date = activity.first + Days::new((week * 7 + weekday).into());
-                    if date > activity.today {
+                    let date = activity.start + Days::new((week * 7 + weekday).into());
+                    if date > activity.last {
                         break;
+                    }
+                    if date < activity.first {
+                        continue;
                     }
                     // The month's name above the first week that starts in it.
                     if weekday == 0 && month_shown != Some(date.month()) && date.day() <= 7 {
@@ -120,34 +137,45 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// A square per day of the last 12 months, one column per week, the
-    /// more time was spent on a project the stronger its color.
+    /// A square per day, one column per week, the more time was spent the
+    /// stronger its color.
     pub struct Heatmap(ObjectSubclass<imp::Heatmap>)
         @extends gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Heatmap {
-    /// Shows `days`, the time spent per day, in `color`, up to `today`, with
+    /// The first and last day of the last 12 months up to `today`, in whole
     /// weeks starting on `first_day`.
+    pub fn last_12_months(today: NaiveDate, first_day: Weekday) -> (NaiveDate, NaiveDate) {
+        let first = week_start(today, first_day) - Days::new(u64::from(WEEKS - 1) * 7);
+        (first, today)
+    }
+
+    /// Shows `days`, the time spent per day, in `color`, from `first` to
+    /// `last`, with weeks starting on `first_day`.
     pub fn show(
         &self,
         days: &[(NaiveDate, TimeDelta)],
         color: gdk::RGBA,
-        today: NaiveDate,
+        (first, last): (NaiveDate, NaiveDate),
         first_day: Weekday,
     ) {
-        let first = week_start(today, first_day) - Days::new(u64::from(WEEKS - 1) * 7);
+        let start = week_start(first, first_day);
+        let weeks = u32::try_from((last - start).num_days() / 7 + 1).expect("last is after first");
         self.imp().activity.replace(Some(Activity {
+            start,
+            weeks,
             first,
-            today,
+            last,
             days: days
                 .iter()
                 .copied()
-                .filter(|(date, _)| *date >= first)
+                .filter(|(date, _)| (first..=last).contains(date))
                 .collect(),
             color,
         }));
+        self.queue_resize();
         self.queue_draw();
     }
 
@@ -156,12 +184,14 @@ impl Heatmap {
         let activity = self.imp().activity.borrow();
         let activity = activity.as_ref()?;
         let (week, weekday) = ((x / (CELL + GAP)) as u32, ((y - TOP) / (CELL + GAP)) as u32);
-        if x < 0.0 || y < TOP || week >= WEEKS || weekday >= 7 {
+        if x < 0.0 || y < TOP || week >= activity.weeks || weekday >= 7 {
             return None;
         }
-        let date = activity.first + Days::new((week * 7 + weekday).into());
+        let date = activity.start + Days::new((week * 7 + weekday).into());
         let time = activity.days.get(&date).copied().unwrap_or_default();
-        (date <= activity.today).then_some((date, time))
+        (activity.first..=activity.last)
+            .contains(&date)
+            .then_some((date, time))
     }
 }
 
