@@ -50,87 +50,94 @@ template $KnotbookDayView: Adw.NavigationPage {
             margin-end: 12;
 
             child: Box {
-              homogeneous: true;
-              spacing: 12;
+              orientation: vertical;
+              spacing: 24;
 
               Box {
-                orientation: vertical;
+                homogeneous: true;
+                spacing: 12;
 
-                Label {
-                  label: _("Kind");
-                  xalign: 0;
+                Box {
+                  orientation: vertical;
 
-                  styles [
-                    "caption-heading",
-                    "dim-label",
-                  ]
+                  Label {
+                    label: _("Kind");
+                    xalign: 0;
+
+                    styles [
+                      "caption-heading",
+                      "dim-label",
+                    ]
+                  }
+
+                  Label kind_label {
+                    xalign: 0;
+                    ellipsize: end;
+
+                    styles [
+                      "title-4",
+                    ]
+                  }
                 }
 
-                Label kind_label {
-                  xalign: 0;
-                  ellipsize: end;
+                Box {
+                  orientation: vertical;
 
-                  styles [
-                    "title-4",
-                  ]
+                  Label {
+                    label: _("Location");
+                    xalign: 0;
+
+                    styles [
+                      "caption-heading",
+                      "dim-label",
+                    ]
+                  }
+
+                  Label location_label {
+                    xalign: 0;
+                    ellipsize: end;
+
+                    styles [
+                      "title-4",
+                    ]
+                  }
+                }
+
+                Box {
+                  orientation: vertical;
+
+                  Label {
+                    label: _("Working Time");
+                    xalign: 0;
+
+                    styles [
+                      "caption-heading",
+                      "dim-label",
+                    ]
+                  }
+
+                  Label working_time_label {
+                    xalign: 0;
+                    ellipsize: end;
+
+                    styles [
+                      "title-4",
+                    ]
+                  }
+
+                  Label work_hours_label {
+                    xalign: 0;
+                    ellipsize: end;
+
+                    styles [
+                      "caption",
+                      "dim-label",
+                    ]
+                  }
                 }
               }
 
-              Box {
-                orientation: vertical;
-
-                Label {
-                  label: _("Location");
-                  xalign: 0;
-
-                  styles [
-                    "caption-heading",
-                    "dim-label",
-                  ]
-                }
-
-                Label location_label {
-                  xalign: 0;
-                  ellipsize: end;
-
-                  styles [
-                    "title-4",
-                  ]
-                }
-              }
-
-              Box {
-                orientation: vertical;
-
-                Label {
-                  label: _("Working Time");
-                  xalign: 0;
-
-                  styles [
-                    "caption-heading",
-                    "dim-label",
-                  ]
-                }
-
-                Label working_time_label {
-                  xalign: 0;
-                  ellipsize: end;
-
-                  styles [
-                    "title-4",
-                  ]
-                }
-
-                Label work_hours_label {
-                  xalign: 0;
-                  ellipsize: end;
-
-                  styles [
-                    "caption",
-                    "dim-label",
-                  ]
-                }
-              }
+              $KnotbookTimeline timeline {}
             };
           };
         };

@@ -1,5 +1,6 @@
 mod config;
 mod day_view;
+mod timeline;
 mod window;
 
 use adw::prelude::*;

@@ -86,8 +86,9 @@ impl fmt::Display for DayWarning {
 }
 
 impl Block {
-    /// Start and end in minutes after the start of its day.
-    fn span(&self) -> (u32, u32) {
+    /// Start and end in minutes after the start of its day. The end is past
+    /// `24 * 60` if the block ends on the next day.
+    pub fn span(&self) -> (u32, u32) {
         let start = minutes(self.start);
         (start, start + minutes_until(self.start, self.end))
     }
@@ -442,6 +443,7 @@ mod tests {
             (deployment.start, deployment.end),
             (time(22, 30), time(0, 30))
         );
+        assert_eq!(deployment.span(), (22 * 60 + 30, 24 * 60 + 30));
 
         let prepare = block(&day, "cc33");
         assert_eq!(

@@ -8,6 +8,8 @@ use gettextrs::gettext;
 use gtk::glib;
 use knotbook_core::{Day, Vault};
 
+use crate::timeline::Timeline;
+
 mod imp {
     use super::*;
 
@@ -29,6 +31,8 @@ mod imp {
         #[template_child]
         pub work_hours_label: TemplateChild<gtk::Label>,
         #[template_child]
+        pub timeline: TemplateChild<Timeline>,
+        #[template_child]
         pub error_page: TemplateChild<adw::StatusPage>,
     }
 
@@ -39,6 +43,7 @@ mod imp {
         type ParentType = adw::NavigationPage;
 
         fn class_init(klass: &mut Self::Class) {
+            Timeline::ensure_type();
             klass.bind_template();
         }
 
@@ -53,7 +58,7 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// One day of the vault: its details and, in later steps, its blocks.
+    /// One day of the vault: its details and its blocks.
     pub struct DayView(ObjectSubclass<imp::DayView>)
         @extends adw::NavigationPage, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -118,6 +123,8 @@ impl DayView {
         };
         imp.work_hours_label.set_visible(!hours.is_empty());
         imp.work_hours_label.set_label(&hours);
+        let is_today = day.date == Local::now().date_naive();
+        imp.timeline.set_day(vault, day, is_today);
     }
 }
 
