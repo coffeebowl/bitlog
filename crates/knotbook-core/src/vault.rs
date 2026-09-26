@@ -1,5 +1,6 @@
 //! Read access to a whole vault.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -9,7 +10,7 @@ use chrono::{Datelike, Months, NaiveDate};
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_optional, read_text, write_atomic};
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
-use crate::{Day, DayWarning, EditError, Project, ProjectSlug, VaultConfig};
+use crate::{Day, DayWarning, EditError, Project, ProjectSlug, TaskList, VaultConfig};
 
 #[derive(Debug, Clone)]
 pub struct Vault {
@@ -186,6 +187,98 @@ impl Vault {
         Ok(&self.projects[index])
     }
 
+    /// Where the global task list lives.
+    pub fn tasks_path(&self) -> PathBuf {
+        self.root.join("tasks.toml")
+    }
+
+    /// Where the tasks finished in `year` are archived.
+    pub fn task_archive_path(&self, year: i32) -> PathBuf {
+        self.root.join(format!("tasks-archive-{year:04}.toml"))
+    }
+
+    /// Reads the global task list, which is empty while there is no file.
+    pub fn load_tasks(&self) -> Result<TaskList, ReadError> {
+        let path = self.tasks_path();
+        match read_optional(&path)? {
+            Some(text) => TaskList::read(&path, &text),
+            None => Ok(TaskList::default()),
+        }
+    }
+
+    /// Applies `change` to the task list `tasks` and saves it. The file is
+    /// created with the first task. Returns the list as saved.
+    ///
+    /// If the file was changed elsewhere since `tasks` was read, `change` is
+    /// applied to the list as it is now instead, so that both changes are kept.
+    pub fn update_tasks(
+        &self,
+        tasks: &TaskList,
+        change: impl FnOnce(&mut TaskList) -> Result<(), EditError>,
+    ) -> Result<TaskList, SaveError> {
+        let (current, mut tasks) = self.current_tasks(tasks)?;
+        change(&mut tasks)?;
+        self.save_tasks(current.as_deref(), &tasks)
+    }
+
+    /// Moves all done and dropped tasks of the task list `tasks` to the
+    /// archive of the year they were finished in, or created in if that is
+    /// not known, or else of `today`. Returns the list as saved.
+    pub fn archive_tasks(&self, tasks: &TaskList, today: NaiveDate) -> Result<TaskList, SaveError> {
+        let (current, mut tasks) = self.current_tasks(tasks)?;
+        let mut years = BTreeMap::<i32, Vec<_>>::new();
+        for task in tasks.take_finished() {
+            let date = task.done.or(task.created).unwrap_or(today);
+            years.entry(date.year()).or_default().push(task);
+        }
+        // Archives first: if writing the list fails, tasks are archived
+        // twice rather than lost.
+        for (year, finished) in years {
+            let path = self.task_archive_path(year);
+            let text = read_optional(&path)?;
+            let mut archive = match &text {
+                Some(text) => TaskList::read(&path, text)?,
+                None => TaskList::default(),
+            };
+            for task in finished {
+                archive.push_finished(task);
+            }
+            self.write(&path, &archive.to_toml())?;
+        }
+        self.save_tasks(current.as_deref(), &tasks)
+    }
+
+    /// The content of the task file now, and the list it holds: `tasks`
+    /// if the file is still as `tasks` was read from.
+    fn current_tasks(&self, tasks: &TaskList) -> Result<(Option<String>, TaskList), ReadError> {
+        let path = self.tasks_path();
+        let current = read_optional(&path)?;
+        let tasks = if tasks.is_read_from(current.as_deref()) {
+            tasks.clone()
+        } else if let Some(text) = &current {
+            TaskList::read(&path, text)?
+        } else {
+            TaskList::default()
+        };
+        Ok((current, tasks))
+    }
+
+    /// Writes `tasks` unless the file `current` stays the same, or no file
+    /// would be created just to hold no tasks.
+    fn save_tasks(&self, current: Option<&str>, tasks: &TaskList) -> Result<TaskList, SaveError> {
+        let path = self.tasks_path();
+        let text = tasks.to_toml();
+        let saved = TaskList::read(&path, &text).expect("changes keep a task list valid");
+        let unchanged = match current {
+            Some(current) => current == text,
+            None => tasks.tasks().is_empty(),
+        };
+        if !unchanged {
+            self.write(&path, &text)?;
+        }
+        Ok(saved)
+    }
+
     /// Watches the vault for files changed elsewhere, such as by a sync tool
     /// or the CLI, and passes them to `on_change` on a thread of its own.
     /// Writes through this vault or its clones are left out. Watching stops
@@ -272,8 +365,8 @@ mod tests {
     use chrono::TimeDelta;
 
     use super::*;
-    use crate::RemovedText;
     use crate::file::sample_copy;
+    use crate::{RemovedText, TaskId, TaskStatus};
 
     fn sample_path() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault")
@@ -493,6 +586,125 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         assert_eq!(written, external.replace("\"Infrastructure\"", "\"Infra\""));
         assert_eq!(vault.project(&slug).unwrap().name, "Infra");
+    }
+
+    #[test]
+    fn update_tasks_keeps_external_changes() {
+        let (_dir, vault) = sample_copy();
+        let tasks = vault.load_tasks().unwrap();
+        let path = vault.tasks_path();
+        let external = fs::read_to_string(&path)
+            .unwrap()
+            .replace("Get back to Kim", "Get back to Kim and Alex");
+        fs::write(&path, &external).unwrap();
+
+        let saved = vault
+            .update_tasks(&tasks, |tasks| {
+                tasks.add("Order coffee", date(2026, 9, 24)).map(|_| ())
+            })
+            .unwrap();
+        let titles: Vec<&str> = saved.tasks().iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(titles[0], "Get back to Kim and Alex about the handover");
+        assert_eq!(titles[2], "Order coffee");
+        assert_eq!(fs::read_to_string(&path).unwrap(), saved.to_toml());
+
+        // The saved state is the base for the next change, without reading again.
+        let id = saved.tasks()[2].id.clone();
+        let again = vault
+            .update_tasks(&saved, |tasks| {
+                tasks.set_status(&id, TaskStatus::Done, date(2026, 9, 24))
+            })
+            .unwrap();
+        assert_eq!(again.tasks().len(), 5);
+        assert_eq!(
+            vault.load_tasks().unwrap().to_toml(),
+            fs::read_to_string(&path).unwrap()
+        );
+    }
+
+    #[test]
+    fn task_file_is_created_with_the_first_task() {
+        let (_dir, vault) = sample_copy();
+        fs::remove_file(vault.tasks_path()).unwrap();
+        let tasks = vault.load_tasks().unwrap();
+        assert!(tasks.tasks().is_empty());
+
+        vault.update_tasks(&tasks, |_| Ok(())).unwrap();
+        assert!(!vault.tasks_path().exists());
+
+        let saved = vault
+            .update_tasks(&tasks, |tasks| {
+                tasks.add("First", date(2026, 10, 1)).map(|_| ())
+            })
+            .unwrap();
+        assert_eq!(saved.tasks().len(), 1);
+        assert!(vault.tasks_path().exists());
+    }
+
+    #[test]
+    fn unchanged_tasks_are_not_written() {
+        let (_dir, vault) = sample_copy();
+        let path = vault.tasks_path();
+        // Not in canonical order, so writing would change it.
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("format = 1\n", "format = 1\n\n\n");
+        fs::write(&path, &text).unwrap();
+        let tasks = vault.load_tasks().unwrap();
+        vault.update_tasks(&tasks, |_| Ok(())).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), text);
+    }
+
+    #[test]
+    fn archive_tasks() {
+        let (_dir, vault) = sample_copy();
+        let archive = vault.task_archive_path(2026);
+        fs::write(
+            &archive,
+            "format = 1\n\n[[task]]\nid = \"r3m7\"\ntitle = \"Older\"\nstatus = \"done\"\n",
+        )
+        .unwrap();
+        let tasks = vault.load_tasks().unwrap();
+        let id: TaskId = "t9x2".parse().unwrap();
+        let tasks = vault
+            .update_tasks(&tasks, |tasks| {
+                tasks.set_status(&id, TaskStatus::Dropped, date(2027, 1, 4))
+            })
+            .unwrap();
+
+        let saved = vault.archive_tasks(&tasks, date(2027, 1, 5)).unwrap();
+        let open: Vec<&str> = saved.tasks().iter().map(|t| t.id.as_str()).collect();
+        assert_eq!(open, ["h4c8"]);
+        assert_eq!(
+            fs::read_to_string(vault.tasks_path()).unwrap(),
+            saved.to_toml()
+        );
+
+        // Existing archives are extended, taken ids replaced; a dropped task
+        // without a date goes by the day it was created.
+        let archived = TaskList::read(&archive, &fs::read_to_string(&archive).unwrap()).unwrap();
+        let titles: Vec<&str> = archived.tasks().iter().map(|t| t.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            [
+                "Older",
+                "Take the keyboard to the office",
+                "Book a meeting room for the retro"
+            ]
+        );
+        assert_ne!(archived.tasks()[1].id.as_str(), "r3m7");
+        let next = TaskList::read(
+            &vault.task_archive_path(2027),
+            &fs::read_to_string(vault.task_archive_path(2027)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(next.tasks().len(), 1);
+        assert_eq!(next.tasks()[0].id, id);
+
+        // Nothing left to archive: nothing is written.
+        let before = fs::read_to_string(vault.tasks_path()).unwrap();
+        vault.archive_tasks(&saved, date(2027, 1, 5)).unwrap();
+        assert_eq!(fs::read_to_string(vault.tasks_path()).unwrap(), before);
     }
 
     #[test]

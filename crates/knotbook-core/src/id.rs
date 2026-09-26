@@ -211,6 +211,12 @@ impl fmt::Display for TaskId {
     }
 }
 
+impl<'de> Deserialize<'de> for TaskId {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_parsed(deserializer)
+    }
+}
+
 /// Identifies a project note by its path relative to the vault,
 /// `projects/<slug>/notes/<name>.md`, always with `/` as separator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]

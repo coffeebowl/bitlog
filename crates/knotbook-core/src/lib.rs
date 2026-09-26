@@ -9,6 +9,8 @@ mod id;
 mod init;
 mod markdown;
 mod project;
+mod tasks;
+mod toml_values;
 mod vault;
 mod watch;
 
@@ -20,5 +22,6 @@ pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;
 pub use markdown::{MarkdownMode, MarkdownStyle, escape_headings, markdown_styles};
 pub use project::{Project, ProjectStatus};
+pub use tasks::{Task, TaskList, TaskStatus};
 pub use vault::{DayFile, Vault};
 pub use watch::{VaultChange, VaultWatcher, WatchError};

@@ -44,6 +44,7 @@ my-vault/
   README.md                          # explains the format to humans and LLMs
   knotbook.toml
   tasks.toml                         # global task list
+  tasks-archive-2026.toml            # tasks finished in 2026, once archived
   daily/2026/09/2026-09-23.md        # one day: front matter, day note, blocks with text
   projects/project-a/project.toml
   projects/project-a/notes/auth-middleware.md
@@ -340,18 +341,43 @@ id = "t9x2"
 title = "Get back to XYZ about the handover"
 status = "open"                  # open | done | dropped
 created = 2026-09-22
+due = 2026-09-30
 
 [[task]]
 id = "r3m7"
 title = "Take the keyboard to the office"
 status = "done"
 created = 2026-09-22
-done = 2026-09-23
+done = 2026-09-23                # when it was done or dropped
 ```
 
-- Task IDs: 4 characters from `[a-z0-9]`, unique within the file.
-- Knotbook writes open tasks first, in the order chosen by the user.
-- Above a threshold, finished tasks move to `tasks-archive-YYYY.toml`.
+Only `format` is required, and `id` and `title` for each task. Missing fields
+take these defaults:
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `id` | – | a task ID, unique within the file |
+| `title` | – | one line of text |
+| `status` | `"open"` | `open`, `done` or `dropped` |
+| `created` | none | TOML local date |
+| `due` | none | TOML local date |
+| `done` | none | TOML local date; the day the task was done or dropped |
+
+- A missing `tasks.toml` is an empty list. Knotbook creates it with the first
+  task.
+- Knotbook writes open tasks first, then done and dropped ones, each in the
+  order chosen by the user. New tasks go to the end of the open tasks. A task
+  that is done or dropped gets today as `done` and moves to the top of the
+  finished tasks; opened again, it loses `done` and moves to the end of the
+  open tasks.
+- Comments, formatting, unchanged values and unknown fields are kept as they
+  are. Tasks may also be written by hand as an array of inline tables;
+  Knotbook writes them as `[[task]]` tables.
+- **Archiving** happens only when the user asks for it. It moves all done and
+  dropped tasks to `tasks-archive-YYYY.toml`, by the year of `done`, else of
+  `created`, else of the current date. An archive has the same format as
+  `tasks.toml` and is extended at the end; a task whose ID is taken in the
+  archive gets a new one there.
 - **Project tasks** are reserved for a later format extension. They will live
   in separate files per project and will not change the global list.
 
@@ -373,6 +399,7 @@ done = 2026-09-23
 | File or part | Written by | When |
 | --- | --- | --- |
 | `knotbook.toml`, `tasks.toml`, `project.toml` | Knotbook | any time, preserving formatting and comments |
+| `tasks-archive-YYYY.toml` | Knotbook | when archiving, preserving formatting and comments |
 | Day file: front matter, date heading and block headings | Knotbook | any time |
 | Day file: day note and block texts | user | always; Knotbook keeps them unchanged |
 | Project notes | user | always; Knotbook only when creating them from the template |

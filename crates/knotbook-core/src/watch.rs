@@ -22,6 +22,7 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VaultChange {
     Config,
+    Tasks,
     Project(ProjectSlug),
     Day(NaiveDate),
 }
@@ -124,6 +125,7 @@ fn change_of(relative: &Path) -> Option<VaultChange> {
         .collect::<Option<_>>()?;
     match parts.as_slice() {
         ["knotbook.toml"] => Some(VaultChange::Config),
+        ["tasks.toml"] => Some(VaultChange::Tasks),
         ["projects", slug, "project.toml"] => slug.parse().ok().map(VaultChange::Project),
         ["daily", year, month, name] => day_file_date(name)
             .filter(|date| {
@@ -142,6 +144,7 @@ mod tests {
     fn changes_of_paths() {
         let change = |path: &str| change_of(Path::new(path));
         assert_eq!(change("knotbook.toml"), Some(VaultChange::Config));
+        assert_eq!(change("tasks.toml"), Some(VaultChange::Tasks));
         assert_eq!(
             change("projects/infra/project.toml"),
             Some(VaultChange::Project("infra".parse().unwrap()))
@@ -159,7 +162,8 @@ mod tests {
             "daily/2026/09",
             "projects/Not A Slug/project.toml",
             "projects/infra/notes/deployment.md",
-            "tasks.toml",
+            "tasks-archive-2026.toml",
+            ".tasks.toml.0badf00d.tmp",
             ".git/index",
         ] {
             assert_eq!(change(ignored), None, "{ignored}");
