@@ -1,0 +1,8 @@
+[package]
+name = "knotbook-core"
+description = "Data model, file format and vault I/O for Knotbook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
