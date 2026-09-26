@@ -67,6 +67,19 @@ uv run flatpak-cargo-generator.py Cargo.lock -o build-aux/cargo-sources.json
 The app gets access to the home folder, so that a vault can live anywhere in
 it.
 
+## Command line
+
+The command `knotbook` works on a vault from the terminal. Build and install
+it with Cargo:
+
+```sh
+cargo install --path crates/knotbook-cli
+```
+
+`knotbook init` creates a new vault in the current folder, or in the folder
+given with `--vault`. The folder may only hold hidden files such as `.git`.
+`knotbook --help` lists all commands.
+
 ## License
 
 Knotbook is licensed under the [GNU General Public License v3.0 or later](LICENSE).
