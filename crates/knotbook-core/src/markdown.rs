@@ -254,6 +254,15 @@ mod tests {
     }
 
     #[test]
+    fn escaped_headings_dim_their_backslash() {
+        let text = escape_headings("# Title\n\nSetext\n---\n");
+        assert_eq!(
+            styled(&text, MarkdownMode::Block),
+            [("\\", Markup), ("\\", Markup)]
+        );
+    }
+
+    #[test]
     fn nested_styles() {
         assert_eq!(
             styled("***both***", MarkdownMode::Block),
