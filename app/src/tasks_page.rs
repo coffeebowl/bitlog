@@ -3,7 +3,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::glib;
-use knotbook_core::Vault;
+use knotbook_core::{TaskId, Vault};
 
 use crate::task_list_view::TaskListView;
 
@@ -15,6 +15,8 @@ mod imp {
     pub struct TasksPage {
         #[template_child]
         pub list: TemplateChild<TaskListView>,
+        #[template_child]
+        pub show_finished: TemplateChild<gtk::ToggleButton>,
     }
 
     #[glib::object_subclass]
@@ -54,5 +56,14 @@ impl TasksPage {
     /// Reads the task list and shows it.
     pub fn reload(&self) {
         self.imp().list.reload();
+    }
+
+    /// Moves the focus to the open task `id`, or shows the finished tasks
+    /// if it is one of them.
+    pub fn show_task(&self, id: &TaskId) {
+        let imp = self.imp();
+        if !imp.list.focus_task(id) {
+            imp.show_finished.set_active(true);
+        }
     }
 }

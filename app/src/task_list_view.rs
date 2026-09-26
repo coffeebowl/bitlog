@@ -202,6 +202,14 @@ impl TaskListView {
         imp.showing.set(false);
     }
 
+    /// Moves the focus to the row of the open task `id`. Returns whether
+    /// there is one.
+    pub fn focus_task(&self, id: &TaskId) -> bool {
+        let rows = self.imp().rows.borrow();
+        let row = rows.iter().find(|(task, _)| task == id).map(|(_, row)| row);
+        row.is_some_and(|row| row.grab_focus())
+    }
+
     fn remove_rows(&self) {
         let imp = self.imp();
         for (_, row) in imp.rows.take() {

@@ -46,6 +46,7 @@ pub enum IndexError {
     Read(#[from] ReadError),
 }
 
+#[derive(Debug)]
 pub struct Index {
     connection: Connection,
 }

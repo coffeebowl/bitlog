@@ -9,6 +9,8 @@ mod project_dialog;
 mod project_picker;
 mod project_view;
 mod projects_page;
+mod search_dialog;
+mod search_index;
 mod task_list_view;
 mod tasks_page;
 mod timeline;
@@ -59,6 +61,7 @@ fn main() -> glib::ExitCode {
     app.set_accels_for_action("win.next", &["<Alt>Right"]);
     app.set_accels_for_action("win.today", &["<Control>t"]);
     app.set_accels_for_action("win.new-block", &["<Control>n"]);
+    app.set_accels_for_action("win.search", &["<Control>k"]);
 
     app.run()
 }

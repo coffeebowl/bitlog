@@ -74,6 +74,13 @@ template $KnotbookWindow: Adw.ApplicationWindow {
             child: Adw.ToolbarView {
               [top]
               Adw.HeaderBar {
+                [start]
+                Button {
+                  icon-name: "edit-find-symbolic";
+                  action-name: "win.search";
+                  tooltip-text: _("Search");
+                }
+
                 [end]
                 MenuButton {
                   icon-name: "open-menu-symbolic";

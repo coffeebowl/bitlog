@@ -819,6 +819,7 @@ dependencies = [
  "gettext-rs",
  "gtk4",
  "knotbook-core",
+ "knotbook-index",
  "libadwaita",
  "sourceview5",
 ]

@@ -254,6 +254,13 @@ impl ProjectsPage {
         project.is_some()
     }
 
+    /// Shows the note `note` below its project, from where going back leads
+    /// to the project's notes.
+    pub fn show_note(&self, note: &NotePath) {
+        self.open_project(note.project());
+        self.open_note(note);
+    }
+
     fn open_project(&self, slug: &ProjectSlug) {
         let imp = self.imp();
         let vault = self.vault();

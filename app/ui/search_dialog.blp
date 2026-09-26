@@ -1,0 +1,50 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookSearchDialog: Adw.Dialog {
+  title: _("Search");
+  content-width: 560;
+  content-height: 480;
+  focus-widget: entry;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      title-widget: SearchEntry entry {
+        hexpand: true;
+        placeholder-text: _("Search or run a command");
+      };
+    }
+
+    content: Stack stack {
+      StackPage {
+        name: "results";
+
+        child: ScrolledWindow scrolled {
+          hscrollbar-policy: never;
+
+          child: ListBox list {
+            selection-mode: browse;
+
+            styles [
+              "navigation-sidebar",
+            ]
+          };
+        };
+      }
+
+      StackPage {
+        name: "empty";
+
+        child: Adw.StatusPage status {
+          icon-name: "edit-find-symbolic";
+          title: _("No Results");
+
+          styles [
+            "compact",
+          ]
+        };
+      }
+    };
+  };
+}

@@ -654,7 +654,7 @@ impl DayView {
 
     /// Shows the block `id` in the panel, or closes the panel if the day
     /// has no such block.
-    fn show_block_by_id(&self, id: &BlockId) {
+    pub fn show_block_by_id(&self, id: &BlockId) {
         let imp = self.imp();
         let index = imp
             .file

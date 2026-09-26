@@ -7,16 +7,20 @@ use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gio, glib};
-use knotbook_core::{NotePath, ReadError, Vault, VaultChange, VaultWatcher, WatchError};
+use knotbook_core::{
+    BlockId, NotePath, ReadError, TaskId, Vault, VaultChange, VaultWatcher, WatchError,
+};
 
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
 use crate::projects_page::ProjectsPage;
+use crate::search_dialog::SearchDialog;
+use crate::search_index::SearchIndex;
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 9] = [
+const VAULT_ACTIONS: [&str; 14] = [
     "win.previous",
     "win.next",
     "win.today",
@@ -25,7 +29,12 @@ const VAULT_ACTIONS: [&str; 9] = [
     "win.show-tasks",
     "win.show-projects",
     "win.show-day",
+    "win.show-block",
+    "win.show-note",
+    "win.show-task",
     "win.new-block",
+    "win.new-project",
+    "win.search",
 ];
 
 mod imp {
@@ -59,7 +68,10 @@ mod imp {
         pub projects_page: ProjectsPage,
         /// The folder of the open vault.
         pub vault_path: RefCell<Option<PathBuf>>,
+        /// The open vault as the pages have it.
+        pub vault: RefCell<Option<Rc<Vault>>>,
         pub watcher: RefCell<Option<VaultWatcher>>,
+        pub index: RefCell<SearchIndex>,
     }
 
     impl Default for Window {
@@ -79,7 +91,9 @@ mod imp {
                 tasks_page: glib::Object::new(),
                 projects_page: glib::Object::new(),
                 vault_path: RefCell::default(),
+                vault: RefCell::default(),
                 watcher: RefCell::default(),
+                index: RefCell::default(),
             }
         }
     }
@@ -131,6 +145,47 @@ mod imp {
             klass.install_action("win.show-projects", None, |window, _, _| {
                 window.show_projects();
             });
+            klass.install_action("win.new-project", None, |window, _, _| {
+                window.show_projects();
+                WidgetExt::activate_action(&window.imp().projects_page, "projects.add", None)
+                    .expect("the project page adds projects");
+            });
+            klass.install_action("win.search", None, |window, _, _| window.search());
+            klass.install_action(
+                "win.show-block",
+                Some(glib::VariantTy::new("(ss)").expect("(ss) is a variant type")),
+                |window, _, block| {
+                    let (date, id): (String, String) = block
+                        .and_then(|block| block.get())
+                        .expect("blocks are passed as date and id");
+                    let date = date.parse().expect("dates are passed as YYYY-MM-DD");
+                    let id: BlockId = id.parse().expect("block ids are passed as they are");
+                    window.show_day(date);
+                    window.imp().day_view.show_block_by_id(&id);
+                },
+            );
+            klass.install_action(
+                "win.show-note",
+                Some(glib::VariantTy::STRING),
+                |window, _, note| {
+                    let note: NotePath = note
+                        .and_then(|note| note.str()?.parse().ok())
+                        .expect("notes are passed as their path");
+                    window.show_projects();
+                    window.imp().projects_page.show_note(&note);
+                },
+            );
+            klass.install_action(
+                "win.show-task",
+                Some(glib::VariantTy::STRING),
+                |window, _, id| {
+                    let id: TaskId = id
+                        .and_then(|id| id.str()?.parse().ok())
+                        .expect("tasks are passed as their id");
+                    window.show_tasks();
+                    window.imp().tasks_page.show_task(&id);
+                },
+            );
             klass.install_action(
                 "win.show-day",
                 Some(glib::VariantTy::STRING),
@@ -297,6 +352,15 @@ impl Window {
         let vault = Rc::new(Vault::open(path)?);
         self.set_vault(&vault);
         imp.vault_path.replace(Some(path.to_owned()));
+        // Built in the background, so that the first search is quick.
+        let index = SearchIndex::default();
+        imp.index.replace(index.clone());
+        let indexed = vault.clone();
+        glib::spawn_future_local(async move {
+            if let Err(err) = index.update(&indexed).await {
+                glib::g_warning!("knotbook", "{err}");
+            }
+        });
         // The watcher tells its own writes apart through the vault it
         // belongs to, so every vault gets a new one.
         let window: glib::SendWeakRef<Self> = self.downgrade().into();
@@ -322,6 +386,7 @@ impl Window {
 
     fn set_vault(&self, vault: &Rc<Vault>) {
         let imp = self.imp();
+        imp.vault.replace(Some(vault.clone()));
         imp.sidebar.set_title(&vault.config().name);
         imp.calendar_view.set_vault(vault.clone());
         imp.day_view.set_vault(vault.clone());
@@ -462,6 +527,20 @@ impl Window {
         imp.split_view.set_content(Some(&imp.projects_page));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.projects_row));
+    }
+
+    /// Opens the search, which also offers commands.
+    fn search(&self) {
+        let imp = self.imp();
+        // Ctrl+K while it is open.
+        if self.visible_dialog().is_some() {
+            return;
+        }
+        // So that the search finds what was just typed.
+        self.save_texts_now();
+        let vault = imp.vault.borrow().clone().expect("search needs a vault");
+        let dialog = SearchDialog::new(vault, imp.index.borrow().clone(), self.shows_day());
+        dialog.present(Some(self));
     }
 
     /// Saves what is being typed on any page, if there are unsaved changes.
