@@ -6,12 +6,13 @@ use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, NaiveTime, Timelike};
 use gettextrs::gettext;
 use gtk::{gio, glib};
-use knotbook_core::{Day, DayFile, EditError, LocationKey, SaveError, Vault};
+use knotbook_core::{Day, DayFile, EditError, LocationKey, ProjectSlug, SaveError, Vault};
 
 use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_time, kind_name,
 };
 use crate::markdown_view::MarkdownView;
+use crate::project_picker::project_popover;
 use crate::timeline::Timeline;
 
 mod imp {
@@ -111,6 +112,21 @@ mod imp {
                 #[weak]
                 view,
                 move |_, index| view.show_block(index)
+            ));
+            self.timeline.connect_span_selected(glib::clone!(
+                #[weak]
+                view,
+                move |timeline, start, end| {
+                    let popover = project_popover(
+                        &view.vault(),
+                        glib::clone!(
+                            #[weak]
+                            view,
+                            move |project| view.add_block(start, end, project)
+                        ),
+                    );
+                    timeline.show_popover(&popover);
+                }
             ));
             // In the narrow layout the panel also closes by tapping beside it.
             self.split_view.connect_show_sidebar_notify(glib::clone!(
@@ -269,6 +285,26 @@ impl DayView {
         }
     }
 
+    /// Adds a block of `project` from `start` to `end`, in minutes of the
+    /// day, and shows it in the panel.
+    fn add_block(&self, start: u32, end: u32, project: ProjectSlug) {
+        let vault = self.vault();
+        let mut id = None;
+        self.update(|day| {
+            id =
+                Some(day.add_block(time_of(start), time_of(end), project, "", vault.projects())?);
+            Ok(())
+        });
+        let index = self.imp().file.borrow().as_ref().and_then(|file| {
+            let id = id?;
+            file.day.blocks.iter().position(|block| block.id == id)
+        });
+        if let Some(index) = index {
+            self.imp().timeline.select(Some(index));
+            self.show_block(index);
+        }
+    }
+
     fn show_save_error(&self, err: &SaveError) {
         let dialog =
             adw::AlertDialog::new(Some(&gettext("Cannot Save Day")), Some(&err.to_string()));
@@ -423,6 +459,12 @@ fn variant_string(value: Option<&glib::Variant>) -> String {
     value
         .and_then(glib::Variant::get)
         .expect("the menus pass strings")
+}
+
+/// The time `minute` minutes after midnight; the end of the day is midnight.
+fn time_of(minute: u32) -> NaiveTime {
+    NaiveTime::from_hms_opt(minute / 60 % 24, minute % 60, 0)
+        .expect("the timeline stays within a day")
 }
 
 /// The time of `spin`, whose value counts the minutes of the day.

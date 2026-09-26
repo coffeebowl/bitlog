@@ -34,6 +34,11 @@ mod imp {
         pub is_today: Cell<bool>,
         /// Index of the selected block in `blocks`.
         pub selected: Cell<Option<usize>>,
+        /// The minute where a drag over free time began.
+        pub drag_anchor: Cell<Option<u32>>,
+        /// The span being dragged, or waiting for its block.
+        pub pending: Cell<Option<(u32, u32)>>,
+        pub popover: RefCell<Option<gtk::Popover>>,
     }
 
     #[derive(Debug)]
@@ -55,10 +60,15 @@ mod imp {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
-                // Emitted with the index of the block in the day.
                 vec![
+                    // Emitted with the index of the block in the day.
                     Signal::builder("block-activated")
                         .param_types([u32::static_type()])
+                        .build(),
+                    // Emitted with the first and last minute of a span of
+                    // free time dragged out for a new block.
+                    Signal::builder("span-selected")
+                        .param_types([u32::static_type(), u32::static_type()])
                         .build(),
                 ]
             })
@@ -89,6 +99,59 @@ mod imp {
                 }
             ));
             timeline.add_controller(click);
+
+            // Dragging over free time, or just clicking it, selects a span
+            // of whole slots for a new block.
+            let drag = gtk::GestureDrag::new();
+            drag.connect_drag_begin(glib::clone!(
+                #[weak]
+                timeline,
+                move |drag, _, y| {
+                    let imp = timeline.imp();
+                    let minute = imp.minute_at(y as f32);
+                    let is_free = minute < imp.range.get().1.min(24 * 60)
+                        && !imp
+                            .blocks
+                            .borrow()
+                            .iter()
+                            .any(|entry| (entry.span.0..entry.span.1).contains(&minute));
+                    if is_free && imp.popover.borrow().is_none() {
+                        imp.drag_anchor.set(Some(minute));
+                        imp.pending.set(Some(imp.free_span(minute, minute)));
+                        timeline.queue_draw();
+                    } else {
+                        drag.set_state(gtk::EventSequenceState::Denied);
+                    }
+                }
+            ));
+            drag.connect_drag_update(glib::clone!(
+                #[weak]
+                timeline,
+                move |drag, _, dy| {
+                    let imp = timeline.imp();
+                    let (Some(anchor), Some((_, start_y))) =
+                        (imp.drag_anchor.get(), drag.start_point())
+                    else {
+                        return;
+                    };
+                    let minute = imp.minute_at((start_y + dy) as f32);
+                    imp.pending.set(Some(imp.free_span(anchor, minute)));
+                    timeline.queue_draw();
+                }
+            ));
+            drag.connect_drag_end(glib::clone!(
+                #[weak]
+                timeline,
+                move |_, _, _| {
+                    let imp = timeline.imp();
+                    if imp.drag_anchor.take().is_none() {
+                        return;
+                    }
+                    let (start, end) = imp.pending.get().expect("a drag always has a span");
+                    timeline.emit_by_name::<()>("span-selected", &[&start, &end]);
+                }
+            ));
+            timeline.add_controller(drag);
 
             let keys = gtk::EventControllerKey::new();
             keys.connect_key_pressed(glib::clone!(
@@ -138,6 +201,9 @@ mod imp {
             for entry in self.blocks.take() {
                 entry.child.unparent();
             }
+            if let Some(popover) = self.popover.take() {
+                popover.unparent();
+            }
         }
     }
 
@@ -169,6 +235,9 @@ mod imp {
                     -1,
                 );
             }
+            if let Some(popover) = self.popover.borrow().as_ref() {
+                popover.present();
+            }
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
@@ -180,6 +249,15 @@ mod imp {
             self.snapshot_grid(snapshot, width, &foreground);
             let line = graphene::Rect::new(LINE_X - 1.0, 0.0, 2.0, y_of(first, last) + PADDING);
             snapshot.append_color(&with_alpha(&foreground, 0.3), &line);
+
+            if let Some(span) = self.pending.get() {
+                let accent = adw::StyleManager::default().accent_color_rgba();
+                let rounded = gsk::RoundedRect::from_rect(self.span_area(span), 6.0);
+                snapshot.push_rounded_clip(&rounded);
+                snapshot.append_color(&with_alpha(&accent, 0.3), rounded.bounds());
+                snapshot.pop();
+                snapshot.append_border(&rounded, &[2.0; 4], &[accent; 4]);
+            }
 
             let now = self.is_today.get().then(|| minutes(Local::now().time()));
             let focus_visible = widget
@@ -227,14 +305,51 @@ mod imp {
     impl Timeline {
         /// Where `entry` is drawn.
         pub fn area(&self, entry: &Entry) -> graphene::Rect {
+            self.span_area(entry.span)
+        }
+
+        /// Where a block from `start` to `end` is drawn.
+        pub fn span_area(&self, (start, end): (u32, u32)) -> graphene::Rect {
             let (first, _) = self.range.get();
-            let (start, end) = entry.span;
             graphene::Rect::new(
                 BLOCK_X,
                 y_of(first, start) + 1.0,
                 self.obj().width() as f32 - BLOCK_X,
                 block_height(start, end) - 2.0,
             )
+        }
+
+        /// The minute shown at the height `y`, within the grid.
+        pub fn minute_at(&self, y: f32) -> u32 {
+            let (first, last) = self.range.get();
+            let offset = ((y - PADDING) / MINUTE_HEIGHT).max(0.0) as u32;
+            (first + offset).min(last)
+        }
+
+        /// The whole slots from `anchor` to `minute`, at least one, cut to
+        /// the free time around `anchor` and to the day.
+        pub fn free_span(&self, anchor: u32, minute: u32) -> (u32, u32) {
+            let slot = self.slot_minutes.get();
+            let (first, last) = self.range.get();
+            let (low, high) = (anchor.min(minute), anchor.max(minute));
+            let start = low / slot * slot;
+            let end = (high.div_ceil(slot) * slot).max(start + slot);
+            let blocks = self.blocks.borrow();
+            let free_start = blocks
+                .iter()
+                .map(|entry| entry.span.1)
+                .filter(|&end| end <= anchor)
+                .max()
+                .unwrap_or(first);
+            let free_end = blocks
+                .iter()
+                .map(|entry| entry.span.0)
+                .filter(|&start| start > anchor)
+                .min()
+                .unwrap_or(last)
+                .min(last)
+                .min(24 * 60);
+            (start.max(free_start), end.min(free_end))
         }
 
         /// The lines of the slots and the labelled lines of full hours.
@@ -333,6 +448,47 @@ impl Timeline {
         self.select(Some(index));
         let index = u32::try_from(index).expect("a day has few blocks");
         self.emit_by_name::<()>("block-activated", &[&index]);
+    }
+
+    /// Shows `popover` at the span selected last, which stays marked until
+    /// the popover closes.
+    pub fn show_popover(&self, popover: &gtk::Popover) {
+        let imp = self.imp();
+        let span = imp
+            .pending
+            .get()
+            .expect("a popover belongs to a selected span");
+        let area = imp.span_area(span);
+        popover.set_parent(self);
+        popover.set_pointing_to(Some(&gdk::Rectangle::new(
+            area.x() as i32,
+            area.y() as i32,
+            area.width() as i32,
+            area.height() as i32,
+        )));
+        popover.connect_closed(glib::clone!(
+            #[weak(rename_to = timeline)]
+            self,
+            move |popover| {
+                let imp = timeline.imp();
+                imp.pending.set(None);
+                imp.popover.take();
+                popover.unparent();
+                timeline.queue_draw();
+            }
+        ));
+        imp.popover.replace(Some(popover.clone()));
+        popover.popup();
+    }
+
+    pub fn connect_span_selected(&self, callback: impl Fn(&Self, u32, u32) + 'static) {
+        self.connect_closure(
+            "span-selected",
+            false,
+            glib::closure_local!(move |timeline: &Self, start: u32, end: u32| {
+                callback(timeline, start, end);
+            }),
+        );
     }
 
     pub fn connect_block_activated(&self, callback: impl Fn(&Self, usize) + 'static) {
