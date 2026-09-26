@@ -42,6 +42,30 @@ Knotbook opens the same vault again on the next start.
 `meson test -C _build` validates the desktop file, metainfo and settings
 schema.
 
+### Flatpak
+
+The Flatpak manifest is `build-aux/dev.knotbook.Knotbook.json`. It needs
+`flatpak-builder`, the GNOME 50 SDK and the Rust extension from Flathub:
+
+```sh
+flatpak install flathub org.gnome.Sdk//50 org.freedesktop.Sdk.Extension.rust-stable//25.08
+flatpak-builder --user --install --force-clean _flatpak build-aux/dev.knotbook.Knotbook.json
+flatpak run dev.knotbook.Knotbook
+```
+
+The build runs without network access and takes the crates from
+`build-aux/cargo-sources.json`. After every change to `Cargo.lock`,
+regenerate that file with
+[flatpak-cargo-generator](https://github.com/flatpak/flatpak-builder-tools/tree/master/cargo),
+for example with `uv`, which installs the script's dependencies:
+
+```sh
+uv run flatpak-cargo-generator.py Cargo.lock -o build-aux/cargo-sources.json
+```
+
+The app gets access to the home folder, so that a vault can live anywhere in
+it.
+
 ## License
 
 Knotbook is licensed under the [GNU General Public License v3.0 or later](LICENSE).

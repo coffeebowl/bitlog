@@ -1,0 +1,36 @@
+{
+  "id": "dev.knotbook.Knotbook",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "50",
+  "sdk": "org.gnome.Sdk",
+  "sdk-extensions": ["org.freedesktop.Sdk.Extension.rust-stable"],
+  "command": "knotbook-gtk",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=fallback-x11",
+    "--socket=wayland",
+    "--device=dri",
+    "--filesystem=home"
+  ],
+  "build-options": {
+    "append-path": "/usr/lib/sdk/rust-stable/bin",
+    "env": {
+      "CARGO_HOME": "/run/build/knotbook/cargo",
+      "CARGO_NET_OFFLINE": "true"
+    }
+  },
+  "modules": [
+    {
+      "name": "knotbook",
+      "buildsystem": "meson",
+      "sources": [
+        {
+          "type": "dir",
+          "path": "..",
+          "skip": [".flatpak-builder", "_build", "_flatpak", "_install", "target"]
+        },
+        "cargo-sources.json"
+      ]
+    }
+  ]
+}

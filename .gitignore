@@ -1,3 +1,5 @@
 /target
 /_build
 /_install
+/.flatpak-builder
+/_flatpak
