@@ -306,7 +306,7 @@ impl MarkdownView {
             buffer.apply_tag_by_name(&tag_name(style), &start, &end);
         }
         if let Some(links) = &*self.imp().wiki_links.borrow() {
-            for link in wiki_links(&text, &links.project) {
+            for link in wiki_links(&text, Some(&links.project)) {
                 if !link.note.as_ref().is_some_and(|note| (links.exists)(note)) {
                     let start = buffer.iter_at_offset(char_offset(&text, link.span.start));
                     let end = buffer.iter_at_offset(char_offset(&text, link.span.end));
@@ -326,7 +326,7 @@ impl MarkdownView {
             .char_indices()
             .nth(offset)
             .map_or(text.len(), |(byte, _)| byte);
-        wiki_links(&text, &links.project)
+        wiki_links(&text, Some(&links.project))
             .into_iter()
             .find(|link| link.span.contains(&byte))
     }

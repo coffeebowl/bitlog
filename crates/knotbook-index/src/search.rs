@@ -17,7 +17,7 @@ const SNIPPET_LENGTH: u32 = 64;
 /// Titles and note names weigh this much more than texts.
 const TITLE_WEIGHT: f64 = 5.0;
 
-/// Where a search found something.
+/// Where a search found something, or where a wiki link lies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Found {
     /// The title or text of a block.

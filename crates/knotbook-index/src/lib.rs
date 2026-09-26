@@ -5,6 +5,7 @@
 //! deleted and rebuilt from them at any time.
 
 mod content;
+mod queries;
 mod search;
 
 use std::collections::HashSet;
@@ -21,6 +22,7 @@ use thiserror::Error;
 
 use crate::content::{insert, remove, sync_projects};
 
+pub use queries::RemoteDays;
 pub use search::{Found, SearchHit};
 
 /// The schema, one step per migration. Add steps, never change them.
@@ -28,6 +30,7 @@ const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/01-content.sql")),
     M::up(include_str!("migrations/02-files.sql")),
     M::up(include_str!("migrations/03-search.sql")),
+    M::up(include_str!("migrations/04-links.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
@@ -288,6 +291,9 @@ fn stamp(metadata: &Metadata) -> (i64, i64) {
 #[cfg(test)]
 mod tests {
     use std::time::{Duration, SystemTime};
+
+    use chrono::TimeDelta;
+    use knotbook_core::ProjectSlug;
 
     use super::*;
 
@@ -667,9 +673,141 @@ mod tests {
     fn search_covers_content_indexed_before() {
         let mut connection = Connection::open_in_memory().unwrap();
         MIGRATIONS.to_version(&mut connection, 2).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO days (date, kind, note) VALUES ('2026-09-23', 'work', '');
+                 INSERT INTO blocks VALUES ('2026-09-23', 'ff66', 'infra', 0, 60,
+                     'Release deployment', '');",
+            )
+            .unwrap();
+        MIGRATIONS.to_latest(&mut connection).unwrap();
+        let index = Index { connection };
+        assert_eq!(
+            found(&index.search("deploy", 10).unwrap()),
+            [&block(23, "ff66")]
+        );
+    }
+
+    #[test]
+    fn project_time_sums_blocks() {
+        let vault = sample();
+        let mut index = in_memory();
+        index.rebuild(&vault).unwrap();
+        let mut expected = std::collections::BTreeMap::<ProjectSlug, TimeDelta>::new();
+        for day in [21, 22, 23] {
+            for block in vault.load_day(date(day)).unwrap().unwrap().day.blocks {
+                let duration = block.duration();
+                *expected.entry(block.project).or_default() += duration;
+            }
+        }
+        let mut times = index.project_time(date(21), date(23)).unwrap();
+        assert!(times.is_sorted_by(|a, b| a.1 >= b.1));
+        times.sort();
+        assert_eq!(times, expected.into_iter().collect::<Vec<_>>());
+        let times = index.project_time(date(21), date(21)).unwrap();
+        assert_eq!(
+            times[0],
+            ("infra".parse().unwrap(), TimeDelta::minutes(225))
+        );
+        assert!(index.project_time(date(24), date(30)).unwrap().is_empty());
+    }
+
+    fn note_path(project: &str, name: &str) -> NotePath {
+        NotePath::new(project.parse().unwrap(), name).unwrap()
+    }
+
+    #[test]
+    fn backlinks_come_from_notes_and_days() {
+        let (_dir, vault, mut index) = sample_copy();
+        let deployment = note_path("infra", "deployment");
+        assert_eq!(
+            index.backlinks(&deployment).unwrap(),
+            [
+                Found::Note(note_path("webshop", "checkout-flow")),
+                block(23, "cc33"),
+            ]
+        );
+        assert_eq!(
+            index
+                .backlinks(&note_path("webshop", "checkout-flow"))
+                .unwrap(),
+            [
+                Found::Note(deployment.clone()),
+                Found::Note(note_path("webshop", "payment-provider")),
+            ]
+        );
+        // A short link in a block text points to the block's project, and
+        // to nothing in the day note.
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.note = "See [[deployment]] and [[infra/deployment]].".to_owned();
+                day.blocks[5].text = "See [[deployment]].".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        index.refresh(&vault).unwrap();
+        assert_eq!(
+            index.backlinks(&deployment).unwrap(),
+            [
+                Found::Note(note_path("webshop", "checkout-flow")),
+                block(23, "cc33"),
+                Found::DayNote(date(21)),
+                block(21, "m1n2"),
+            ]
+        );
+    }
+
+    #[test]
+    fn remote_days_count_work_days() {
+        let (_dir, vault, mut index) = sample_copy();
+        let days = |index: &Index| index.remote_days().unwrap();
+        assert_eq!(
+            days(&index),
+            [RemoteDays {
+                year: 2026,
+                remote: 1,
+                hybrid: 1
+            }]
+        );
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.kind = "vacation".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        index.refresh(&vault).unwrap();
+        assert_eq!(
+            days(&index),
+            [RemoteDays {
+                year: 2026,
+                remote: 0,
+                hybrid: 1
+            }]
+        );
+    }
+
+    #[test]
+    fn links_cover_content_indexed_before() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut connection, 3).unwrap();
+        connection
+            .execute(
+                "INSERT INTO files VALUES ('daily/2026/09/2026-09-23.md', 0, 0, 0)",
+                [],
+            )
+            .unwrap();
+        MIGRATIONS.to_latest(&mut connection).unwrap();
         let mut index = Index { connection };
-        index.rebuild(&sample()).unwrap();
-        MIGRATIONS.to_latest(&mut index.connection).unwrap();
-        assert_eq!(index.search("deploy", 10).unwrap().len(), 4);
+        assert_eq!(count(&index, "files"), 0);
+        index.refresh(&sample()).unwrap();
+        assert_eq!(
+            index
+                .backlinks(&note_path("infra", "deployment"))
+                .unwrap()
+                .len(),
+            2
+        );
     }
 }

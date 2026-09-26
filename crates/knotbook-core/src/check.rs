@@ -146,7 +146,7 @@ impl Vault {
     }
 
     fn broken_links(&self, note: &NotePath, text: &str) -> Vec<Problem> {
-        wiki_links(text, note.project())
+        wiki_links(text, Some(note.project()))
             .into_iter()
             .filter(|link| {
                 !link

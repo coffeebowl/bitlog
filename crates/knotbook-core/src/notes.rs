@@ -39,13 +39,13 @@ pub enum SavedNote {
     Conflict(NoteFile),
 }
 
-/// A wiki link like `[[project-a/deployment]]` in a project note.
+/// A wiki link like `[[project-a/deployment]]` in a note or day file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WikiLink {
-    /// The whole link, brackets included, as a byte range of the note.
+    /// The whole link, brackets included, as a byte range of the text.
     pub span: Range<usize>,
     /// The target as written, without `|text` or `#heading`, as a byte
-    /// range of the note.
+    /// range of the text.
     pub range: Range<usize>,
     /// The note the link points to, whether it exists or not. `None` if
     /// the target is no valid note path.
@@ -59,9 +59,10 @@ impl WikiLink {
     }
 }
 
-/// The wiki links in `text`, a note of the project `project`. A target
-/// without a project, as in `[[deployment]]`, is a note of `project`.
-pub fn wiki_links(text: &str, project: &ProjectSlug) -> Vec<WikiLink> {
+/// The wiki links in `text`, a note or block text of the project `project`.
+/// A target without a project, as in `[[deployment]]`, is a note of
+/// `project`, and points nowhere in text of no project, such as a day note.
+pub fn wiki_links(text: &str, project: Option<&ProjectSlug>) -> Vec<WikiLink> {
     parser(text)
         .into_offset_iter()
         .filter_map(|(event, range)| match event {
@@ -84,10 +85,10 @@ pub fn wiki_links(text: &str, project: &ProjectSlug) -> Vec<WikiLink> {
         .collect()
 }
 
-fn note_path(target: &str, project: &ProjectSlug) -> Option<NotePath> {
+fn note_path(target: &str, project: Option<&ProjectSlug>) -> Option<NotePath> {
     match target.split_once('/') {
         Some((slug, name)) => NotePath::new(slug.parse().ok()?, name).ok(),
-        None => NotePath::new(project.clone(), target).ok(),
+        None => NotePath::new(project?.clone(), target).ok(),
     }
 }
 
@@ -247,7 +248,7 @@ impl Vault {
         for project in self.projects() {
             for note in self.notes(&project.slug)? {
                 let file = self.load_note(&note)?;
-                if wiki_links(&file.text, &project.slug)
+                if wiki_links(&file.text, Some(&project.slug))
                     .iter()
                     .any(|link| link.note.as_ref() == Some(target))
                 {
@@ -317,7 +318,7 @@ impl Vault {
     /// Changes the wiki links to `from` in the note `note` to point to `to`.
     fn relink(&self, note: &NotePath, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
         let mut text = self.load_note(note)?.text;
-        let links = wiki_links(&text, note.project());
+        let links = wiki_links(&text, Some(note.project()));
         // From the end, so that the ranges before stay valid.
         for link in links.iter().rev() {
             if link.note.as_ref() != Some(from) {
@@ -382,7 +383,7 @@ mod tests {
         let (_dir, vault) = sample_copy();
         let checkout = note("projects/webshop/notes/checkout-flow.md");
         let text = vault.load_note(&checkout).unwrap().text;
-        let targets: Vec<_> = wiki_links(&text, checkout.project())
+        let targets: Vec<_> = wiki_links(&text, Some(checkout.project()))
             .into_iter()
             .map(|link| link.note.unwrap().to_string())
             .collect();
@@ -407,7 +408,7 @@ mod tests {
         let project = slug("webshop");
         let text = "[[infra/deployment#Steps|how]] [[Auth Middleware]] [[a/b/c]] \
                     `[[infra/in-code]]` [[]]";
-        let links = wiki_links(text, &project);
+        let links = wiki_links(text, Some(&project));
         let found: Vec<_> = links
             .iter()
             .map(|link| (&text[link.range.clone()], link.note.clone()))
@@ -434,6 +435,16 @@ mod tests {
                 "[[Auth Middleware]]",
                 "[[a/b/c]]"
             ]
+        );
+    }
+
+    #[test]
+    fn short_links_need_a_project() {
+        let links = wiki_links("[[infra/deployment]] [[deployment]]", None);
+        let notes: Vec<_> = links.into_iter().map(|link| link.note).collect();
+        assert_eq!(
+            notes,
+            [Some(note("projects/infra/notes/deployment.md")), None]
         );
     }
 

@@ -217,6 +217,10 @@ outline of the document belongs to Knotbook:
 - **Outside the app:** Hand-written headings in block texts are tolerated and
   belong to the text of the block. Knotbook does not change them unasked;
   `knotbook doctor` reports them and offers to escape them.
+- **Wiki links** to notes work as in project notes (see there). In a block
+  text, `[[name]]` points to a note of the block's project; the day note
+  belongs to no project, so only links like `[[project-a/name]]` point to a
+  note there.
 - Project notes are not affected; they may use full Markdown.
 
 ### Block sections

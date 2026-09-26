@@ -3,10 +3,10 @@
 use std::collections::HashSet;
 
 use chrono::{NaiveTime, Timelike};
-use knotbook_core::{Day, NotePath, TaskList, Vault};
+use knotbook_core::{Day, NotePath, ProjectSlug, TaskList, Vault, wiki_links};
 use rusqlite::{Transaction, params};
 
-use crate::{IndexError, IndexFile};
+use crate::{Found, IndexError, IndexFile};
 
 /// Makes the projects in the index those of `vault`. Removing a project
 /// removes its notes, too.
@@ -111,12 +111,54 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
             block.text,
         ])?;
     }
+    insert_links(tx, &Found::DayNote(day.date), &day.note, None)?;
+    for block in &day.blocks {
+        let source = Found::Block {
+            date: day.date,
+            id: block.id.clone(),
+        };
+        insert_links(tx, &source, &block.text, Some(&block.project))?;
+    }
     Ok(())
 }
 
 fn insert_note(tx: &Transaction, note: &NotePath, text: &str) -> rusqlite::Result<()> {
     tx.prepare_cached("INSERT INTO notes (project, name, text) VALUES (?, ?, ?)")?
         .execute(params![note.project().as_str(), note.name(), text])?;
+    insert_links(tx, &Found::Note(note.clone()), text, Some(note.project()))
+}
+
+/// Puts the wiki links in `text`, found in `source` of the project
+/// `project`, into the index. Links that point nowhere are left out.
+fn insert_links(
+    tx: &Transaction,
+    source: &Found,
+    text: &str,
+    project: Option<&ProjectSlug>,
+) -> rusqlite::Result<()> {
+    let (note, date, block) = match source {
+        Found::Note(note) => (Some(note), None, None),
+        Found::DayNote(date) => (None, Some(*date), None),
+        Found::Block { date, id } => (None, Some(*date), Some(id.as_str())),
+        Found::Task(_) => unreachable!("tasks hold no links"),
+    };
+    let mut insert = tx.prepare_cached(
+        "INSERT INTO links (note_project, note_name, date, block, target_project, target_name)
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )?;
+    for target in wiki_links(text, project)
+        .into_iter()
+        .filter_map(|link| link.note)
+    {
+        insert.execute(params![
+            note.map(|note| note.project().as_str()),
+            note.map(|note| note.name()),
+            date,
+            block,
+            target.project().as_str(),
+            target.name(),
+        ])?;
+    }
     Ok(())
 }
 
