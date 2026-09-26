@@ -2,6 +2,7 @@ app/src/calendar_view.rs
 app/src/conflict_dialog.rs
 app/src/day_view.rs
 app/src/format.rs
+app/src/heatmap.rs
 app/src/main.rs
 app/src/note_view.rs
 app/src/project_dialog.rs

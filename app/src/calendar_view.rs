@@ -255,7 +255,7 @@ impl CalendarView {
 }
 
 /// The first day of the week `date` lies in.
-fn week_start(date: NaiveDate, first_day: Weekday) -> NaiveDate {
+pub fn week_start(date: NaiveDate, first_day: Weekday) -> NaiveDate {
     date - Days::new(date.weekday().days_since(first_day).into())
 }
 

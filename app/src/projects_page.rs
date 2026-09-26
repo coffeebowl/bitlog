@@ -152,7 +152,9 @@ impl ProjectsPage {
 
     /// Uses `index` to find the links to notes.
     pub fn set_index(&self, index: SearchIndex) {
-        self.imp().note_view.set_index(index);
+        let imp = self.imp();
+        imp.note_view.set_index(index.clone());
+        imp.project_view.set_index(index);
     }
 
     pub fn vault(&self) -> Rc<Vault> {

@@ -24,45 +24,216 @@ template $KnotbookProjectView: Adw.NavigationPage {
       }
     }
 
-    content: Stack stack {
-      StackPage {
-        name: "list";
+    [top]
+    Adw.InlineViewSwitcher {
+      stack: view_stack;
+      halign: center;
+      margin-bottom: 6;
+    }
+
+    content: Adw.ViewStack view_stack {
+      Adw.ViewStackPage {
+        name: "overview";
+        title: _("Overview");
 
         child: Adw.PreferencesPage {
-          Adw.PreferencesGroup notes_group {
-            title: _("Notes");
+          Adw.PreferencesGroup {
+            title: _("Time");
+
+            Adw.ActionRow total_row {
+              title: _("Total");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow week_row {
+              title: _("This Week");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow month_row {
+              title: _("This Month");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow share_row {
+              title: _("Share of All Work This Month");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow days_row {
+              title: _("Days Worked On");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow average_row {
+              title: _("Average per Day Worked On");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow first_row {
+              title: _("First Day");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow last_row {
+              title: _("Last Day");
+
+              styles [
+                "property",
+              ]
+            }
+
+            Adw.ActionRow longest_row {
+              title: _("Longest Block");
+
+              [suffix]
+              Image {
+                icon-name: "go-next-symbolic";
+              }
+
+              styles [
+                "property",
+              ]
+            }
+          }
+
+          Adw.PreferencesGroup {
+            title: _("Activity");
+            description: _("Time spent per day in the last 12 months");
+
+            ScrolledWindow {
+              vscrollbar-policy: never;
+              propagate-natural-height: true;
+
+              child: $KnotbookHeatmap heatmap {
+                halign: start;
+                margin-bottom: 6;
+              };
+            }
           }
         };
       }
 
-      StackPage {
-        name: "empty";
+      Adw.ViewStackPage {
+        name: "notes";
+        title: _("Notes");
 
-        child: Adw.StatusPage {
-          icon-name: "text-x-generic-symbolic";
-          title: _("No Notes");
-          description: _("Notes keep what you know about a project, in Markdown");
+        child: Stack stack {
+          StackPage {
+            name: "list";
 
-          child: Button empty_new_note_button {
-            label: _("_New Note");
-            use-underline: true;
-            halign: center;
-            action-name: "notes.new";
+            child: Adw.PreferencesPage {
+              Adw.PreferencesGroup notes_group {}
+            };
+          }
 
-            styles [
-              "pill",
-              "suggested-action",
-            ]
-          };
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "text-x-generic-symbolic";
+              title: _("No Notes");
+              description: _("Notes keep what you know about a project, in Markdown");
+
+              child: Button empty_new_note_button {
+                label: _("_New Note");
+                use-underline: true;
+                halign: center;
+                action-name: "notes.new";
+
+                styles [
+                  "pill",
+                  "suggested-action",
+                ]
+              };
+            };
+          }
+
+          StackPage {
+            name: "error";
+
+            child: Adw.StatusPage error_page {
+              icon-name: "dialog-error-symbolic";
+              title: _("Cannot Read Notes");
+            };
+          }
         };
       }
 
-      StackPage {
-        name: "error";
+      Adw.ViewStackPage {
+        name: "timeline";
+        title: _("Timeline");
 
-        child: Adw.StatusPage error_page {
-          icon-name: "dialog-error-symbolic";
-          title: _("Cannot Read Notes");
+        child: Stack timeline_stack {
+          StackPage {
+            name: "list";
+
+            child: ScrolledWindow {
+              hscrollbar-policy: never;
+
+              child: Adw.Clamp {
+                margin-top: 24;
+                margin-bottom: 24;
+                margin-start: 12;
+                margin-end: 12;
+
+                child: Box {
+                  orientation: vertical;
+                  spacing: 18;
+
+                  ListBox timeline_list {
+                    selection-mode: none;
+
+                    styles [
+                      "boxed-list",
+                    ]
+                  }
+
+                  Button more_button {
+                    label: _("_Load More");
+                    use-underline: true;
+                    halign: center;
+                    visible: false;
+
+                    styles [
+                      "pill",
+                    ]
+                  }
+                };
+              };
+            };
+          }
+
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "x-office-calendar-symbolic";
+              title: _("No Blocks");
+              description: _("Blocks of this project in the day view show up here");
+            };
+          }
         };
       }
     };

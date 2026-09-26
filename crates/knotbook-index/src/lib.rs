@@ -22,7 +22,7 @@ use thiserror::Error;
 
 use crate::content::{insert, remove, sync_projects};
 
-pub use queries::RemoteDays;
+pub use queries::{ProjectBlock, RemoteDays};
 pub use search::{Found, SearchHit};
 
 /// The schema, one step per migration. Add steps, never change them.
@@ -810,5 +810,33 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn project_activity_and_blocks() {
+        let mut index = in_memory();
+        index.rebuild(&sample()).unwrap();
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        assert_eq!(
+            index.project_activity(&infra).unwrap(),
+            [
+                (date(21), TimeDelta::minutes(225)),
+                (date(22), TimeDelta::minutes(120)),
+                (date(23), TimeDelta::minutes(135 + 120)),
+            ]
+        );
+        let blocks = index.project_blocks(&infra, 0, 2).unwrap();
+        let ids: Vec<&str> = blocks.iter().map(|block| block.id.as_str()).collect();
+        assert_eq!(ids, ["ff66", "cc33"]);
+        assert_eq!(blocks[0].title, "Release deployment");
+        assert_eq!(blocks[0].duration(), TimeDelta::minutes(120));
+        let rest = index.project_blocks(&infra, 2, 10).unwrap();
+        // Four blocks in all.
+        assert_eq!(rest.len(), 2);
+        let longest = index.longest_block(&infra).unwrap().unwrap();
+        assert_eq!((longest.date, longest.id.as_str()), (date(21), "m1n2"));
+        let unknown = "nothing".parse().unwrap();
+        assert!(index.project_activity(&unknown).unwrap().is_empty());
+        assert_eq!(index.longest_block(&unknown).unwrap(), None);
     }
 }

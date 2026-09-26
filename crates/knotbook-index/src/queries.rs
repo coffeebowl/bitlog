@@ -1,7 +1,9 @@
 //! Sums and lookups over the whole vault.
 
 use chrono::{NaiveDate, TimeDelta};
-use knotbook_core::{NotePath, ProjectSlug};
+use knotbook_core::{BlockId, NotePath, ProjectSlug};
+
+use rusqlite::OptionalExtension;
 
 use crate::{Found, Index, IndexError};
 
@@ -15,7 +17,88 @@ pub struct RemoteDays {
     pub hybrid: u32,
 }
 
+/// A block of one project, as the project's timeline shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectBlock {
+    pub date: NaiveDate,
+    pub id: BlockId,
+    /// Minutes after the start of the day. The end is past `24 * 60` if the
+    /// block ends on the next day.
+    pub start_minute: u32,
+    pub end_minute: u32,
+    pub title: String,
+    pub text: String,
+}
+
+impl ProjectBlock {
+    pub fn duration(&self) -> TimeDelta {
+        TimeDelta::minutes((self.end_minute - self.start_minute).into())
+    }
+}
+
+const PROJECT_BLOCK_COLUMNS: &str = "date, id, start_minute, end_minute, title, text";
+
+fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
+    let id: String = row.get(1)?;
+    Ok(ProjectBlock {
+        date: row.get(0)?,
+        id: id.parse().expect("the index holds valid block ids"),
+        start_minute: row.get(2)?,
+        end_minute: row.get(3)?,
+        title: row.get(4)?,
+        text: row.get(5)?,
+    })
+}
+
 impl Index {
+    /// The time spent on `project` on each day it was worked on, oldest
+    /// first. A block counts on the day it starts.
+    pub fn project_activity(
+        &self,
+        project: &ProjectSlug,
+    ) -> Result<Vec<(NaiveDate, TimeDelta)>, IndexError> {
+        let mut statement = self.connection.prepare_cached(
+            "SELECT date, sum(end_minute - start_minute) FROM blocks
+             WHERE project = ? GROUP BY date ORDER BY date",
+        )?;
+        let days = statement
+            .query_map([project.as_str()], |row| {
+                Ok((row.get(0)?, TimeDelta::minutes(row.get(1)?)))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(days)
+    }
+
+    /// The blocks of `project`, newest first, leaving out the first `skip`
+    /// and returning at most `limit`.
+    pub fn project_blocks(
+        &self,
+        project: &ProjectSlug,
+        skip: u32,
+        limit: u32,
+    ) -> Result<Vec<ProjectBlock>, IndexError> {
+        let mut statement = self.connection.prepare_cached(&format!(
+            "SELECT {PROJECT_BLOCK_COLUMNS} FROM blocks WHERE project = ?
+             ORDER BY date DESC, start_minute DESC LIMIT ? OFFSET ?"
+        ))?;
+        let blocks = statement
+            .query_map((project.as_str(), limit, skip), project_block)?
+            .collect::<Result<_, _>>()?;
+        Ok(blocks)
+    }
+
+    /// The longest block of `project`, the newest of them if several are as
+    /// long.
+    pub fn longest_block(&self, project: &ProjectSlug) -> Result<Option<ProjectBlock>, IndexError> {
+        let mut statement = self.connection.prepare_cached(&format!(
+            "SELECT {PROJECT_BLOCK_COLUMNS} FROM blocks WHERE project = ?
+             ORDER BY end_minute - start_minute DESC, date DESC LIMIT 1"
+        ))?;
+        Ok(statement
+            .query_row([project.as_str()], project_block)
+            .optional()?)
+    }
+
     /// The time spent on each project from `first` to `last`, both
     /// included, most first. Breaks and projects that do not exist count as
     /// well. A block counts on the day it starts.
