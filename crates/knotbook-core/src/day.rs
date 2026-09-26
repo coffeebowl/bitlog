@@ -1,5 +1,6 @@
 //! Day files, `daily/YYYY/MM/YYYY-MM-DD.md`.
 
+mod edit;
 mod sections;
 mod write;
 
@@ -13,6 +14,8 @@ use serde::{Deserialize, Deserializer};
 use crate::error::ReadError;
 use crate::file::parse_text;
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
+
+pub use edit::{EditError, RemovedText};
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;

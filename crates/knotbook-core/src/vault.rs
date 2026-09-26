@@ -8,7 +8,7 @@ use chrono::{Datelike, Months, NaiveDate};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_optional, read_text, write_atomic};
-use crate::{Day, DayWarning, Project, ProjectSlug, VaultConfig};
+use crate::{Day, DayWarning, EditError, Project, ProjectSlug, VaultConfig};
 
 #[derive(Debug, Clone)]
 pub struct Vault {
@@ -100,7 +100,7 @@ impl Vault {
     pub fn update_day(
         &self,
         file: &DayFile,
-        change: impl FnOnce(&mut Day),
+        change: impl FnOnce(&mut Day) -> Result<(), EditError>,
     ) -> Result<DayFile, SaveError> {
         let path = self.day_path(file.day.date);
         let current = read_optional(&path)?;
@@ -112,7 +112,7 @@ impl Vault {
             DayFile::new(file.day.date)
         };
         let mut day = base.day.clone();
-        change(&mut day);
+        change(&mut day)?;
         // Leaves files that are not in canonical form alone.
         if day == base.day && current.is_some() {
             return Ok(base);
@@ -223,6 +223,7 @@ mod tests {
     use chrono::TimeDelta;
 
     use super::*;
+    use crate::RemovedText;
     use crate::file::TempDir;
 
     fn sample_path() -> PathBuf {
@@ -334,7 +335,10 @@ mod tests {
         let (_dir, vault) = sample_copy();
         let file = vault.load_day(date(2026, 9, 21)).unwrap().unwrap();
         let saved = vault
-            .update_day(&file, |day| day.note = "Changed.".to_owned())
+            .update_day(&file, |day| {
+                day.note = "Changed.".to_owned();
+                Ok(())
+            })
             .unwrap();
         assert_eq!(saved.day.note, "Changed.");
         let path = vault.day_path(date(2026, 9, 21));
@@ -342,7 +346,10 @@ mod tests {
 
         // The saved state is the base for the next change, without reading again.
         let again = vault
-            .update_day(&saved, |day| day.kind = "vacation".to_owned())
+            .update_day(&saved, |day| {
+                day.kind = "vacation".to_owned();
+                Ok(())
+            })
             .unwrap();
         assert_eq!(again.day.note, "Changed.");
         assert_eq!(
@@ -362,7 +369,10 @@ mod tests {
         fs::write(&path, external).unwrap();
 
         let saved = vault
-            .update_day(&file, |day| day.note = "Changed.".to_owned())
+            .update_day(&file, |day| {
+                day.note = "Changed.".to_owned();
+                Ok(())
+            })
             .unwrap();
         assert_eq!(saved.day.location, Some("office".parse().unwrap()));
         assert_eq!(saved.day.note, "Changed.");
@@ -373,11 +383,36 @@ mod tests {
     }
 
     #[test]
+    fn change_that_no_longer_fits_is_not_saved() {
+        let (_dir, vault) = sample_copy();
+        let date = date(2026, 9, 21);
+        let file = vault.load_day(date).unwrap().unwrap();
+        let first = file.day.blocks[0].id.clone();
+        // Elsewhere, the block is removed.
+        let path = vault.day_path(date);
+        let mut external = file.day.clone();
+        external.remove_block(&first, RemovedText::Discard).unwrap();
+        fs::write(&path, external.to_markdown()).unwrap();
+
+        let err = vault
+            .update_day(&file, |day| day.set_block_title(&first, "Late"))
+            .unwrap_err();
+        assert!(
+            matches!(err, SaveError::Edit(EditError::UnknownBlock(_))),
+            "{err}"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), external.to_markdown());
+    }
+
+    #[test]
     fn update_new_day() {
         let (_dir, vault) = sample_copy();
         let file = DayFile::new(date(2026, 10, 1));
         let saved = vault
-            .update_day(&file, |day| day.note = "First.".to_owned())
+            .update_day(&file, |day| {
+                day.note = "First.".to_owned();
+                Ok(())
+            })
             .unwrap();
         assert_eq!(saved.day.note, "First.");
         assert_eq!(
@@ -387,7 +422,10 @@ mod tests {
 
         // Created elsewhere in the meantime: the change applies to that file.
         let saved = vault
-            .update_day(&file, |day| day.kind = "vacation".to_owned())
+            .update_day(&file, |day| {
+                day.kind = "vacation".to_owned();
+                Ok(())
+            })
             .unwrap();
         assert_eq!(saved.day.note, "First.");
         assert_eq!(saved.day.kind, "vacation");
@@ -400,7 +438,7 @@ mod tests {
         let path = vault.day_path(date(2026, 9, 22));
         let before = fs::read_to_string(&path).unwrap();
         let file = vault.load_day(date(2026, 9, 22)).unwrap().unwrap();
-        vault.update_day(&file, |_| {}).unwrap();
+        vault.update_day(&file, |_| Ok(())).unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), before);
     }
 

@@ -10,7 +10,7 @@ mod project;
 mod vault;
 
 pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
-pub use day::{Block, Day, DayWarning};
+pub use day::{Block, Day, DayWarning, EditError, RemovedText};
 pub use error::{ReadError, SaveError};
 pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use markdown::{MarkdownMode, MarkdownStyle, markdown_styles};

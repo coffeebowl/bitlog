@@ -215,7 +215,7 @@ outline of the document belongs to Knotbook:
 ### Block sections
 
 - Every block has a level 2 heading: `## Title {#id}`. The heading is the title
-  of the block. Without a title it reads `## {#id}`.
+  of the block, a single line. Without a title it reads `## {#id}`.
 - **Only** a level 2 heading that ends in `{#id}` and whose ID is listed in the
   front matter **counts as a block boundary.** It has to start at the beginning
   of a line, outside code blocks, quotes and lists. All other headings belong
@@ -235,12 +235,17 @@ outline of the document belongs to Knotbook:
   of the preceding block, or to the day note if no block precedes it. It
   produces a warning, and `knotbook doctor` reports it and offers to escape it.
 - When a block that has text is deleted, Knotbook asks whether to discard the
-  text or move it to the day note.
+  text or move it to the day note. Moved text is appended to the day note
+  below a bold line naming the block, such as `**09:00–10:30 project-a: Title**`.
 
 ### Block rules
 
-- Blocks do not overlap. Knotbook prevents it; when reading, overlaps are
-  flagged, not discarded.
+- Blocks do not overlap. Knotbook prevents it within a day; when reading,
+  overlaps are flagged, not discarded. A block past midnight is not checked
+  against the blocks of the next day.
+- Blocks get their project from the vault's projects and the day its location
+  from `[locations]` when set in Knotbook. Unknown values read from a file are
+  kept.
 - Blocks do not have to be contiguous. The point is a rough assignment.
 - An `end` earlier than `start` means the next day. The block counts towards
   the day it starts on.
