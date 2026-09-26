@@ -78,6 +78,17 @@ cargo install --path crates/knotbook-cli
 
 `knotbook init` creates a new vault in the current folder, or in the folder
 given with `--vault`. The folder may only hold hidden files such as `.git`.
+
+All other commands work on an existing vault. It is the folder given with
+`--vault`, or else the one in the environment variable `KNOTBOOK_VAULT`, or
+else the current folder or the closest folder above it that holds a
+`knotbook.toml`.
+
+```sh
+knotbook today              # today's blocks, working time and location
+knotbook day 2026-09-23     # the same for another day
+```
+
 `knotbook --help` lists all commands.
 
 ## License
