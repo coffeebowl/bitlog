@@ -70,7 +70,8 @@ enum Command {
         command: TaskCommand,
     },
     /// Check all days for unknown projects, overlapping blocks and headings
-    /// in texts. Exits with 1 if something is left.
+    /// in texts, and all notes for broken wiki links. Exits with 1 if
+    /// something is left.
     Doctor {
         /// Escape headings in block texts and day notes, so that they read
         /// as plain text

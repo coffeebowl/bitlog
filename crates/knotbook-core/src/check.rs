@@ -8,12 +8,13 @@ use chrono::NaiveDate;
 
 use crate::error::{ReadError, SaveError};
 use crate::markdown::{escape_headings, heading_lines};
-use crate::{BlockId, Day, DayFile, DayWarning, ProjectSlug, Vault};
+use crate::notes::wiki_links;
+use crate::{BlockId, Day, DayFile, DayWarning, NotePath, ProjectSlug, Vault};
 
 /// Something in a vault that needs a look.
 #[derive(Debug)]
 pub enum Problem {
-    /// A day file that cannot be read at all.
+    /// A day file or note that cannot be read at all.
     Unreadable(ReadError),
     UnknownProject {
         date: NaiveDate,
@@ -31,6 +32,13 @@ pub enum Problem {
         date: NaiveDate,
         block: Option<BlockId>,
         line: String,
+    },
+    /// A wiki link in a note, on line `line` counted from 1, that points to
+    /// no note, as it is written.
+    BrokenLink {
+        note: NotePath,
+        line: usize,
+        link: String,
     },
 }
 
@@ -68,12 +76,15 @@ impl fmt::Display for Problem {
                 block: None,
                 line,
             } => write!(f, "{date}: the day note has a heading: {line}"),
+            Self::BrokenLink { note, line, link } => {
+                write!(f, "{note}:{line}: the wiki link {link} points to no note")
+            }
         }
     }
 }
 
 impl Vault {
-    /// Checks all day files, oldest first.
+    /// Checks all day files, oldest first, then the notes of all projects.
     pub fn check(&self) -> Result<Vec<Problem>, ReadError> {
         let mut problems = Vec::new();
         for date in self.all_days()? {
@@ -81,6 +92,14 @@ impl Vault {
                 Ok(Some(file)) => problems.extend(self.check_day(&file)),
                 Ok(None) => {}
                 Err(err) => problems.push(Problem::Unreadable(err)),
+            }
+        }
+        for project in self.projects() {
+            for note in self.notes(&project.slug)? {
+                match self.load_note(&note) {
+                    Ok(file) => problems.extend(self.broken_links(&note, &file.text)),
+                    Err(err) => problems.push(Problem::Unreadable(err)),
+                }
             }
         }
         Ok(problems)
@@ -126,6 +145,23 @@ impl Vault {
         }));
         problems.extend(headings(day));
         problems
+    }
+
+    fn broken_links(&self, note: &NotePath, text: &str) -> Vec<Problem> {
+        wiki_links(text, note.project())
+            .into_iter()
+            .filter(|link| {
+                !link
+                    .note
+                    .as_ref()
+                    .is_some_and(|target| self.note_path(target).is_file())
+            })
+            .map(|link| Problem::BrokenLink {
+                note: note.clone(),
+                line: text[..link.span.start].matches('\n').count() + 1,
+                link: text[link.span].to_owned(),
+            })
+            .collect()
     }
 
     /// All dates with a day file, oldest first.
@@ -208,6 +244,27 @@ mod tests {
             [
                 "2026-09-22: the text of block t5u6 has a heading: ## Root cause",
                 "2026-09-23: the text of block cc33 has a heading: ## Old notes {#zz99}",
+            ]
+        );
+    }
+
+    #[test]
+    fn broken_wiki_links() {
+        let (_dir, vault) = sample_copy();
+        let note = vault
+            .create_note(&"infra".parse().unwrap(), "Links", date(26))
+            .unwrap();
+        fs::write(
+            vault.note_path(&note),
+            "[[deployment]] [[Missing]]\n\n`[[in code]]`\n\
+             [[webshop/checkout-flow#Payment|pay]] [[a/b/c]]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            messages(&vault)[2..],
+            [
+                "projects/infra/notes/Links.md:1: the wiki link [[Missing]] points to no note",
+                "projects/infra/notes/Links.md:4: the wiki link [[a/b/c]] points to no note",
             ]
         );
     }

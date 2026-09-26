@@ -105,7 +105,8 @@ knotbook task edit h4c8 --title "Renew the certificates" --no-due
 knotbook task move h4c8 1   # to the top of the open tasks
 knotbook task archive       # move finished tasks to tasks-archive-YYYY.toml
 
-knotbook doctor             # unknown projects, overlaps, headings in texts
+knotbook doctor             # unknown projects, overlaps, headings in texts,
+                            # broken wiki links in notes
 knotbook doctor --fix       # escape those headings so they read as text
 ```
 
