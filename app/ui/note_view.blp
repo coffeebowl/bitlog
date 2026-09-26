@@ -14,6 +14,29 @@ template $KnotbookNoteView: Adw.NavigationPage {
         icon-name: "view-more-symbolic";
         tooltip-text: _("Note Menu");
       }
+
+      [end]
+      MenuButton backlinks_button {
+        visible: false;
+        tooltip-text: _("Notes and Days Linking Here");
+
+        popover: Popover {
+          child: ScrolledWindow {
+            hscrollbar-policy: never;
+            propagate-natural-height: true;
+            max-content-height: 400;
+
+            child: ListBox backlinks_list {
+              selection-mode: none;
+              width-request: 280;
+
+              styles [
+                "navigation-sidebar",
+              ]
+            };
+          };
+        };
+      }
     }
 
     content: ScrolledWindow {

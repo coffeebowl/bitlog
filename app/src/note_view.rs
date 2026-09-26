@@ -1,17 +1,20 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io;
 use std::rc::Rc;
 use std::time::Duration;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gettextrs::gettext;
+use gettextrs::{gettext, ngettext};
 use gtk::glib;
 use knotbook_core::{NoteFile, NotePath, ReadError, SavedNote, Vault};
+use knotbook_index::Found;
 
 use crate::conflict_dialog::ConflictDialog;
+use crate::format::format_full_date;
 use crate::markdown_view::MarkdownView;
 use crate::project_view::note_menu;
+use crate::search_index::SearchIndex;
 
 mod imp {
     use super::*;
@@ -20,6 +23,12 @@ mod imp {
     #[template(resource = "/dev/knotbook/Knotbook/note_view.ui")]
     pub struct NoteView {
         pub vault: RefCell<Option<Rc<Vault>>>,
+        pub index: RefCell<SearchIndex>,
+        /// The places linking to the note, as the popover lists them.
+        pub backlinks: RefCell<Vec<Found>>,
+        /// Counts the lookups of backlinks, so that an older one finishing
+        /// late is dropped.
+        pub lookups: Cell<u32>,
         /// The note shown, as last read or saved.
         pub file: RefCell<Option<NoteFile>>,
         /// Saves what is being typed a moment after the last key.
@@ -30,6 +39,10 @@ mod imp {
         pub menu_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub editor: TemplateChild<MarkdownView>,
+        #[template_child]
+        pub backlinks_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub backlinks_list: TemplateChild<gtk::ListBox>,
     }
 
     #[glib::object_subclass]
@@ -74,6 +87,11 @@ mod imp {
                 }
             ));
             view.connect_hiding(|view| view.save_now());
+            self.backlinks_list.connect_row_activated(glib::clone!(
+                #[weak]
+                view,
+                move |_, row| view.follow_backlink(row.index())
+            ));
         }
     }
 
@@ -93,6 +111,11 @@ impl NoteView {
     pub fn set_vault(&self, vault: Rc<Vault>) {
         self.save_now();
         self.imp().vault.replace(Some(vault));
+    }
+
+    /// Uses `index` to find the notes and days linking to the note shown.
+    pub fn set_index(&self, index: SearchIndex) {
+        self.imp().index.replace(index);
     }
 
     fn vault(&self) -> Rc<Vault> {
@@ -133,6 +156,9 @@ impl NoteView {
         // A new note starts with an empty undo history.
         imp.editor.set_markdown(&file.text);
         imp.file.replace(Some(file));
+        // Those of the note shown before are wrong until the new ones are in.
+        imp.backlinks_button.set_visible(false);
+        self.show_backlinks();
         Ok(())
     }
 
@@ -156,6 +182,7 @@ impl NoteView {
                     imp.editor.set_markdown(&file.text);
                 }
                 imp.file.replace(Some(file));
+                self.show_backlinks();
                 true
             }
             Err(ReadError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => false,
@@ -166,9 +193,69 @@ impl NoteView {
         }
     }
 
-    /// Marks the wiki links again, after notes were added or removed.
+    /// Marks the wiki links again and looks up the links to the note, after
+    /// notes were changed, added or removed.
     pub fn update_links(&self) {
         self.imp().editor.restyle();
+        if self.note().is_some() {
+            self.show_backlinks();
+        }
+    }
+
+    /// Looks up the places linking to the note shown in the background and
+    /// lists them in the popover, whose button shows how many there are.
+    fn show_backlinks(&self) {
+        let imp = self.imp();
+        let note = self
+            .note()
+            .expect("backlinks are looked up for a note shown");
+        let lookup = imp.lookups.get() + 1;
+        imp.lookups.set(lookup);
+        let index = imp.index.borrow().clone();
+        let vault = self.vault();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            async move {
+                let backlinks = index.backlinks(&vault, note).await;
+                let imp = view.imp();
+                if imp.lookups.get() != lookup {
+                    return;
+                }
+                let backlinks = backlinks.unwrap_or_else(|err| {
+                    glib::g_warning!("knotbook", "{err}");
+                    Vec::new()
+                });
+                imp.backlinks_list.remove_all();
+                for found in &backlinks {
+                    imp.backlinks_list.append(&backlink_row(&vault, found));
+                }
+                let count = u32::try_from(backlinks.len()).unwrap_or(u32::MAX);
+                let label = ngettext("{count} Link", "{count} Links", count)
+                    .replace("{count}", &backlinks.len().to_string());
+                imp.backlinks_button.set_label(&label);
+                imp.backlinks_button.set_visible(!backlinks.is_empty());
+                imp.backlinks.replace(backlinks);
+            }
+        ));
+    }
+
+    /// Shows the place of the backlink in row `index` of the popover.
+    fn follow_backlink(&self, index: i32) {
+        let imp = self.imp();
+        let index = usize::try_from(index).expect("rows in the list have an index");
+        let (action, target) = match &imp.backlinks.borrow()[index] {
+            Found::Note(note) => ("win.show-note", note.to_string().to_variant()),
+            Found::Block { date, id } => (
+                "win.show-block",
+                (date.to_string(), id.to_string()).to_variant(),
+            ),
+            Found::DayNote(date) => ("win.show-day", date.to_string().to_variant()),
+            Found::Task(_) => unreachable!("tasks hold no links"),
+        };
+        imp.backlinks_button.popdown();
+        WidgetExt::activate_action(self, action, Some(&target))
+            .expect("the window shows notes and days");
     }
 
     /// Stops showing the note without saving what is being typed, as when
@@ -255,4 +342,35 @@ impl NoteView {
         ));
         dialog.present(Some(self));
     }
+}
+
+/// A row naming the note, block or day note `found`, which links to a note.
+fn backlink_row(vault: &Vault, found: &Found) -> adw::ActionRow {
+    let (title, subtitle) = match found {
+        Found::Note(note) => {
+            let project = vault
+                .project(note.project())
+                .map_or(note.project().as_str(), |project| &project.name);
+            (note.name().to_owned(), project.to_owned())
+        }
+        Found::Block { date, id } => {
+            // The index knows no titles; reading a day is quick.
+            let title = vault
+                .load_day(*date)
+                .ok()
+                .flatten()
+                .and_then(|file| file.day.blocks.into_iter().find(|block| block.id == *id))
+                .map(|block| block.title)
+                .filter(|title| !title.is_empty())
+                .unwrap_or_else(|| gettext("Block"));
+            (title, format_full_date(*date))
+        }
+        Found::DayNote(date) => (gettext("Day Note"), format_full_date(*date)),
+        Found::Task(_) => unreachable!("tasks hold no links"),
+    };
+    adw::ActionRow::builder()
+        .title(glib::markup_escape_text(&title))
+        .subtitle(glib::markup_escape_text(&subtitle))
+        .activatable(true)
+        .build()
 }

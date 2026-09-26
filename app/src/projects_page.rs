@@ -15,6 +15,7 @@ use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_picker::color_dot;
 use crate::project_view::ProjectView;
+use crate::search_index::SearchIndex;
 
 mod imp {
     use super::*;
@@ -147,6 +148,11 @@ impl ProjectsPage {
         let imp = self.imp();
         imp.note_view.set_vault(vault.clone());
         imp.vault.replace(Some(vault));
+    }
+
+    /// Uses `index` to find the links to notes.
+    pub fn set_index(&self, index: SearchIndex) {
+        self.imp().note_view.set_index(index);
     }
 
     pub fn vault(&self) -> Rc<Vault> {

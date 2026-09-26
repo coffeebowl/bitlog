@@ -4,8 +4,8 @@
 use std::sync::{Arc, Mutex};
 
 use gtk::{gio, glib};
-use knotbook_core::Vault;
-use knotbook_index::{Index, IndexError, SearchHit};
+use knotbook_core::{NotePath, Vault};
+use knotbook_index::{Found, Index, IndexError, SearchHit};
 
 /// Clones share the same index.
 #[derive(Debug, Clone, Default)]
@@ -36,6 +36,20 @@ impl SearchIndex {
     ) -> Result<Vec<SearchHit>, IndexError> {
         self.run(vault, move |index, _| index.search(&query, limit))
             .await
+    }
+
+    /// Where the wiki links to `note` lie, after bringing the index up to
+    /// date, see [`Index::backlinks`].
+    pub async fn backlinks(&self, vault: &Vault, note: NotePath) -> Result<Vec<Found>, IndexError> {
+        let (skipped, links) = self
+            .run(vault, move |index, vault| {
+                Ok((index.refresh(vault)?, index.backlinks(&note)?))
+            })
+            .await?;
+        for err in skipped {
+            glib::g_warning!("knotbook", "{err}");
+        }
+        Ok(links)
     }
 
     async fn run<T: Send + 'static>(

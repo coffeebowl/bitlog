@@ -355,6 +355,7 @@ impl Window {
         // Built in the background, so that the first search is quick.
         let index = SearchIndex::default();
         imp.index.replace(index.clone());
+        imp.projects_page.set_index(index.clone());
         let indexed = vault.clone();
         glib::spawn_future_local(async move {
             if let Err(err) = index.update(&indexed).await {
