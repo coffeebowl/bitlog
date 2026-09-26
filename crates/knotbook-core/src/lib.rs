@@ -19,6 +19,7 @@ pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
 pub use day::{Block, Day, DayWarning, RemovedText};
 pub use error::{EditError, ReadError, SaveError};
+pub use file::content_hash;
 pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;
 pub use markdown::{MarkdownMode, MarkdownStyle, escape_headings, markdown_styles};

@@ -92,7 +92,7 @@ pub(crate) fn watch(
                 .iter()
                 .filter_map(|event| {
                     let relative = event.path.strip_prefix(&watched).ok()?;
-                    let change = change_of(relative)?;
+                    let change = VaultChange::from_path(relative)?;
                     let text = fs::read_to_string(&event.path).ok();
                     (!own_writes.is_own(relative, text.as_deref())).then_some(change)
                 })
@@ -116,31 +116,34 @@ pub(crate) fn watch(
     })
 }
 
-/// What the file at `relative`, a path inside the vault, holds. `None` for
-/// all files Knotbook does not read, such as temporary files.
-fn change_of(relative: &Path) -> Option<VaultChange> {
-    let parts: Vec<&str> = relative
-        .components()
-        .map(|component| match component {
-            Component::Normal(part) => part.to_str(),
-            _ => None,
-        })
-        .collect::<Option<_>>()?;
-    match parts.as_slice() {
-        ["knotbook.toml"] => Some(VaultChange::Config),
-        ["tasks.toml"] => Some(VaultChange::Tasks),
-        ["projects", slug, "project.toml"] => slug.parse().ok().map(VaultChange::Project),
-        ["projects", slug, "notes", name] => {
-            NotePath::new(slug.parse().ok()?, name.strip_suffix(".md")?)
-                .ok()
-                .map(VaultChange::Note)
-        }
-        ["daily", year, month, name] => day_file_date(name)
-            .filter(|date| {
-                *year == format!("{:04}", date.year()) && *month == format!("{:02}", date.month())
+impl VaultChange {
+    /// What the file at `relative`, a path inside the vault, holds. `None`
+    /// for all files Knotbook does not read, such as temporary files.
+    pub fn from_path(relative: &Path) -> Option<Self> {
+        let parts: Vec<&str> = relative
+            .components()
+            .map(|component| match component {
+                Component::Normal(part) => part.to_str(),
+                _ => None,
             })
-            .map(VaultChange::Day),
-        _ => None,
+            .collect::<Option<_>>()?;
+        match parts.as_slice() {
+            ["knotbook.toml"] => Some(VaultChange::Config),
+            ["tasks.toml"] => Some(VaultChange::Tasks),
+            ["projects", slug, "project.toml"] => slug.parse().ok().map(VaultChange::Project),
+            ["projects", slug, "notes", name] => {
+                NotePath::new(slug.parse().ok()?, name.strip_suffix(".md")?)
+                    .ok()
+                    .map(VaultChange::Note)
+            }
+            ["daily", year, month, name] => day_file_date(name)
+                .filter(|date| {
+                    *year == format!("{:04}", date.year())
+                        && *month == format!("{:02}", date.month())
+                })
+                .map(VaultChange::Day),
+            _ => None,
+        }
     }
 }
 
@@ -150,7 +153,7 @@ mod tests {
 
     #[test]
     fn changes_of_paths() {
-        let change = |path: &str| change_of(Path::new(path));
+        let change = |path: &str| VaultChange::from_path(Path::new(path));
         assert_eq!(change("knotbook.toml"), Some(VaultChange::Config));
         assert_eq!(change("tasks.toml"), Some(VaultChange::Tasks));
         assert_eq!(

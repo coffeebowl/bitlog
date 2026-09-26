@@ -49,9 +49,10 @@ pub(crate) fn parse_text<T>(
 
 /// Identifies the content of a file, to notice changes made elsewhere.
 ///
-/// The standard hasher is not stable across Rust versions, which does not
-/// matter: hashes are only compared while the program runs.
-pub(crate) fn content_hash(text: &str) -> u64 {
+/// The standard hasher is not stable across Rust versions. That does not
+/// matter: hashes are compared while the program runs, and a hash kept in the
+/// index only makes it read a file once more after an update.
+pub fn content_hash(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()

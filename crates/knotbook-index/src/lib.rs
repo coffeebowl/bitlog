@@ -4,18 +4,27 @@
 //! synced. The vault files stay the only source of truth: the index can be
 //! deleted and rebuilt from them at any time.
 
-use std::fs;
-use std::io;
-use std::path::PathBuf;
+mod content;
 
-use chrono::{NaiveTime, Timelike};
-use knotbook_core::{Day, NoteFile, Project, ReadError, TaskList, Vault};
-use rusqlite::{Connection, Transaction, params};
+use std::collections::HashSet;
+use std::fs::{self, Metadata};
+use std::io;
+use std::path::{Path, PathBuf};
+use std::time::UNIX_EPOCH;
+
+use chrono::NaiveDate;
+use knotbook_core::{NotePath, ReadError, Vault, VaultChange, content_hash};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use rusqlite_migration::{M, Migrations};
 use thiserror::Error;
 
+use crate::content::{insert, remove, sync_projects};
+
 /// The schema, one step per migration. Add steps, never change them.
-const MIGRATION_STEPS: &[M] = &[M::up(include_str!("migrations/01-content.sql"))];
+const MIGRATION_STEPS: &[M] = &[
+    M::up(include_str!("migrations/01-content.sql")),
+    M::up(include_str!("migrations/02-files.sql")),
+];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
 #[derive(Debug, Error)]
@@ -66,122 +75,215 @@ impl Index {
     pub fn rebuild(&mut self, vault: &Vault) -> Result<Vec<ReadError>, IndexError> {
         let tx = self.connection.transaction()?;
         tx.execute_batch(
-            "DELETE FROM blocks; DELETE FROM days; DELETE FROM notes;
+            "DELETE FROM files; DELETE FROM blocks; DELETE FROM days; DELETE FROM notes;
              DELETE FROM projects; DELETE FROM tasks;",
         )?;
+        let skipped = refresh(&tx, vault)?;
+        tx.commit()?;
+        Ok(skipped)
+    }
+
+    /// Brings the index up to date with the files of `vault`, reading only
+    /// those that changed since they were last read. It looks at every file,
+    /// so it also finds changes made while nobody was watching, and those
+    /// saved by this program, which watching leaves out.
+    ///
+    /// Files that cannot be read are taken out of the index and returned.
+    pub fn refresh(&mut self, vault: &Vault) -> Result<Vec<ReadError>, IndexError> {
+        let tx = self.connection.transaction()?;
+        let skipped = refresh(&tx, vault)?;
+        tx.commit()?;
+        Ok(skipped)
+    }
+
+    /// Brings the index up to date with the files named in `changes`, as
+    /// reported by [`Vault::watch`]. `vault` has to be up to date with
+    /// changes to projects.
+    ///
+    /// Files that cannot be read are taken out of the index and returned.
+    pub fn apply(
+        &mut self,
+        vault: &Vault,
+        changes: &[VaultChange],
+    ) -> Result<Vec<ReadError>, IndexError> {
+        let tx = self.connection.transaction()?;
         let mut skipped = Vec::new();
-        for project in vault.projects() {
-            insert_project(&tx, project)?;
-        }
-        for date in vault.all_days()? {
-            match vault.load_day(date) {
-                Ok(Some(file)) => insert_day(&tx, &file.day)?,
-                Ok(None) => {}
-                Err(err) => skipped.push(err),
+        for change in changes {
+            if let VaultChange::Project(_) = change {
+                sync_projects(&tx, vault)?;
+            } else if let Some(file) = IndexFile::from_change(change) {
+                skipped.extend(update(&tx, vault, &file)?);
             }
-        }
-        for project in vault.projects() {
-            for note in vault.notes(&project.slug)? {
-                match vault.load_note(&note) {
-                    Ok(file) => insert_note(&tx, &file)?,
-                    Err(err) => skipped.push(err),
-                }
-            }
-        }
-        match vault.load_tasks() {
-            Ok(tasks) => insert_tasks(&tx, &tasks)?,
-            Err(err) => skipped.push(err),
         }
         tx.commit()?;
         Ok(skipped)
     }
 }
 
-fn insert_project(tx: &Transaction, project: &Project) -> rusqlite::Result<()> {
-    tx.prepare_cached(
-        "INSERT INTO projects (slug, name, color, category, status, pinned, created)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )?
-    .execute(params![
-        project.slug.as_str(),
-        project.name,
-        project.color,
-        project.category,
-        project.status.as_str(),
-        project.pinned,
-        project.created,
-    ])?;
-    Ok(())
+/// A vault file whose content goes into the index. Project files are not
+/// among them: the vault holds the projects read already.
+#[derive(Debug)]
+enum IndexFile {
+    Day(NaiveDate),
+    Note(NotePath),
+    Tasks,
 }
 
-fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
-    tx.prepare_cached(
-        "INSERT INTO days (date, kind, location, work_start, work_end, note)
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )?
-    .execute(params![
-        day.date,
-        day.kind,
-        day.location.as_ref().map(|key| key.as_str()),
-        day.work_start.map(minutes),
-        day.work_end.map(minutes),
-        day.note,
-    ])?;
-    let mut insert_block = tx.prepare_cached(
-        "INSERT INTO blocks (date, id, project, start_minute, end_minute, title, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
-    )?;
-    for block in &day.blocks {
-        let (start, end) = block.span();
-        insert_block.execute(params![
-            day.date,
-            block.id.as_str(),
-            block.project.as_str(),
-            start,
-            end,
-            block.title,
-            block.text,
-        ])?;
+impl IndexFile {
+    fn path(&self, vault: &Vault) -> PathBuf {
+        match self {
+            Self::Day(date) => vault.day_path(*date),
+            Self::Note(note) => vault.note_path(note),
+            Self::Tasks => vault.tasks_path(),
+        }
     }
-    Ok(())
-}
 
-fn insert_note(tx: &Transaction, file: &NoteFile) -> rusqlite::Result<()> {
-    tx.prepare_cached("INSERT INTO notes (project, name, text) VALUES (?, ?, ?)")?
-        .execute(params![
-            file.path.project().as_str(),
-            file.path.name(),
-            file.text,
-        ])?;
-    Ok(())
-}
-
-fn insert_tasks(tx: &Transaction, tasks: &TaskList) -> rusqlite::Result<()> {
-    let mut insert = tx.prepare_cached(
-        "INSERT INTO tasks (id, title, status, created, due, done) VALUES (?, ?, ?, ?, ?, ?)",
-    )?;
-    for task in tasks.tasks() {
-        insert.execute(params![
-            task.id.as_str(),
-            task.title,
-            task.status.as_str(),
-            task.created,
-            task.due,
-            task.done,
-        ])?;
+    /// The key of the file in the table `files`.
+    fn key(&self, vault: &Vault) -> String {
+        self.path(vault)
+            .strip_prefix(vault.root())
+            .expect("vault files lie in the vault")
+            .to_str()
+            .expect("the names of indexed files are UTF-8")
+            .to_owned()
     }
+
+    fn from_key(key: &str) -> Option<Self> {
+        Self::from_change(&VaultChange::from_path(Path::new(key))?)
+    }
+
+    fn from_change(change: &VaultChange) -> Option<Self> {
+        match change {
+            VaultChange::Day(date) => Some(Self::Day(*date)),
+            VaultChange::Note(note) => Some(Self::Note(note.clone())),
+            VaultChange::Tasks => Some(Self::Tasks),
+            VaultChange::Config | VaultChange::Project(_) => None,
+        }
+    }
+}
+
+/// What the table `files` holds about a file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileState {
+    modified: i64,
+    size: i64,
+    hash: i64,
+}
+
+fn refresh(tx: &Transaction, vault: &Vault) -> Result<Vec<ReadError>, IndexError> {
+    sync_projects(tx, vault)?;
+    let mut files = vec![IndexFile::Tasks];
+    files.extend(vault.all_days()?.into_iter().map(IndexFile::Day));
+    for project in vault.projects() {
+        files.extend(vault.notes(&project.slug)?.into_iter().map(IndexFile::Note));
+    }
+    // Files read before that are gone now.
+    let current: HashSet<String> = files.iter().map(|file| file.key(vault)).collect();
+    let known: Vec<String> = tx
+        .prepare("SELECT path FROM files")?
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<_, _>>()?;
+    for key in known.iter().filter(|key| !current.contains(*key)) {
+        match IndexFile::from_key(key) {
+            Some(file) => files.push(file),
+            None => forget(tx, key)?,
+        }
+    }
+    let mut skipped = Vec::new();
+    for file in &files {
+        skipped.extend(update(tx, vault, file)?);
+    }
+    Ok(skipped)
+}
+
+/// Reads `file` again if it changed since it was last read, or takes it out
+/// of the index if it is gone. Returns why it cannot be read, if it cannot.
+fn update(
+    tx: &Transaction,
+    vault: &Vault,
+    file: &IndexFile,
+) -> Result<Option<ReadError>, IndexError> {
+    let path = file.path(vault);
+    let key = file.key(vault);
+    let known = tx
+        .prepare_cached("SELECT modified, size, hash FROM files WHERE path = ?")?
+        .query_row([&key], |row| {
+            Ok(FileState {
+                modified: row.get(0)?,
+                size: row.get(1)?,
+                hash: row.get(2)?,
+            })
+        })
+        .optional()?;
+    // A note of a project that is gone is gone as well.
+    let orphan = matches!(file, IndexFile::Note(note) if vault.project(note.project()).is_none());
+    let metadata = match fs::metadata(&path) {
+        Ok(_) if orphan => None,
+        Ok(metadata) => Some(metadata),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => None,
+        Err(source) => return drop_file(tx, file, &key, Some(ReadError::Io { path, source })),
+    };
+    let Some(metadata) = metadata else {
+        return drop_file(tx, file, &key, None);
+    };
+    let (modified, size) = stamp(&metadata);
+    if known.is_some_and(|known| (known.modified, known.size) == (modified, size)) {
+        return Ok(None);
+    }
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(source) => return drop_file(tx, file, &key, Some(ReadError::Io { path, source })),
+    };
+    // Stored as SQLite's signed integer, bit for bit.
+    let hash = content_hash(&text) as i64;
+    // Sync tools often touch files without changing them.
+    if !known.is_some_and(|known| known.hash == hash) {
+        remove(tx, file)?;
+        match insert(tx, vault, file) {
+            Ok(()) => {}
+            Err(IndexError::Read(err)) => return drop_file(tx, file, &key, Some(err)),
+            Err(err) => return Err(err),
+        }
+    }
+    tx.prepare_cached(
+        "INSERT INTO files (path, modified, size, hash) VALUES (?, ?, ?, ?)
+         ON CONFLICT (path) DO UPDATE SET
+             modified = excluded.modified, size = excluded.size, hash = excluded.hash",
+    )?
+    .execute(params![key, modified, size, hash])?;
+    Ok(None)
+}
+
+/// Takes `file` out of the index, so that it is read again next time.
+fn drop_file(
+    tx: &Transaction,
+    file: &IndexFile,
+    key: &str,
+    err: Option<ReadError>,
+) -> Result<Option<ReadError>, IndexError> {
+    remove(tx, file)?;
+    forget(tx, key)?;
+    Ok(err)
+}
+
+fn forget(tx: &Transaction, key: &str) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM files WHERE path = ?", [key])?;
     Ok(())
 }
 
-fn minutes(time: NaiveTime) -> u32 {
-    time.num_seconds_from_midnight() / 60
+/// Modification time in nanoseconds since 1970 and size of a file.
+fn stamp(metadata: &Metadata) -> (i64, i64) {
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |since| since.as_nanos() as i64);
+    (modified, metadata.len() as i64)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use chrono::NaiveDate;
+    use std::time::{Duration, SystemTime};
 
     use super::*;
 
@@ -218,6 +320,59 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    /// A copy of the sample vault that tests may change, with its index.
+    fn sample_copy() -> (TempDir, Vault, Index) {
+        fn copy(from: &Path, to: &Path) {
+            fs::create_dir_all(to).unwrap();
+            for entry in fs::read_dir(from).unwrap() {
+                let entry = entry.unwrap();
+                let target = to.join(entry.file_name());
+                if entry.file_type().unwrap().is_dir() {
+                    copy(&entry.path(), &target);
+                } else {
+                    fs::copy(entry.path(), target).unwrap();
+                }
+            }
+        }
+        let dir = TempDir::new();
+        copy(
+            &Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault"),
+            &dir.0,
+        );
+        let vault = Vault::open(&dir.0).unwrap();
+        let mut index = Index::open(&vault).unwrap();
+        index.rebuild(&vault).unwrap();
+        (dir, vault, index)
+    }
+
+    fn date(day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(2026, 9, day).unwrap()
+    }
+
+    fn block_title(index: &Index, id: &str) -> Option<String> {
+        index
+            .connection
+            .query_row("SELECT title FROM blocks WHERE id = ?", [id], |row| {
+                row.get(0)
+            })
+            .optional()
+            .unwrap()
+    }
+
+    /// Changes the title of a block in the index only, to see whether the
+    /// index reads the day file again.
+    fn tamper(index: &Index, id: &str) {
+        index
+            .connection
+            .execute("UPDATE blocks SET title = 'stale' WHERE id = ?", [id])
+            .unwrap();
+    }
+
+    fn append(path: &Path, text: &str) {
+        let old = fs::read_to_string(path).unwrap();
+        fs::write(path, old + text).unwrap();
     }
 
     #[test]
@@ -296,5 +451,136 @@ mod tests {
         );
         assert_eq!(count(&index, "days"), 0);
         assert_eq!(count(&index, "projects"), vault.projects().len() as i64);
+    }
+
+    #[test]
+    fn refresh_reads_only_changed_files() {
+        let (_dir, vault, mut index) = sample_copy();
+        tamper(&index, "ff66");
+        tamper(&index, "a1b2");
+        append(&vault.day_path(date(23)), "Rolled back at 00:20.\n");
+        assert!(index.refresh(&vault).unwrap().is_empty());
+        assert_eq!(block_title(&index, "ff66").unwrap(), "Release deployment");
+        assert_eq!(block_title(&index, "a1b2").unwrap(), "stale");
+    }
+
+    #[test]
+    fn refresh_skips_touched_files() {
+        let (_dir, vault, mut index) = sample_copy();
+        tamper(&index, "ff66");
+        let path = vault.day_path(date(23));
+        let later = SystemTime::now() + Duration::from_secs(60);
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        index.refresh(&vault).unwrap();
+        assert_eq!(block_title(&index, "ff66").unwrap(), "stale");
+        let modified: i64 = index
+            .connection
+            .query_row(
+                "SELECT modified FROM files WHERE path = 'daily/2026/09/2026-09-23.md'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(modified, stamp(&fs::metadata(&path).unwrap()).0);
+    }
+
+    #[test]
+    fn refresh_follows_new_and_removed_files() {
+        let (dir, vault, mut index) = sample_copy();
+        fs::remove_file(vault.day_path(date(21))).unwrap();
+        fs::remove_file(dir.0.join("projects/infra/notes/deployment.md")).unwrap();
+        fs::write(dir.0.join("projects/infra/notes/backups.md"), "# Backups\n").unwrap();
+        fs::remove_file(vault.tasks_path()).unwrap();
+        index.refresh(&vault).unwrap();
+        assert_eq!(count(&index, "days"), 2);
+        assert_eq!(block_title(&index, "a1b2"), None);
+        let notes: Vec<String> = index
+            .connection
+            .prepare("SELECT name FROM notes WHERE project = 'infra'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(notes, ["backups"]);
+        assert_eq!(count(&index, "tasks"), 0);
+        // Two days and three notes.
+        assert_eq!(count(&index, "files"), 5);
+    }
+
+    #[test]
+    fn refresh_removes_the_notes_of_removed_projects() {
+        let (dir, _vault, mut index) = sample_copy();
+        let project = dir.0.join("projects/webshop/project.toml");
+        let text = fs::read_to_string(&project).unwrap();
+        fs::remove_file(&project).unwrap();
+        index.refresh(&Vault::open(&dir.0).unwrap()).unwrap();
+        assert_eq!(count(&index, "projects"), 4);
+        assert_eq!(count(&index, "notes"), 1);
+        // Blocks may belong to projects that do not exist.
+        assert_eq!(count(&index, "blocks"), 17);
+        fs::write(&project, text).unwrap();
+        index.refresh(&Vault::open(&dir.0).unwrap()).unwrap();
+        assert_eq!(count(&index, "notes"), 3);
+    }
+
+    #[test]
+    fn refresh_drops_files_that_break() {
+        let (_dir, vault, mut index) = sample_copy();
+        let path = vault.day_path(date(23));
+        let text = fs::read_to_string(&path).unwrap();
+        fs::write(&path, "no front matter").unwrap();
+        let skipped = index.refresh(&vault).unwrap();
+        assert!(
+            matches!(&skipped[..], [ReadError::Invalid { path: broken, .. }] if *broken == path),
+            "{skipped:?}"
+        );
+        assert_eq!(block_title(&index, "ff66"), None);
+        // Reported again until repaired.
+        assert_eq!(index.refresh(&vault).unwrap().len(), 1);
+        fs::write(&path, text).unwrap();
+        assert!(index.refresh(&vault).unwrap().is_empty());
+        assert_eq!(count(&index, "blocks"), 17);
+    }
+
+    #[test]
+    fn apply_reads_the_changed_files() {
+        let (dir, vault, mut index) = sample_copy();
+        tamper(&index, "ff66");
+        tamper(&index, "a1b2");
+        append(&vault.day_path(date(23)), "Rolled back at 00:20.\n");
+        fs::remove_file(vault.day_path(date(22))).unwrap();
+        let changes = [VaultChange::Day(date(22)), VaultChange::Day(date(23))];
+        assert!(index.apply(&vault, &changes).unwrap().is_empty());
+        assert_eq!(block_title(&index, "ff66").unwrap(), "Release deployment");
+        assert_eq!(block_title(&index, "a1b2").unwrap(), "stale");
+        assert_eq!(count(&index, "days"), 2);
+
+        let project = dir.0.join("projects/webshop/project.toml");
+        let text = fs::read_to_string(&project).unwrap();
+        fs::write(
+            &project,
+            text.replace("name = \"Webshop\"", "name = \"Shop\""),
+        )
+        .unwrap();
+        let slug = "webshop".parse().unwrap();
+        index
+            .apply(&Vault::open(&dir.0).unwrap(), &[VaultChange::Project(slug)])
+            .unwrap();
+        let name: String = index
+            .connection
+            .query_row(
+                "SELECT name FROM projects WHERE slug = 'webshop'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "Shop");
+        assert_eq!(count(&index, "notes"), 3);
     }
 }
