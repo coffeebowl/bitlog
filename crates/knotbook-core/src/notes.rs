@@ -42,6 +42,8 @@ pub enum SavedNote {
 /// A wiki link like `[[project-a/deployment]]` in a project note.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WikiLink {
+    /// The whole link, brackets included, as a byte range of the note.
+    pub span: Range<usize>,
     /// The target as written, without `|text` or `#heading`, as a byte
     /// range of the note.
     pub range: Range<usize>,
@@ -72,6 +74,7 @@ pub fn wiki_links(text: &str, project: &ProjectSlug) -> Vec<WikiLink> {
                 let start = range.start + "[[".len();
                 // pulldown-cmark takes the target straight from the text.
                 text[start..].starts_with(target).then(|| WikiLink {
+                    span: range,
                     range: start..start + target.len(),
                     note: note_path(target, project),
                 })
@@ -421,6 +424,15 @@ mod tests {
                     Some(note("projects/webshop/notes/Auth Middleware.md"))
                 ),
                 ("a/b/c", None),
+            ]
+        );
+        let spans: Vec<_> = links.iter().map(|link| &text[link.span.clone()]).collect();
+        assert_eq!(
+            spans,
+            [
+                "[[infra/deployment#Steps|how]]",
+                "[[Auth Middleware]]",
+                "[[a/b/c]]"
             ]
         );
     }

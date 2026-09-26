@@ -64,6 +64,15 @@ mod imp {
                 move |_| view.save_now()
             ));
             self.editor.add_controller(focus);
+            self.editor.connect_wiki_link_activated(glib::clone!(
+                #[weak]
+                view,
+                move |note| {
+                    let target = note.to_string().to_variant();
+                    // Handled by the project page, which may create the note.
+                    let _ = WidgetExt::activate_action(&view, "notes.follow", Some(&target));
+                }
+            ));
             view.connect_hiding(|view| view.save_now());
         }
     }
@@ -116,6 +125,11 @@ impl NoteView {
         imp.window_title.set_title(note.name());
         imp.window_title.set_subtitle(&project);
         imp.menu_button.set_menu_model(Some(&note_menu(note)));
+        let vault = self.vault();
+        imp.editor
+            .set_wiki_links(note.project().clone(), move |note| {
+                vault.note_path(note).is_file()
+            });
         // A new note starts with an empty undo history.
         imp.editor.set_markdown(&file.text);
         imp.file.replace(Some(file));
@@ -150,6 +164,11 @@ impl NoteView {
                 true
             }
         }
+    }
+
+    /// Marks the wiki links again, after notes were added or removed.
+    pub fn update_links(&self) {
+        self.imp().editor.restyle();
     }
 
     /// Stops showing the note without saving what is being typed, as when

@@ -6,7 +6,10 @@ use adw::subclass::prelude::*;
 use glib::subclass::Signal;
 use glib::translate::IntoGlib;
 use gtk::{gdk, glib, pango};
-use knotbook_core::{MarkdownMode, MarkdownStyle, escape_headings, markdown_styles};
+use knotbook_core::{
+    MarkdownMode, MarkdownStyle, NotePath, ProjectSlug, WikiLink, escape_headings, markdown_styles,
+    wiki_links,
+};
 use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 
@@ -15,6 +18,23 @@ const MARKUP_ALPHA: f32 = 0.45;
 const HEADING_SCALES: [f64; 6] = [1.6, 1.4, 1.25, 1.1, 1.0, 1.0];
 /// The actions that change the text, only enabled while it is editable.
 const EDIT_ACTIONS: [&str; 3] = ["markdown.bold", "markdown.italic", "markdown.code"];
+/// Dims wiki links to notes that do not exist.
+const BROKEN_LINK_TAG: &str = "broken-link";
+
+/// Tells the wiki links of a project note apart, see
+/// `MarkdownView::set_wiki_links`.
+pub struct WikiLinks {
+    project: ProjectSlug,
+    exists: Box<dyn Fn(&NotePath) -> bool>,
+}
+
+impl std::fmt::Debug for WikiLinks {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WikiLinks")
+            .field("project", &self.project)
+            .finish_non_exhaustive()
+    }
+}
 
 mod imp {
     use super::*;
@@ -31,6 +51,8 @@ mod imp {
         pub placeholder: RefCell<String>,
         /// Whether the text is being replaced, which is no edit.
         pub loading: Cell<bool>,
+        /// Set for project notes, whose wiki links can be followed.
+        pub wiki_links: RefCell<Option<WikiLinks>>,
     }
 
     #[glib::object_subclass]
@@ -50,6 +72,17 @@ mod imp {
                 klass.install_action(action, None, move |view, _, _| view.toggle_marker(marker));
                 klass.add_binding_action(key, gdk::ModifierType::CONTROL_MASK, action);
             }
+            // Enter alone starts a new line.
+            klass.install_action("markdown.follow-link", None, |view, _, _| {
+                let buffer = view.buffer();
+                let cursor = buffer.iter_at_mark(&buffer.get_insert());
+                view.follow_link_at(&cursor);
+            });
+            klass.add_binding_action(
+                gdk::Key::Return,
+                gdk::ModifierType::CONTROL_MASK,
+                "markdown.follow-link",
+            );
         }
     }
 
@@ -58,7 +91,16 @@ mod imp {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             // Emitted after every change of the text by the user.
-            SIGNALS.get_or_init(|| vec![Signal::builder("edited").build()])
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("edited").build(),
+                    // Emitted with the path of the note a wiki link points
+                    // to, when the user follows it.
+                    Signal::builder("wiki-link-activated")
+                        .param_types([String::static_type()])
+                        .build(),
+                ]
+            })
         }
 
         fn constructed(&self) {
@@ -89,6 +131,7 @@ mod imp {
                 }
             ));
             view.connect_full_notify(|view| view.restyle());
+            view.follow_links_on_click();
 
             let style_manager = adw::StyleManager::default();
             set_style_scheme(&view, &style_manager);
@@ -153,7 +196,13 @@ mod imp {
                 .tag_table()
                 .lookup("markup")
                 .expect("the tags are created on construction");
-            markup.set_foreground_rgba(Some(&color.with_alpha(color.alpha() * MARKUP_ALPHA)));
+            let dimmed = color.with_alpha(color.alpha() * MARKUP_ALPHA);
+            markup.set_foreground_rgba(Some(&dimmed));
+            view.buffer()
+                .tag_table()
+                .lookup(BROKEN_LINK_TAG)
+                .expect("the tags are created on construction")
+                .set_foreground_rgba(Some(&dimmed));
         }
     }
 
@@ -191,6 +240,30 @@ impl MarkdownView {
         );
     }
 
+    /// Makes the wiki links of this note of `project` followable, and dims
+    /// those for which `exists` is false.
+    pub fn set_wiki_links(
+        &self,
+        project: ProjectSlug,
+        exists: impl Fn(&NotePath) -> bool + 'static,
+    ) {
+        self.imp().wiki_links.replace(Some(WikiLinks {
+            project,
+            exists: Box::new(exists),
+        }));
+        self.restyle();
+    }
+
+    pub fn connect_wiki_link_activated(&self, callback: impl Fn(&NotePath) + 'static) {
+        self.connect_closure(
+            "wiki-link-activated",
+            false,
+            glib::closure_local!(move |_: &Self, note: String| {
+                callback(&note.parse().expect("the view passes note paths"));
+            }),
+        );
+    }
+
     /// The text as it is saved: in block Markdown, headings are escaped
     /// (see "Block Markdown" in the format spec).
     pub fn markdown(&self) -> String {
@@ -214,8 +287,9 @@ impl MarkdownView {
         buffer.text(&start, &end, true).into()
     }
 
-    /// Formats the whole text again, after every change.
-    fn restyle(&self) {
+    /// Formats the whole text again, after every change, and after notes
+    /// that wiki links point to were added or removed.
+    pub fn restyle(&self) {
         let buffer = self.buffer();
         let (start, end) = buffer.bounds();
         // The buffer has no other tags: it has no language and no search.
@@ -231,6 +305,82 @@ impl MarkdownView {
             let end = buffer.iter_at_offset(char_offset(&text, range.end));
             buffer.apply_tag_by_name(&tag_name(style), &start, &end);
         }
+        if let Some(links) = &*self.imp().wiki_links.borrow() {
+            for link in wiki_links(&text, &links.project) {
+                if !link.note.as_ref().is_some_and(|note| (links.exists)(note)) {
+                    let start = buffer.iter_at_offset(char_offset(&text, link.span.start));
+                    let end = buffer.iter_at_offset(char_offset(&text, link.span.end));
+                    buffer.apply_tag_by_name(BROKEN_LINK_TAG, &start, &end);
+                }
+            }
+        }
+    }
+
+    /// The wiki link at `iter`, if there is one.
+    fn wiki_link_at(&self, iter: &gtk::TextIter) -> Option<WikiLink> {
+        let links = self.imp().wiki_links.borrow();
+        let links = links.as_ref()?;
+        let text = self.text();
+        let offset = usize::try_from(iter.offset()).expect("offsets are not negative");
+        let byte = text
+            .char_indices()
+            .nth(offset)
+            .map_or(text.len(), |(byte, _)| byte);
+        wiki_links(&text, &links.project)
+            .into_iter()
+            .find(|link| link.span.contains(&byte))
+    }
+
+    /// Follows the wiki link at `iter`, if there is one.
+    fn follow_link_at(&self, iter: &gtk::TextIter) {
+        match self.wiki_link_at(iter).map(|link| link.note) {
+            Some(Some(note)) => {
+                self.emit_by_name::<()>("wiki-link-activated", &[&note.to_string()]);
+            }
+            // Points nowhere, like `[[a/b/c]]`.
+            Some(None) => self.error_bell(),
+            None => {}
+        }
+    }
+
+    /// The text at `x`, `y` in widget coordinates, if there is any.
+    fn iter_at(&self, x: f64, y: f64) -> Option<gtk::TextIter> {
+        let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        self.iter_at_location(x, y)
+    }
+
+    /// A click on a wiki link follows it, as in the "Hypertext" demo of
+    /// GTK, and the pointer shows where that is possible.
+    fn follow_links_on_click(&self) {
+        let click = gtk::GestureClick::builder()
+            .button(gdk::BUTTON_PRIMARY)
+            .build();
+        click.connect_released(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_, presses, x, y| {
+                // Selecting text is no click on a link.
+                if presses != 1 || view.buffer().has_selection() {
+                    return;
+                }
+                if let Some(iter) = view.iter_at(x, y) {
+                    view.follow_link_at(&iter);
+                }
+            }
+        ));
+        self.add_controller(click);
+        let motion = gtk::EventControllerMotion::new();
+        motion.connect_motion(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_, x, y| {
+                let on_link = view
+                    .iter_at(x, y)
+                    .is_some_and(|iter| view.wiki_link_at(&iter).is_some());
+                view.set_cursor_from_name(Some(if on_link { "pointer" } else { "text" }));
+            }
+        ));
+        self.add_controller(motion);
     }
 
     /// Puts `marker` around the selection, or at the cursor, and selects
@@ -337,6 +487,7 @@ fn create_tags(buffer: &gtk::TextBuffer) {
             .build();
         table.add(&tag);
     }
+    table.add(&gtk::TextTag::new(Some(BROKEN_LINK_TAG)));
     table.add(&gtk::TextTag::new(Some(&tag_name(MarkdownStyle::Markup))));
 }
 

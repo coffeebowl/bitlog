@@ -87,6 +87,11 @@ mod imp {
                 },
             );
             klass.install_action_async(
+                "notes.follow",
+                Some(glib::VariantTy::STRING),
+                |page, _, note| async move { page.follow_link(note_param(note.as_ref())).await },
+            );
+            klass.install_action_async(
                 "notes.rename",
                 Some(glib::VariantTy::STRING),
                 |page, _, note| async move { page.rename_note(note_param(note.as_ref())).await },
@@ -209,6 +214,7 @@ impl ProjectsPage {
     /// now.
     pub fn notes_changed(&self, changed: &[NotePath]) {
         let imp = self.imp();
+        imp.note_view.update_links();
         let slug = imp.project_view.slug();
         if self.shows("project")
             && changed
@@ -231,10 +237,12 @@ impl ProjectsPage {
         self.imp().nav.find_page(tag).is_some()
     }
 
-    /// Shows the project open with its notes as they are now. Returns
-    /// whether it is still there.
+    /// Shows the project open with its notes as they are now, and marks the
+    /// links of the note open again. Returns whether the project is still
+    /// there.
     fn show_project_again(&self) -> bool {
         let imp = self.imp();
+        imp.note_view.update_links();
         let vault = self.vault();
         let project = imp
             .project_view
@@ -259,6 +267,14 @@ impl ProjectsPage {
 
     fn open_note(&self, note: &NotePath) {
         let imp = self.imp();
+        // A link may lead to a note of another project, which going back
+        // should show.
+        if imp.project_view.slug().as_ref() != Some(note.project()) {
+            let vault = self.vault();
+            if let Some(project) = vault.project(note.project()) {
+                imp.project_view.show(&vault, project);
+            }
+        }
         match imp.note_view.show_note(note) {
             Ok(()) if !self.shows("note") => imp.nav.push(&imp.note_view),
             Ok(()) => {}
@@ -284,6 +300,44 @@ impl ProjectsPage {
             .vault()
             .create_note(&project, &name, Local::now().date_naive());
         match created {
+            Ok(note) => {
+                self.show_project_again();
+                self.open_note(&note);
+            }
+            Err(err) => self.show_error(&gettext("Cannot Create Note"), &err.to_string()),
+        }
+    }
+
+    /// Opens the note a wiki link points to, or offers to create it.
+    async fn follow_link(&self, note: NotePath) {
+        let vault = self.vault();
+        if vault.note_path(&note).is_file() {
+            self.open_note(&note);
+            return;
+        }
+        let project = vault.project(note.project()).map_or_else(
+            || note.project().to_string(),
+            |project| project.name.clone(),
+        );
+        let dialog = adw::AlertDialog::builder()
+            .heading(gettext("Create Note?"))
+            .body(
+                gettext("There is no note “{name}” in {project} yet.")
+                    .replace("{name}", note.name())
+                    .replace("{project}", &project),
+            )
+            .close_response("cancel")
+            .default_response("create")
+            .build();
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("create", &gettext("_Create")),
+        ]);
+        dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
+        if dialog.choose_future(Some(self)).await != "create" {
+            return;
+        }
+        match vault.create_note(note.project(), note.name(), Local::now().date_naive()) {
             Ok(note) => {
                 self.show_project_again();
                 self.open_note(&note);

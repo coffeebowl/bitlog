@@ -44,8 +44,10 @@ pub fn markdown_styles(text: &str, mode: MarkdownMode) -> Vec<(Range<usize>, Mar
     let mut stack: Vec<Frame> = Vec::new();
     let options = match mode {
         MarkdownMode::Block => OPTIONS,
-        // Project notes may start with front matter.
-        MarkdownMode::Full => OPTIONS | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS,
+        // Project notes may start with front matter and link to each other.
+        MarkdownMode::Full => {
+            OPTIONS | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS | Options::ENABLE_WIKILINKS
+        }
     };
     for (event, range) in Parser::new_ext(text, options).into_offset_iter() {
         match event {
@@ -349,6 +351,23 @@ mod tests {
             styled(text, MarkdownMode::Full),
             [("---\naliases: [\"PSP\"]\n---", Markup)]
         );
+    }
+
+    #[test]
+    fn wiki_links_in_notes() {
+        let text = "[[infra/deployment]] and [[webshop/checkout-flow|checkout]]";
+        assert_eq!(
+            styled(text, MarkdownMode::Full),
+            [
+                ("[[", Markup),
+                ("infra/deployment", Link),
+                ("]]", Markup),
+                ("[[webshop/checkout-flow|", Markup),
+                ("checkout", Link),
+                ("]]", Markup),
+            ]
+        );
+        assert_eq!(styled(text, MarkdownMode::Block), []);
     }
 
     #[test]
