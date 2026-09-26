@@ -3,12 +3,18 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Datelike, Days, Local, Months, NaiveDate};
+use std::collections::BTreeMap;
+
+use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
-use gtk::{glib, pango};
-use knotbook_core::Vault;
+use gtk::{gdk, glib, pango};
+use knotbook_core::{ProjectSlug, Vault};
 
 use crate::format::{capitalize, format_date, format_duration, format_full_date};
+use crate::week_chart::{ChartDay, WeekChart};
+
+/// For blocks of projects the vault does not know.
+const UNKNOWN_PROJECT_COLOR: &str = "#9a9996";
 
 mod imp {
     use super::*;
@@ -17,12 +23,22 @@ mod imp {
     #[template(resource = "/dev/knotbook/Knotbook/calendar_view.ui")]
     pub struct CalendarView {
         pub vault: RefCell<Option<Rc<Vault>>>,
-        /// The first day of the month shown.
-        pub month: Cell<NaiveDate>,
+        /// A day in the month or week shown.
+        pub date: Cell<NaiveDate>,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
+        pub view_toggle: TemplateChild<adw::ToggleGroup>,
+        #[template_child]
+        pub view_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
         pub grid: TemplateChild<gtk::Grid>,
+        #[template_child]
+        pub week_total: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub week_chart: TemplateChild<WeekChart>,
+        #[template_child]
+        pub legend: TemplateChild<gtk::FlowBox>,
     }
 
     #[glib::object_subclass]
@@ -32,6 +48,7 @@ mod imp {
         type ParentType = adw::NavigationPage;
 
         fn class_init(klass: &mut Self::Class) {
+            WeekChart::ensure_type();
             klass.bind_template();
         }
 
@@ -40,13 +57,26 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for CalendarView {}
+    impl ObjectImpl for CalendarView {
+        fn constructed(&self) {
+            self.parent_constructed();
+            self.view_toggle.connect_active_name_notify(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                move |_| {
+                    if view.imp().vault.borrow().is_some() {
+                        view.reload();
+                    }
+                }
+            ));
+        }
+    }
     impl WidgetImpl for CalendarView {}
     impl NavigationPageImpl for CalendarView {}
 }
 
 glib::wrapper! {
-    /// A month of the vault, one card per day.
+    /// A month of the vault, one card per day, or a week as a chart.
     pub struct CalendarView(ObjectSubclass<imp::CalendarView>)
         @extends adw::NavigationPage, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -56,18 +86,55 @@ impl CalendarView {
     /// Shows the current month of `vault`.
     pub fn set_vault(&self, vault: Rc<Vault>) {
         self.imp().vault.replace(Some(vault));
-        self.show_month(Local::now().date_naive());
+        self.show(Local::now().date_naive());
     }
 
-    pub fn month(&self) -> NaiveDate {
-        self.imp().month.get()
+    /// Shows the month or week `date` lies in.
+    pub fn show(&self, date: NaiveDate) {
+        let imp = self.imp();
+        imp.date.set(date);
+        let page = imp
+            .view_toggle
+            .active_name()
+            .expect("one view is always active");
+        imp.view_stack.set_visible_child_name(&page);
+        if page == "week" {
+            self.show_week(date);
+        } else {
+            self.show_month(date);
+        }
     }
 
-    /// Shows the month `date` lies in.
-    pub fn show_month(&self, date: NaiveDate) {
+    /// Reads the days shown again, they may have changed.
+    pub fn reload(&self) {
+        self.show(self.imp().date.get());
+    }
+
+    /// Shows the month or week `steps` months or weeks after the one shown.
+    pub fn step(&self, steps: i32) {
+        let date = self.imp().date.get();
+        let unreachable = "nobody steps this way to the end of the calendar";
+        let date = if self.imp().view_toggle.active_name().as_deref() == Some("week") {
+            date.checked_add_signed(TimeDelta::weeks(steps.into()))
+        } else if steps < 0 {
+            date.checked_sub_months(Months::new(steps.unsigned_abs()))
+        } else {
+            date.checked_add_months(Months::new(steps.unsigned_abs()))
+        };
+        self.show(date.expect(unreachable));
+    }
+
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("the calendar is only shown once a vault is open")
+    }
+
+    fn show_month(&self, date: NaiveDate) {
         let imp = self.imp();
         let first = date.with_day(1).expect("every month has a first day");
-        imp.month.set(first);
         imp.window_title.set_title(&format_date(first, "%B"));
         imp.window_title.set_subtitle(&format_date(first, "%Y"));
         self.set_title(&format_date(first, "%B %Y"));
@@ -76,17 +143,9 @@ impl CalendarView {
         while let Some(child) = grid.first_child() {
             grid.remove(&child);
         }
-        let vault = imp.vault.borrow();
-        let vault = vault
-            .as_ref()
-            .expect("a month is only shown once a vault is open");
-        let week_start = first
-            - Days::new(
-                first
-                    .weekday()
-                    .days_since(vault.config().week.first_day)
-                    .into(),
-            );
+        let vault = self.vault();
+        let vault = &*vault;
+        let week_start = week_start(first, vault.config().week.first_day);
         for column in 0..7 {
             let weekday = format_date(week_start + Days::new(column), "%a");
             let label = gtk::Label::builder()
@@ -108,6 +167,101 @@ impl CalendarView {
             index += 1;
         }
     }
+
+    fn show_week(&self, date: NaiveDate) {
+        let imp = self.imp();
+        let vault = self.vault();
+        let first = week_start(date, vault.config().week.first_day);
+        let last = first + Days::new(6);
+        // Translators: A range of dates, as in "September 21 – 27".
+        let title = gettext("{first} – {last}")
+            .replace("{first}", &format_date(first, "%B %-d"))
+            .replace("{last}", &format_date(last, "%B %-d"));
+        imp.window_title.set_title(&title);
+        imp.window_title.set_subtitle(&format_date(last, "%Y"));
+        self.set_title(&title);
+
+        let hex = |slug: &ProjectSlug| {
+            vault
+                .project(slug)
+                .map_or(UNKNOWN_PROJECT_COLOR, |project| project.color.as_str())
+                .to_owned()
+        };
+        let color = |slug: &ProjectSlug| {
+            gdk::RGBA::parse(hex(slug)).expect("the core only accepts valid colours")
+        };
+        let today = Local::now().date_naive();
+        let mut worked = TimeDelta::zero();
+        let mut per_project = BTreeMap::new();
+        let mut days = Vec::new();
+        for offset in 0..7 {
+            let date = first + Days::new(offset);
+            // Unreadable days count as empty here, the month view shows why.
+            let day = vault.load_day(date).ok().flatten().map(|(day, _)| day);
+            let times = day
+                .as_ref()
+                .map(|day| day.time_per_project(vault.projects()))
+                .unwrap_or_default();
+            let working_time = day
+                .as_ref()
+                .map_or(TimeDelta::zero(), |day| day.working_time(vault.projects()));
+            worked += working_time;
+            for (slug, time) in &times {
+                *per_project.entry(slug.clone()).or_insert(TimeDelta::zero()) += *time;
+            }
+            days.push(ChartDay {
+                label: format_date(date, "%a %-d"),
+                segments: times
+                    .iter()
+                    .map(|(slug, time)| (color(slug), hours(*time)))
+                    .collect(),
+                working_hours: (date <= today).then(|| hours(working_time)),
+            });
+        }
+        let target = vault.config().week.target_hours as f32;
+        imp.week_chart.set_week(days, target);
+
+        let target_time = TimeDelta::minutes((target * 60.0).round() as i64);
+        imp.week_total.set_label(&if target > 0.0 {
+            // Translators: Hours worked in a week against its target, as in
+            // "23 h 15 min of 32 h 0 min".
+            gettext("{worked} of {target}")
+                .replace("{worked}", &format_duration(worked))
+                .replace("{target}", &format_duration(target_time))
+        } else {
+            format_duration(worked)
+        });
+
+        imp.legend.remove_all();
+        let mut per_project: Vec<_> = per_project.into_iter().collect();
+        per_project.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
+        for (slug, time) in per_project {
+            let name = vault
+                .project(&slug)
+                .map_or_else(|| slug.to_string(), |project| project.name.clone());
+            let markup = format!(
+                "<span foreground=\"{}\">●</span> {} · {}",
+                hex(&slug),
+                glib::markup_escape_text(&name),
+                glib::markup_escape_text(&format_duration(time)),
+            );
+            let label = gtk::Label::builder()
+                .label(markup)
+                .use_markup(true)
+                .xalign(0.0)
+                .build();
+            imp.legend.append(&label);
+        }
+    }
+}
+
+/// The first day of the week `date` lies in.
+fn week_start(date: NaiveDate, first_day: Weekday) -> NaiveDate {
+    date - Days::new(date.weekday().days_since(first_day).into())
+}
+
+fn hours(time: TimeDelta) -> f32 {
+    time.num_minutes() as f32 / 60.0
 }
 
 /// A card for `date` with its hours, location and kind, which opens the day.

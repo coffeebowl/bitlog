@@ -17,13 +17,13 @@ template $KnotbookCalendarView: Adw.NavigationPage {
 
         Button {
           icon-name: "go-previous-symbolic";
-          tooltip-text: _("Previous Month");
+          tooltip-text: _("Previous");
           action-name: "win.previous";
         }
 
         Button {
           icon-name: "go-next-symbolic";
-          tooltip-text: _("Next Month");
+          tooltip-text: _("Next");
           action-name: "win.next";
         }
       }
@@ -34,24 +34,83 @@ template $KnotbookCalendarView: Adw.NavigationPage {
         use-underline: true;
         action-name: "win.today";
       }
+
+      [end]
+      Adw.ToggleGroup view_toggle {
+        active-name: "month";
+
+        Adw.Toggle {
+          name: "month";
+          label: _("Month");
+        }
+
+        Adw.Toggle {
+          name: "week";
+          label: _("Week");
+        }
+      }
     }
 
-    content: ScrolledWindow {
-      hscrollbar-policy: never;
+    content: Stack view_stack {
+      StackPage {
+        name: "month";
 
-      child: Adw.Clamp {
-        maximum-size: 900;
-        margin-top: 12;
-        margin-bottom: 12;
-        margin-start: 12;
-        margin-end: 12;
+        child: ScrolledWindow {
+          hscrollbar-policy: never;
 
-        child: Grid grid {
-          column-homogeneous: true;
-          row-spacing: 6;
-          column-spacing: 6;
+          child: Adw.Clamp {
+            maximum-size: 900;
+            margin-top: 12;
+            margin-bottom: 12;
+            margin-start: 12;
+            margin-end: 12;
+
+            child: Grid grid {
+              column-homogeneous: true;
+              row-spacing: 6;
+              column-spacing: 6;
+            };
+          };
         };
-      };
+      }
+
+      StackPage {
+        name: "week";
+
+        child: ScrolledWindow {
+          hscrollbar-policy: never;
+
+          child: Adw.Clamp {
+            maximum-size: 900;
+            margin-top: 24;
+            margin-bottom: 24;
+            margin-start: 12;
+            margin-end: 12;
+
+            child: Box {
+              orientation: vertical;
+              spacing: 18;
+
+              Label week_total {
+                xalign: 0;
+                wrap: true;
+
+                styles [
+                  "title-3",
+                ]
+              }
+
+              $KnotbookWeekChart week_chart {}
+
+              FlowBox legend {
+                selection-mode: none;
+                column-spacing: 18;
+                max-children-per-line: 4;
+              }
+            };
+          };
+        };
+      }
     };
   };
 }

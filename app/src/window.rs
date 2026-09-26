@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Local, Months, NaiveDate, TimeDelta};
+use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 use knotbook_core::Vault;
@@ -81,7 +81,7 @@ mod imp {
                 let today = Local::now().date_naive();
                 let imp = window.imp();
                 if window.shows_calendar() {
-                    imp.calendar_view.show_month(today);
+                    imp.calendar_view.show(today);
                 } else {
                     imp.day_view.show_date(today);
                 }
@@ -211,23 +211,16 @@ impl Window {
         imp.split_view.content().as_ref() == Some(imp.calendar_view.upcast_ref())
     }
 
-    /// Shows the day or month `steps` days or months after the one shown now.
+    /// Shows the day, week or month `steps` steps after the one shown now.
     fn step(&self, steps: i32) {
         let imp = self.imp();
-        let unreachable = "nobody steps this way to the end of the calendar";
         if self.shows_calendar() {
-            let month = imp.calendar_view.month();
-            let months = Months::new(steps.unsigned_abs());
-            let month = if steps < 0 {
-                month.checked_sub_months(months)
-            } else {
-                month.checked_add_months(months)
-            };
-            imp.calendar_view.show_month(month.expect(unreachable));
+            imp.calendar_view.step(steps);
         } else {
             let date = imp.day_view.date();
             let date = date.checked_add_signed(TimeDelta::days(steps.into()));
-            imp.day_view.show_date(date.expect(unreachable));
+            imp.day_view
+                .show_date(date.expect("nobody steps this way to the end of the calendar"));
         }
     }
 
@@ -241,8 +234,7 @@ impl Window {
 
     fn show_calendar(&self) {
         let imp = self.imp();
-        // Reloads the month, days may have changed since it was shown.
-        imp.calendar_view.show_month(imp.calendar_view.month());
+        imp.calendar_view.reload();
         imp.split_view.set_content(Some(&imp.calendar_view));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.calendar_row));

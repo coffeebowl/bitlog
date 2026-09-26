@@ -19,8 +19,8 @@ const LINE_X: f32 = 56.0;
 const BLOCK_X: f32 = 72.0;
 const KNOT_RADIUS: f32 = 5.0;
 const CURRENT_KNOT_RADIUS: f32 = 7.0;
-/// The accent colour of the brand, sea green.
-const CURRENT_KNOT_COLOR: &str = "#3ba99c";
+/// The accent colour of the brand, used sparingly.
+pub const SEA_GREEN: &str = "#3ba99c";
 
 mod imp {
     use super::*;
@@ -214,7 +214,7 @@ mod imp {
                 }
 
                 let (radius, knot_color) = if is_current {
-                    let color = gdk::RGBA::parse(CURRENT_KNOT_COLOR).expect("the colour is valid");
+                    let color = gdk::RGBA::parse(SEA_GREEN).expect("the colour is valid");
                     (CURRENT_KNOT_RADIUS, color)
                 } else {
                     (KNOT_RADIUS, foreground)

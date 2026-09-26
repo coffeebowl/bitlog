@@ -2,7 +2,7 @@
 
 mod sections;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::path::Path;
 
@@ -95,6 +95,14 @@ impl Block {
 
     pub fn duration(&self) -> TimeDelta {
         TimeDelta::minutes(minutes_until(self.start, self.end).into())
+    }
+
+    /// Whether the block belongs to a `break` project. Blocks of projects
+    /// missing from `projects` are work.
+    fn is_break(&self, projects: &[Project]) -> bool {
+        projects
+            .iter()
+            .any(|project| project.slug == self.project && project.is_break())
     }
 }
 
@@ -242,13 +250,11 @@ impl Day {
     /// The time worked on this day. Blocks of `break` projects are breaks;
     /// blocks of projects missing from `projects` count as work.
     pub fn working_time(&self, projects: &[Project]) -> TimeDelta {
-        let is_break = |block: &&Block| {
-            projects
-                .iter()
-                .any(|project| project.slug == block.project && project.is_break())
-        };
         let sum = |blocks: Vec<&Block>| blocks.iter().map(|block| block.duration()).sum();
-        let (breaks, work): (Vec<&Block>, Vec<&Block>) = self.blocks.iter().partition(is_break);
+        let (breaks, work): (Vec<&Block>, Vec<&Block>) = self
+            .blocks
+            .iter()
+            .partition(|block| block.is_break(projects));
         match (self.work_start, self.work_end) {
             (Some(start), Some(end)) => {
                 let total = TimeDelta::minutes(minutes_until(start, end).into());
@@ -257,6 +263,15 @@ impl Day {
             }
             _ => sum(work),
         }
+    }
+
+    /// The time of the blocks of each project, breaks left out.
+    pub fn time_per_project(&self, projects: &[Project]) -> BTreeMap<ProjectSlug, TimeDelta> {
+        let mut times = BTreeMap::new();
+        for block in self.blocks.iter().filter(|block| !block.is_break(projects)) {
+            *times.entry(block.project.clone()).or_default() += block.duration();
+        }
+        times
     }
 }
 

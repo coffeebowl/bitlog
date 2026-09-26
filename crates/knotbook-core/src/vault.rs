@@ -188,4 +188,25 @@ mod tests {
         // No working hours given: all blocks but the break, one past midnight.
         assert_eq!(hours(23), TimeDelta::minutes(30 + 15 + 135 + 105 + 120));
     }
+
+    #[test]
+    fn time_per_project() {
+        let vault = sample_vault();
+        let (day, _) = vault.load_day(date(2026, 9, 23)).unwrap().unwrap();
+        let times: Vec<(String, i64)> = day
+            .time_per_project(vault.projects())
+            .into_iter()
+            .map(|(slug, time)| (slug.to_string(), time.num_minutes()))
+            .collect();
+        // The lunch break is left out, the deployment past midnight counts.
+        assert_eq!(
+            times,
+            [
+                ("filler".to_owned(), 30),
+                ("infra".to_owned(), 135 + 120),
+                ("meetings".to_owned(), 15),
+                ("webshop".to_owned(), 105),
+            ]
+        );
+    }
 }

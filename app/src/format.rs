@@ -33,11 +33,18 @@ pub fn format_time(time: NaiveTime) -> String {
 }
 
 pub fn format_duration(duration: TimeDelta) -> String {
-    let minutes = duration.num_minutes();
-    // Translators: A duration, as in "7 h 45 min".
-    gettext("{hours} h {minutes} min")
-        .replace("{hours}", &(minutes / 60).to_string())
-        .replace("{minutes}", &(minutes % 60).to_string())
+    let total = duration.num_minutes();
+    let (hours, minutes) = (total / 60, total % 60);
+    let text = match (hours, minutes) {
+        // Translators: A duration of full hours, as in "8 h".
+        (_, 0) => gettext("{hours} h"),
+        // Translators: A duration below an hour, as in "45 min".
+        (0, _) => gettext("{minutes} min"),
+        // Translators: A duration, as in "7 h 45 min".
+        _ => gettext("{hours} h {minutes} min"),
+    };
+    text.replace("{hours}", &hours.to_string())
+        .replace("{minutes}", &minutes.to_string())
 }
 
 /// `kind` is free text in the file, usually lowercase like `work`.

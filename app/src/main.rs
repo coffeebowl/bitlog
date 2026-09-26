@@ -4,6 +4,7 @@ mod day_view;
 mod format;
 mod markdown_view;
 mod timeline;
+mod week_chart;
 mod window;
 
 use adw::prelude::*;
