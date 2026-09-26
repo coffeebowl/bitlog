@@ -1,0 +1,51 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookStandupDialog: Adw.Dialog {
+  title: _("Standup");
+  content-width: 560;
+  content-height: 480;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {}
+
+      content: Box {
+        orientation: vertical;
+        spacing: 12;
+        margin-start: 12;
+        margin-end: 12;
+        margin-bottom: 12;
+
+        ScrolledWindow {
+          vexpand: true;
+          hscrollbar-policy: never;
+
+          child: $KnotbookMarkdownView text {
+            full: true;
+            top-margin: 12;
+            bottom-margin: 12;
+            left-margin: 12;
+            right-margin: 12;
+          };
+
+          styles [
+            "card",
+          ]
+        }
+
+        Button copy_button {
+          label: _("_Copy");
+          use-underline: true;
+          halign: center;
+
+          styles [
+            "pill",
+            "suggested-action",
+          ]
+        }
+      };
+    };
+  };
+}

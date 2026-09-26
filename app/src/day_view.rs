@@ -17,6 +17,7 @@ use crate::format::{
 };
 use crate::markdown_view::MarkdownView;
 use crate::project_picker::{project_markup, project_popover};
+use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
 
@@ -117,6 +118,7 @@ mod imp {
                 });
             });
             klass.install_action("day.new-block", None, |view, _, _| view.new_block());
+            klass.install_action("day.standup", None, |view, _, _| view.show_standup());
             klass.install_action("day.delete-block", None, |view, _, _| view.delete_block());
             klass.install_action("day.set-block-time", None, |view, _, _| {
                 let imp = view.imp();
@@ -544,6 +546,23 @@ impl DayView {
             ),
         );
         self.imp().timeline.show_popover(&popover);
+    }
+
+    /// Shows the standup summary for the day shown.
+    fn show_standup(&self) {
+        // The summary is read from the files.
+        self.save_texts_now();
+        match self.vault().standup(self.date()) {
+            Ok(text) => StandupDialog::new(&text).present(Some(self)),
+            Err(err) => {
+                let dialog = adw::AlertDialog::new(
+                    Some(&gettext("Cannot Summarize")),
+                    Some(&err.to_string()),
+                );
+                dialog.add_response("close", &gettext("_Close"));
+                dialog.present(Some(self));
+            }
+        }
     }
 
     /// Offers one slot for a new block after the last one, or at the start

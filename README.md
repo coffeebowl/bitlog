@@ -61,7 +61,9 @@ regenerate that file with
 for example with `uv`, which installs the script's dependencies:
 
 ```sh
+curl -LO https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
 uv run flatpak-cargo-generator.py Cargo.lock -o build-aux/cargo-sources.json
+rm flatpak-cargo-generator.py
 ```
 
 The app gets access to the home folder, so that a vault can live anywhere in
@@ -87,6 +89,7 @@ else the current folder or the closest folder above it that holds a
 ```sh
 knotbook today              # today's blocks with their ids, working time and location
 knotbook day 2026-09-23     # the same for another day
+knotbook standup            # the last day with work and today, to paste into a chat
 
 knotbook block add 09:00-10:30 webshop "Checkout flow"
 knotbook block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"

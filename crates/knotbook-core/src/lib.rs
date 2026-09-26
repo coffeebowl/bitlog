@@ -10,6 +10,7 @@ mod init;
 mod markdown;
 mod notes;
 mod project;
+mod standup;
 mod tasks;
 mod toml_values;
 mod vault;

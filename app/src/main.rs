@@ -14,6 +14,7 @@ mod reports_page;
 mod search_dialog;
 mod search_index;
 mod share_bar;
+mod standup_dialog;
 mod task_list_view;
 mod tasks_page;
 mod timeline;

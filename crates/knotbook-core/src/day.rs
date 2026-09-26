@@ -104,7 +104,7 @@ impl Block {
 
     /// Whether the block belongs to a `break` project. Blocks of projects
     /// missing from `projects` are work.
-    fn is_break(&self, projects: &[Project]) -> bool {
+    pub(crate) fn is_break(&self, projects: &[Project]) -> bool {
         projects
             .iter()
             .any(|project| project.slug == self.project && project.is_break())

@@ -57,6 +57,12 @@ enum Command {
         /// The day, as in 2026-09-23 [default: today]
         date: Option<NaiveDate>,
     },
+    /// Show a summary for a standup: the blocks of the last day with work
+    /// and the tasks done on it, then today's blocks and the tasks due.
+    Standup {
+        /// The day of the standup, as in 2026-09-23 [default: today]
+        date: Option<NaiveDate>,
+    },
     /// Add, change or remove the blocks of a day.
     Block {
         #[command(subcommand)]
@@ -331,6 +337,10 @@ fn main() -> Result<()> {
         Command::Init { name } => init(cli.vault, name),
         Command::Today => show_day(&open_vault(cli.vault)?, today),
         Command::Day { date } => show_day(&open_vault(cli.vault)?, date.unwrap_or(today)),
+        Command::Standup { date } => {
+            print!("{}", open_vault(cli.vault)?.standup(date.unwrap_or(today))?);
+            Ok(())
+        }
         Command::Block { command, date } => {
             block(&open_vault(cli.vault)?, date.date.unwrap_or(today), command)
         }
@@ -668,6 +678,7 @@ mod tests {
         assert!(parse("knotbook task edit t9x2").is_err());
         assert!(parse("knotbook task edit t9x2 --due 2026-09-30 --no-due").is_err());
         assert!(parse("knotbook task move t9x2 0").is_err());
+        parse("knotbook standup 2026-09-23").unwrap();
         parse("knotbook search release notes --limit 5").unwrap();
         assert!(parse("knotbook search").is_err());
         parse("knotbook export blocks").unwrap();

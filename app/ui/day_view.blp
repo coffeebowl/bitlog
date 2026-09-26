@@ -53,6 +53,13 @@ template $KnotbookDayView: Adw.NavigationPage {
           use-underline: true;
           action-name: "win.today";
         }
+
+        [end]
+        Button {
+          icon-name: "system-users-symbolic";
+          tooltip-text: _("Standup");
+          action-name: "day.standup";
+        }
       }
 
       content: Adw.OverlaySplitView split_view {
