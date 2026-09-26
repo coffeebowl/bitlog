@@ -6,11 +6,11 @@ use std::collections::HashSet;
 use std::fmt;
 use std::path::Path;
 
-use chrono::{NaiveDate, NaiveTime, Timelike};
+use chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
 use serde::{Deserialize, Deserializer};
 
 use crate::error::{ReadError, read_file};
-use crate::{BlockId, LocationKey, ProjectSlug};
+use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;
@@ -88,9 +88,26 @@ impl fmt::Display for DayWarning {
 impl Block {
     /// Start and end in minutes after the start of its day.
     fn span(&self) -> (u32, u32) {
-        let minutes = |time: NaiveTime| time.hour() * 60 + time.minute();
-        let (start, end) = (minutes(self.start), minutes(self.end));
-        (start, if end <= start { end + 24 * 60 } else { end })
+        let start = minutes(self.start);
+        (start, start + minutes_until(self.start, self.end))
+    }
+
+    pub fn duration(&self) -> TimeDelta {
+        TimeDelta::minutes(minutes_until(self.start, self.end).into())
+    }
+}
+
+fn minutes(time: NaiveTime) -> u32 {
+    time.hour() * 60 + time.minute()
+}
+
+/// Minutes from `start` to `end`, where an `end` before `start` lies on the next day.
+fn minutes_until(start: NaiveTime, end: NaiveTime) -> u32 {
+    let (start, end) = (minutes(start), minutes(end));
+    if end < start {
+        end + 24 * 60 - start
+    } else {
+        end - start
     }
 }
 
@@ -219,6 +236,26 @@ impl Day {
             unknown_fields,
         };
         Ok((day, warnings))
+    }
+
+    /// The time worked on this day. Blocks of `break` projects are breaks;
+    /// blocks of projects missing from `projects` count as work.
+    pub fn working_time(&self, projects: &[Project]) -> TimeDelta {
+        let is_break = |block: &&Block| {
+            projects
+                .iter()
+                .any(|project| project.slug == block.project && project.is_break())
+        };
+        let sum = |blocks: Vec<&Block>| blocks.iter().map(|block| block.duration()).sum();
+        let (breaks, work): (Vec<&Block>, Vec<&Block>) = self.blocks.iter().partition(is_break);
+        match (self.work_start, self.work_end) {
+            (Some(start), Some(end)) => {
+                let total = TimeDelta::minutes(minutes_until(start, end).into());
+                // Hand-edited files may hold more breaks than working hours.
+                (total - sum(breaks)).max(TimeDelta::zero())
+            }
+            _ => sum(work),
+        }
     }
 }
 
@@ -422,6 +459,31 @@ mod tests {
         assert_eq!(day.kind, "work");
         assert!(day.blocks.is_empty());
         assert_eq!(day.note, "");
+    }
+
+    #[test]
+    fn working_time_edge_cases() {
+        let projects = Project::defaults(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        let working_time = |work: &str| {
+            let text = format!(
+                "---\nformat: 1\ndate: \"2026-01-05\"\n{work}blocks:\n  \
+                 - {{ id: \"aaaa\", start: \"21:00\", end: \"23:00\", project: \"pause\" }}\n  \
+                 - {{ id: \"bbbb\", start: \"23:00\", end: \"01:00\", project: \"unknown\" }}\n\
+                 ---\n"
+            );
+            Day::parse(&text).unwrap().0.working_time(&projects)
+        };
+        // Blocks of unknown projects count as work, also past midnight.
+        assert_eq!(working_time(""), TimeDelta::hours(2));
+        assert_eq!(
+            working_time("work: { start: \"20:00\", end: \"02:00\" }\n"),
+            TimeDelta::hours(4)
+        );
+        // More breaks than working hours.
+        assert_eq!(
+            working_time("work: { start: \"21:00\", end: \"22:00\" }\n"),
+            TimeDelta::zero()
+        );
     }
 
     #[test]
