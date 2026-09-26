@@ -266,6 +266,24 @@ pinned = false                   # listed first when picking a project for a blo
 created = 2026-03-01
 ```
 
+The project's slug is the name of its folder. A folder below `projects/` is a
+project only if its name is a valid slug and it contains a `project.toml`;
+anything else there is ignored.
+
+Only `format` is required. Missing fields take these defaults:
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `name` | the slug | |
+| `color` | `"#3584e4"` | `#` and six hex digits |
+| `status` | `"active"` | `active`, `paused` or `archived` |
+| `category` | `"work"` | free text; blocks of `break` projects are breaks |
+| `pinned` | `false` | |
+| `created` | none | TOML local date |
+
+Knotbook writes all fields except a missing `created`. Comments, formatting,
+unchanged values and unknown fields are kept as they are.
+
 The path to a project's local Git repository differs on every machine, so it
 is stored per device in `.knotbook/device.toml`:
 

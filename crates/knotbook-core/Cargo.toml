@@ -14,3 +14,4 @@ serde-saphyr = { version = "1.3.0", default-features = false, features = ["deser
 serde_json = { version = "1.0.151", features = ["preserve_order"] }
 thiserror = "2.0.21"
 toml = "1.1.6"
+toml_edit = "0.25.15"
