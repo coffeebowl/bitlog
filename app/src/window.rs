@@ -334,7 +334,9 @@ impl Window {
                 imp.tasks_page.reload();
             }
         }
-        if self.shows_calendar() {
+        // The calendar shows days only. Notes are not shown anywhere yet.
+        let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
+        if self.shows_calendar() && changes.iter().any(changes_day) {
             imp.calendar_view.reload();
         }
     }

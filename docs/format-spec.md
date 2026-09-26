@@ -386,13 +386,44 @@ take these defaults:
 - Live in `projects/<slug>/notes/` and belong to the project only through this
   folder.
 - Plain Markdown; front matter is allowed but not evaluated.
-- Knotbook only reads wiki links (`[[project-a/deployment]]`) and tags (`#tag`)
-  from them.
+- Knotbook only reads wiki links and tags from them.
 - Full Markdown, including headings.
 - Checkboxes are text, not managed tasks.
-- The template `templates/note.md` may contain the placeholders `{{title}}`,
-  `{{date:FORMAT}}` and `{{project}}`, which are replaced once when a note is
-  created.
+- Only `.md` files directly in `notes/` are notes; subfolders are ignored.
+
+**Wiki links** point to a note by its project and name:
+
+| Link | Points to |
+| --- | --- |
+| `[[project-a/deployment]]` | `projects/project-a/notes/deployment.md` |
+| `[[deployment]]` | `deployment.md` in the notes of the same project |
+| `[[project-a/deployment#Steps]]` | the same note; the heading is not checked |
+| `[[project-a/deployment\|how we deploy]]` | the same note, shown as "how we deploy" |
+
+Links in code are text. A target that is no valid note path, such as
+`[[a/b/c]]`, points nowhere.
+
+**Tags** are words starting with `#`, followed by letters, digits, `-`, `_`
+or `/`, such as `#release` or `#area/backend`. A `#` followed by digits only,
+like `#123`, is no tag, so issue numbers stay what they are. Code, front
+matter and the `#` inside a word or link are no tags.
+
+**The template** named by `defaults.note_template` is used for new notes. It
+may contain these placeholders, which are replaced once when a note is
+created; any other text in `{{…}}` stays as it is:
+
+| Placeholder | Replaced by |
+| --- | --- |
+| `{{title}}` | the note's name |
+| `{{project}}` | the project's name |
+| `{{date}}` | today as `YYYY-MM-DD` |
+| `{{date:FORMAT}}` | today in a strftime format such as `%d.%m.%Y` |
+
+Without a template, or if the file is missing, a new note is empty.
+
+**Renaming** a note changes only its file name. Knotbook offers to change the
+wiki links to it in all notes as well; it then replaces only the link targets
+and keeps the rest of each link.
 
 ## Writing rules
 
@@ -402,7 +433,7 @@ take these defaults:
 | `tasks-archive-YYYY.toml` | Knotbook | when archiving, preserving formatting and comments |
 | Day file: front matter, date heading and block headings | Knotbook | any time |
 | Day file: day note and block texts | user | always; Knotbook keeps them unchanged |
-| Project notes | user | always; Knotbook only when creating them from the template |
+| Project notes | user | always; Knotbook only when creating them from the template and, if the user agrees, in wiki links to a renamed note |
 | `exports/*` | Knotbook | may be overwritten completely |
 | `.knotbook/*` | Knotbook | local |
 

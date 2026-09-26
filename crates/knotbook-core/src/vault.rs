@@ -290,13 +290,19 @@ impl Vault {
         watch(&self.root, self.own_writes.clone(), on_change)
     }
 
-    fn write(&self, path: &Path, text: &str) -> Result<(), SaveError> {
+    pub(crate) fn write(&self, path: &Path, text: &str) -> Result<(), SaveError> {
+        self.record_write(path, Some(text));
+        write_atomic(path, text)
+    }
+
+    /// Notes that this program is about to write `text` to `path`, or with
+    /// `None` remove it, so that watching leaves the change out. Call it
+    /// before changing the file, so that watching never sees it first.
+    pub(crate) fn record_write(&self, path: &Path, text: Option<&str>) {
         let relative = path
             .strip_prefix(&self.root)
             .expect("vault files lie in the vault");
-        // Before writing, so that watching never sees the file first.
         self.own_writes.record(relative, text);
-        write_atomic(path, text)
     }
 
     /// The dates from `first` to `last`, both included, that have a day file.
@@ -733,7 +739,15 @@ mod tests {
                 Ok(())
             })
             .unwrap();
-        let project = Project::path(vault.root(), &"infra".parse().unwrap());
+        let infra = "infra".parse().unwrap();
+        let note = vault
+            .create_note(&infra, "Mine", date(2026, 10, 1))
+            .unwrap();
+        vault.rename_note(&note, "Still mine", false).unwrap();
+        vault
+            .delete_note(&"projects/infra/notes/deployment.md".parse().unwrap())
+            .unwrap();
+        let project = Project::path(vault.root(), &infra);
         fs::write(
             &project,
             fs::read_to_string(&project).unwrap() + "# Theirs.\n",

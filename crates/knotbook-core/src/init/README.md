@@ -53,5 +53,12 @@ Free text about this block.
 - The text below a heading belongs to the user and is kept as written. Block
   texts and the day note contain no headings of their own.
 
+## Project notes
+
+Project notes are plain Markdown files, headings included. A wiki link
+`[[project-a/deployment]]` points to `projects/project-a/notes/deployment.md`,
+`[[deployment]]` to a note of the same project. Words like `#release` are
+tags.
+
 The full format is described in `docs/format-spec.md` in the Knotbook
 repository.

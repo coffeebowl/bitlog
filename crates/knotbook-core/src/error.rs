@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::{BlockId, LocationKey, ProjectSlug, TaskId};
+use crate::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 
 /// A vault file that cannot be read or does not follow the format.
 #[derive(Debug, Error)]
@@ -14,7 +14,7 @@ pub enum ReadError {
     Invalid { path: PathBuf, message: String },
 }
 
-/// A change that would make a day, project or task list invalid.
+/// A change that would make a day, project, task list or note invalid.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EditError {
     #[error("there is no block {0}")]
@@ -39,6 +39,12 @@ pub enum EditError {
     UnknownTask(TaskId),
     #[error("a task needs a title of one line")]
     InvalidTaskTitle,
+    #[error("there is no note {0}")]
+    UnknownNote(NotePath),
+    #[error("the note {0} exists already")]
+    NoteExists(NotePath),
+    #[error(transparent)]
+    InvalidId(#[from] InvalidId),
 }
 
 /// A vault file that cannot be saved. Saving reads the file again first if

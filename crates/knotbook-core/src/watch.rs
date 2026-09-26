@@ -11,9 +11,9 @@ use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
 use thiserror::Error;
 
-use crate::ProjectSlug;
 use crate::file::content_hash;
 use crate::vault::day_file_date;
+use crate::{NotePath, ProjectSlug};
 
 /// Long enough to see a sync tool's burst of writes as one change.
 const DEBOUNCE: Duration = Duration::from_millis(300);
@@ -24,6 +24,7 @@ pub enum VaultChange {
     Config,
     Tasks,
     Project(ProjectSlug),
+    Note(NotePath),
     Day(NaiveDate),
 }
 
@@ -46,22 +47,24 @@ impl fmt::Debug for VaultWatcher {
 }
 
 /// The content this program last wrote to each file, by path relative to the
-/// vault, so that watching can tell its own writes apart.
+/// vault, or `None` if it removed the file, so that watching can tell its own
+/// changes apart.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct OwnWrites(Arc<Mutex<HashMap<PathBuf, u64>>>);
+pub(crate) struct OwnWrites(Arc<Mutex<HashMap<PathBuf, Option<u64>>>>);
 
 impl OwnWrites {
-    pub fn record(&self, relative: &Path, text: &str) {
-        self.lock().insert(relative.to_owned(), content_hash(text));
+    pub fn record(&self, relative: &Path, text: Option<&str>) {
+        self.lock()
+            .insert(relative.to_owned(), text.map(content_hash));
     }
 
     /// Whether `text`, the content of the file now (`None` if there is
-    /// none), is what this program wrote there last.
+    /// none), is what this program left there last.
     fn is_own(&self, relative: &Path, text: Option<&str>) -> bool {
-        text.is_some_and(|text| self.lock().get(relative) == Some(&content_hash(text)))
+        self.lock().get(relative) == Some(&text.map(content_hash))
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, u64>> {
+    fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<PathBuf, Option<u64>>> {
         self.0
             .lock()
             .expect("nothing panics while holding the lock")
@@ -127,6 +130,11 @@ fn change_of(relative: &Path) -> Option<VaultChange> {
         ["knotbook.toml"] => Some(VaultChange::Config),
         ["tasks.toml"] => Some(VaultChange::Tasks),
         ["projects", slug, "project.toml"] => slug.parse().ok().map(VaultChange::Project),
+        ["projects", slug, "notes", name] => {
+            NotePath::new(slug.parse().ok()?, name.strip_suffix(".md")?)
+                .ok()
+                .map(VaultChange::Note)
+        }
         ["daily", year, month, name] => day_file_date(name)
             .filter(|date| {
                 *year == format!("{:04}", date.year()) && *month == format!("{:02}", date.month())
@@ -150,6 +158,12 @@ mod tests {
             Some(VaultChange::Project("infra".parse().unwrap()))
         );
         assert_eq!(
+            change("projects/infra/notes/Deployment steps.md"),
+            Some(VaultChange::Note(
+                "projects/infra/notes/Deployment steps.md".parse().unwrap()
+            ))
+        );
+        assert_eq!(
             change("daily/2026/09/2026-09-21.md"),
             Some(VaultChange::Day(
                 NaiveDate::from_ymd_opt(2026, 9, 21).unwrap()
@@ -161,7 +175,9 @@ mod tests {
             "daily/2026/10/2026-09-21.md",
             "daily/2026/09",
             "projects/Not A Slug/project.toml",
-            "projects/infra/notes/deployment.md",
+            "projects/infra/notes/.deployment.md.0badf00d.tmp",
+            "projects/infra/notes/deployment.txt",
+            "projects/infra/notes/drafts/deployment.md",
             "tasks-archive-2026.toml",
             ".tasks.toml.0badf00d.tmp",
             ".git/index",
