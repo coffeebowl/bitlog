@@ -47,6 +47,8 @@ pub enum EditError {
     InvalidRepoPath(PathBuf),
     #[error("{} is not a Git repository", .0.display())]
     NotARepository(PathBuf),
+    #[error("invalid settings: {0}")]
+    InvalidSettings(String),
     #[error(transparent)]
     InvalidId(#[from] InvalidId),
 }

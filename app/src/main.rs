@@ -6,6 +6,7 @@ mod format;
 mod heatmap;
 mod markdown_view;
 mod note_view;
+mod preferences_dialog;
 mod project_dialog;
 mod project_picker;
 mod project_view;
@@ -67,6 +68,7 @@ fn main() -> glib::ExitCode {
     app.set_accels_for_action("win.today", &["<Control>t"]);
     app.set_accels_for_action("win.new-block", &["<Control>n"]);
     app.set_accels_for_action("win.search", &["<Control>k"]);
+    app.set_accels_for_action("win.preferences", &["<Control>comma"]);
 
     app.run()
 }

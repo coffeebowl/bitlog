@@ -82,6 +82,7 @@ fn same_value(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::String(a), Value::String(b)) => a.value() == b.value(),
         (Value::Integer(a), Value::Integer(b)) => a.value() == b.value(),
+        (Value::Float(a), Value::Float(b)) => a.value() == b.value(),
         (Value::Boolean(a), Value::Boolean(b)) => a.value() == b.value(),
         (Value::Datetime(a), Value::Datetime(b)) => a.value() == b.value(),
         _ => false,

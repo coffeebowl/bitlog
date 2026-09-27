@@ -5,6 +5,7 @@ app/src/format.rs
 app/src/heatmap.rs
 app/src/main.rs
 app/src/note_view.rs
+app/src/preferences_dialog.rs
 app/src/project_dialog.rs
 app/src/project_view.rs
 app/src/projects_page.rs
@@ -19,6 +20,7 @@ app/ui/calendar_view.blp
 app/ui/conflict_dialog.blp
 app/ui/day_view.blp
 app/ui/note_view.blp
+app/ui/preferences_dialog.blp
 app/ui/project_dialog.blp
 app/ui/project_view.blp
 app/ui/projects_page.blp

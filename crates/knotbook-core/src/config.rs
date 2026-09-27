@@ -3,17 +3,19 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use chrono::{NaiveTime, Weekday};
+use chrono::{NaiveTime, Timelike, Weekday};
 use serde::{Deserialize, Deserializer};
+use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::LocationKey;
 use crate::error::ReadError;
-use crate::file::read_file;
+use crate::file::{content_hash, parse_text, read_file};
+use crate::toml_values::set;
 
 /// The only format version this code knows.
 const FORMAT: u32 = 1;
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct VaultConfig {
     pub format: u32,
     #[serde(default = "default_name")]
@@ -27,6 +29,12 @@ pub struct VaultConfig {
     pub locations: BTreeMap<LocationKey, String>,
     #[serde(default)]
     pub defaults: DefaultsConfig,
+    /// The file as read, keeping comments and formatting for writing.
+    #[serde(skip)]
+    document: DocumentMut,
+    /// The hash of the file as read, `None` for a configuration never read.
+    #[serde(skip)]
+    hash: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -110,6 +118,16 @@ impl VaultConfig {
         read_file(path, Self::parse)
     }
 
+    /// Reads the content `text` of the file `path`.
+    pub(crate) fn read(path: &Path, text: &str) -> Result<Self, ReadError> {
+        parse_text(path, text, Self::parse)
+    }
+
+    /// Whether this configuration was read from a file with the content `text`.
+    pub(crate) fn is_read_from(&self, text: &str) -> bool {
+        self.hash == Some(content_hash(text))
+    }
+
     /// The display name of the location `key`, or the key itself if
     /// `[locations]` lacks it, as in hand-edited day files.
     pub fn location_name<'a>(&'a self, key: &'a LocationKey) -> &'a str {
@@ -117,9 +135,85 @@ impl VaultConfig {
     }
 
     fn parse(text: &str) -> Result<Self, String> {
-        let config: Self = toml::from_str(text).map_err(|err| err.to_string())?;
+        let mut config: Self = toml::from_str(text).map_err(|err| err.to_string())?;
         config.validate()?;
+        config.document = text
+            .parse()
+            .map_err(|err: toml_edit::TomlError| err.to_string())?;
+        config.hash = Some(content_hash(text));
         Ok(config)
+    }
+
+    /// The content of `knotbook.toml`, or why these settings are invalid.
+    ///
+    /// Comments, formatting and unknown fields of the file this configuration
+    /// was read from are kept, unchanged values are written exactly as they
+    /// were. Keys the file lacks are only added for values other than their
+    /// default, so that a short file stays short.
+    pub fn to_toml(&self) -> Result<String, String> {
+        self.validate()?;
+        let (week, grid) = (WeekConfig::default(), GridConfig::default());
+        let mut document = self.document.clone();
+        let doc = &mut document;
+        set_key(doc, None, "format", i64::from(FORMAT).into(), false);
+        set_key(
+            doc,
+            None,
+            "name",
+            self.name.as_str().into(),
+            self.name == default_name(),
+        );
+        set_key(
+            doc,
+            Some("week"),
+            "first_day",
+            weekday_name(self.week.first_day).into(),
+            self.week.first_day == week.first_day,
+        );
+        set_key(
+            doc,
+            Some("week"),
+            "target_hours",
+            self.week.target_hours.into(),
+            self.week.target_hours == week.target_hours,
+        );
+        set_key(
+            doc,
+            Some("grid"),
+            "slot_minutes",
+            i64::from(self.grid.slot_minutes).into(),
+            self.grid.slot_minutes == grid.slot_minutes,
+        );
+        set_key(
+            doc,
+            Some("grid"),
+            "day_start",
+            toml_time(self.grid.day_start).into(),
+            self.grid.day_start == grid.day_start,
+        );
+        set_key(
+            doc,
+            Some("grid"),
+            "day_end",
+            toml_time(self.grid.day_end).into(),
+            self.grid.day_end == grid.day_end,
+        );
+        let location = self
+            .defaults
+            .location
+            .as_ref()
+            .map(|key| key.as_str().into());
+        set_optional(doc, "defaults", "location", location);
+        let template = match &self.defaults.note_template {
+            Some(path) => Some(
+                path.to_str()
+                    .ok_or_else(|| format!("{} is not valid UTF-8", path.display()))?
+                    .into(),
+            ),
+            None => None,
+        };
+        set_optional(doc, "defaults", "note_template", template);
+        Ok(document.to_string())
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -147,6 +241,79 @@ impl VaultConfig {
             ));
         }
         Ok(())
+    }
+}
+
+/// The table `section` of `document`, or the document itself for `None`.
+fn section<'a>(document: &'a mut DocumentMut, section: Option<&str>) -> &'a mut Table {
+    let Some(section) = section else {
+        return document.as_table_mut();
+    };
+    let item = document.entry(section).or_insert(toml_edit::table());
+    if let Some(inline) = item.as_inline_table() {
+        *item = Item::Table(inline.clone().into_table());
+    }
+    item.as_table_mut()
+        .expect("the configuration sections are tables")
+}
+
+/// Sets `key` in `section` to `value`, unless the file lacks it and `value` is
+/// its default anyway.
+fn set_key(
+    document: &mut DocumentMut,
+    table: Option<&str>,
+    key: &str,
+    value: Value,
+    is_default: bool,
+) {
+    let present = match table {
+        None => document.contains_key(key),
+        Some(table) => document
+            .get(table)
+            .and_then(Item::as_table_like)
+            .is_some_and(|table| table.contains_key(key)),
+    };
+    if present || !is_default {
+        set(section(document, table), key, value);
+    }
+}
+
+/// Sets `key` in `table` to `value`, or removes it if there is none.
+fn set_optional(document: &mut DocumentMut, table: &str, key: &str, value: Option<Value>) {
+    match value {
+        Some(value) => set(section(document, Some(table)), key, value),
+        None => {
+            if let Some(table) = document.get_mut(table).and_then(Item::as_table_like_mut) {
+                table.remove(key);
+            }
+        }
+    }
+}
+
+/// The name of `weekday` as `knotbook.toml` writes it, such as `mon`.
+fn weekday_name(weekday: Weekday) -> &'static str {
+    match weekday {
+        Weekday::Mon => "mon",
+        Weekday::Tue => "tue",
+        Weekday::Wed => "wed",
+        Weekday::Thu => "thu",
+        Weekday::Fri => "fri",
+        Weekday::Sat => "sat",
+        Weekday::Sun => "sun",
+    }
+}
+
+fn toml_time(time: NaiveTime) -> toml_edit::Datetime {
+    let part = |value: u32| u8::try_from(value).expect("time parts fit into u8");
+    toml_edit::Datetime {
+        date: None,
+        time: Some(toml_edit::Time {
+            hour: part(time.hour()),
+            minute: part(time.minute()),
+            second: Some(part(time.second())),
+            nanosecond: None,
+        }),
+        offset: None,
     }
 }
 
@@ -222,6 +389,73 @@ mod tests {
         ] {
             assert!(VaultConfig::parse(text).is_err(), "{text:?}");
         }
+    }
+
+    #[test]
+    fn unchanged_files_are_written_byte_identical() {
+        let sample =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault/knotbook.toml");
+        let init = include_str!("init/knotbook.toml");
+        for text in [
+            std::fs::read_to_string(sample).unwrap().as_str(),
+            init,
+            "format = 1\n",
+        ] {
+            let config = VaultConfig::parse(text).unwrap();
+            assert_eq!(config.to_toml().unwrap(), text);
+        }
+    }
+
+    #[test]
+    fn writing_keeps_comments() {
+        let mut config = VaultConfig::parse(
+            "format = 1\n[grid]\nslot_minutes = 15 # quarter hours\nday_end = 19:00:00\n",
+        )
+        .unwrap();
+        config.grid.slot_minutes = 30;
+        config.grid.day_end = time(20, 30);
+        config.week.target_hours = 40.0;
+        assert_eq!(
+            config.to_toml().unwrap(),
+            "format = 1\n[grid]\nslot_minutes = 30 # quarter hours\nday_end = 20:30:00\n"
+        );
+    }
+
+    #[test]
+    fn writing_adds_only_changed_keys() {
+        let mut config = VaultConfig::parse("format = 1\n").unwrap();
+        config.name = "Work".to_owned();
+        config.week.first_day = Weekday::Sun;
+        config.grid.day_start = time(6, 30);
+        config.defaults.note_template = Some(PathBuf::from("templates/note.md"));
+        let text = config.to_toml().unwrap();
+        assert_eq!(
+            text,
+            "format = 1\nname = \"Work\"\n\n[week]\nfirst_day = \"sun\"\n\n[grid]\nday_start = 06:30:00\n\n[defaults]\nnote_template = \"templates/note.md\"\n"
+        );
+        let read = VaultConfig::parse(&text).unwrap();
+        assert_eq!(read.week, config.week);
+        assert_eq!(read.grid, config.grid);
+        assert_eq!(read.defaults, config.defaults);
+    }
+
+    #[test]
+    fn writing_removes_unset_defaults() {
+        let sample =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault/knotbook.toml");
+        let mut config = VaultConfig::load(&sample).unwrap();
+        config.defaults = DefaultsConfig::default();
+        let text = config.to_toml().unwrap();
+        assert!(!text.contains("location ="), "{text}");
+        assert!(!text.contains("note_template"), "{text}");
+        assert!(text.contains("[defaults]"), "{text}");
+    }
+
+    #[test]
+    fn writing_rejects_invalid_settings() {
+        let mut config = VaultConfig::parse("format = 1").unwrap();
+        config.grid.day_start = time(20, 0);
+        assert!(config.to_toml().is_err());
     }
 
     #[test]

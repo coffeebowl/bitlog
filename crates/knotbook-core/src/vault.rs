@@ -58,7 +58,7 @@ impl Vault {
     pub fn open(root: &Path) -> Result<Self, ReadError> {
         Ok(Self {
             root: root.to_owned(),
-            config: VaultConfig::load(&root.join("knotbook.toml"))?,
+            config: VaultConfig::load(&Self::config_path(root))?,
             projects: Project::load_all(root)?,
             own_writes: OwnWrites::default(),
         })
@@ -70,6 +70,36 @@ impl Vault {
 
     pub fn config(&self) -> &VaultConfig {
         &self.config
+    }
+
+    fn config_path(root: &Path) -> PathBuf {
+        root.join("knotbook.toml")
+    }
+
+    /// Applies `change` to the settings of this vault and saves them.
+    ///
+    /// If the file was changed elsewhere since it was read, `change` is applied
+    /// to the settings as they are now instead, so that both changes are kept.
+    pub fn update_config(
+        &mut self,
+        change: impl FnOnce(&mut VaultConfig) -> Result<(), EditError>,
+    ) -> Result<&VaultConfig, SaveError> {
+        let path = Self::config_path(&self.root);
+        let current = read_text(&path)?;
+        let mut config = if self.config.is_read_from(&current) {
+            self.config.clone()
+        } else {
+            VaultConfig::read(&path, &current)?
+        };
+        change(&mut config)?;
+        let text = config.to_toml().map_err(EditError::InvalidSettings)?;
+        let saved = VaultConfig::read(&path, &text).expect("valid settings are read back");
+        // Unchanged settings come out byte-identical.
+        if current != text {
+            self.write(&path, &text)?;
+        }
+        self.config = saved;
+        Ok(&self.config)
     }
 
     pub fn projects(&self) -> &[Project] {
@@ -640,6 +670,43 @@ mod tests {
         let written = fs::read_to_string(&path).unwrap();
         assert_eq!(written, external.replace("\"Infrastructure\"", "\"Infra\""));
         assert_eq!(vault.project(&slug).unwrap().name, "Infra");
+    }
+
+    #[test]
+    fn update_config() {
+        let (_dir, mut vault) = sample_copy();
+        let path = vault.root().join("knotbook.toml");
+        let external = fs::read_to_string(&path)
+            .unwrap()
+            .replace("target_hours = 32.0", "target_hours = 30.0");
+        fs::write(&path, &external).unwrap();
+
+        let config = vault
+            .update_config(|config| {
+                config.grid.slot_minutes = 30;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(config.grid.slot_minutes, 30);
+        assert_eq!(config.week.target_hours, 30.0);
+        let written = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            written,
+            external.replace("slot_minutes = 15", "slot_minutes = 30")
+        );
+
+        let err = vault
+            .update_config(|config| {
+                config.grid.slot_minutes = 7;
+                Ok(())
+            })
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            SaveError::Edit(EditError::InvalidSettings(_))
+        ));
+        assert_eq!(vault.config().grid.slot_minutes, 30);
+        assert_eq!(fs::read_to_string(&path).unwrap(), written);
     }
 
     #[test]

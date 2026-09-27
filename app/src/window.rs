@@ -15,6 +15,7 @@ use knotbook_core::{
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
+use crate::preferences_dialog::PreferencesDialog;
 use crate::projects_page::ProjectsPage;
 use crate::reports_page::ReportsPage;
 use crate::search_dialog::SearchDialog;
@@ -23,7 +24,8 @@ use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 16] = [
+const VAULT_ACTIONS: [&str; 17] = [
+    "win.preferences",
     "win.previous",
     "win.next",
     "win.today",
@@ -178,6 +180,9 @@ mod imp {
                     .expect("the project page adds projects");
             });
             klass.install_action("win.search", None, |window, _, _| window.search());
+            klass.install_action("win.preferences", None, |window, _, _| {
+                window.show_preferences();
+            });
             klass.install_action(
                 "win.show-block",
                 Some(glib::VariantTy::new("(ss)").expect("(ss) is a variant type")),
@@ -645,6 +650,66 @@ impl Window {
         imp.split_view.set_content(Some(&imp.projects_page));
         imp.split_view.set_show_content(true);
         imp.sidebar_list.select_row(Some(&*imp.projects_row));
+    }
+
+    fn show_preferences(&self) {
+        let imp = self.imp();
+        if self.visible_dialog().is_some() {
+            return;
+        }
+        let vault = imp
+            .vault
+            .borrow()
+            .clone()
+            .expect("preferences need a vault");
+        let dialog = PreferencesDialog::new(&vault);
+        dialog.connect_save(glib::clone!(
+            #[weak(rename_to = window)]
+            self,
+            move |dialog| window.save_preferences(dialog)
+        ));
+        dialog.present(Some(self));
+    }
+
+    /// Saves the settings `dialog` holds and closes it. On failure it
+    /// stays open.
+    fn save_preferences(&self, dialog: &PreferencesDialog) {
+        let imp = self.imp();
+        // A copy shares the record of own writes, so watching the vault
+        // goes on as before.
+        let mut vault = Vault::clone(
+            &imp.vault
+                .borrow()
+                .clone()
+                .expect("preferences need a vault"),
+        );
+        match vault.update_config(|config| dialog.apply(config)) {
+            Ok(_) => {
+                dialog.close();
+                self.config_changed(Rc::new(vault));
+            }
+            Err(err) => {
+                let alert = adw::AlertDialog::new(
+                    Some(&gettext("Cannot Save Preferences")),
+                    Some(&err.to_string()),
+                );
+                alert.add_response("close", &gettext("_Close"));
+                alert.present(Some(dialog));
+            }
+        }
+    }
+
+    /// Hands `vault`, with changed settings, to all pages and shows them
+    /// anew. Blocks keep their times.
+    fn config_changed(&self, vault: Rc<Vault>) {
+        let imp = self.imp();
+        self.set_vault(&vault);
+        imp.day_view.show_date(imp.day_view.date());
+        imp.calendar_view.reload();
+        imp.projects_page.reload();
+        if self.shows_reports() {
+            imp.reports_page.reload();
+        }
     }
 
     /// Opens the search, which also offers commands.
