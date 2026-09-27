@@ -10,6 +10,7 @@ use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
 use gtk::glib;
 use knotbook_core::{NotePath, Project, ProjectSlug, SaveError, Vault};
+use knotbook_index::Found;
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
@@ -32,6 +33,8 @@ mod imp {
         /// the navigation view while shown.
         pub project_view: ProjectView,
         pub note_view: NoteView,
+        /// Where the links to a note lie, before it is renamed.
+        pub index: RefCell<SearchIndex>,
         #[template_child]
         pub nav: TemplateChild<adw::NavigationView>,
         #[template_child]
@@ -47,6 +50,7 @@ mod imp {
                 groups: RefCell::default(),
                 project_view: glib::Object::new(),
                 note_view: glib::Object::new(),
+                index: RefCell::default(),
                 nav: TemplateChild::default(),
                 stack: TemplateChild::default(),
                 list: TemplateChild::default(),
@@ -156,7 +160,8 @@ impl ProjectsPage {
     pub fn set_index(&self, index: SearchIndex) {
         let imp = self.imp();
         imp.note_view.set_index(index.clone());
-        imp.project_view.set_index(index);
+        imp.project_view.set_index(index.clone());
+        imp.index.replace(index);
     }
 
     pub fn vault(&self) -> Rc<Vault> {
@@ -373,17 +378,20 @@ impl ProjectsPage {
         else {
             return;
         };
-        // Renaming may change the links in the note shown.
+        // Renaming may change the links in the note shown, and the index
+        // has to find what was just typed.
         imp.note_view.save_now();
         let vault = self.vault();
-        let linking = match vault.notes_linking_to(&note) {
+        let index = imp.index.borrow().clone();
+        let linking = match index.backlinks(&vault, note.clone()).await {
             Ok(linking) => linking,
             Err(err) => {
                 show_error(self, &gettext("Cannot Rename Note"), &err.to_string());
                 return;
             }
         };
-        let others = linking.iter().filter(|linking| **linking != note).count();
+        let itself = Found::Note(note.clone());
+        let others = linking.iter().filter(|link| link.found != itself).count();
         let update_links = if others == 0 {
             // Only the note itself links to it, if at all.
             true
@@ -472,13 +480,14 @@ impl ProjectsPage {
         (response == "accept").then(|| entry.text().trim().to_owned())
     }
 
-    /// Asks whether the links of `others` other notes to `note` should
-    /// point to its new name. Returns `None` if the user cancels.
+    /// Asks whether the links in `others` other notes, day notes and blocks
+    /// to `note` should point to its new name. Returns `None` if the user
+    /// cancels.
     async fn ask_update_links(&self, note: &NotePath, others: usize) -> Option<bool> {
         let count = u32::try_from(others).unwrap_or(u32::MAX);
         let body = ngettext(
-            "{count} other note links to “{name}”. Should the link point to the new name?",
-            "{count} other notes link to “{name}”. Should the links point to the new name?",
+            "{count} other place links to “{name}”. Should the link point to the new name?",
+            "{count} other places link to “{name}”. Should the links point to the new name?",
             count,
         )
         .replace("{count}", &others.to_string())

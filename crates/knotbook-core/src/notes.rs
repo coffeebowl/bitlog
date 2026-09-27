@@ -12,7 +12,7 @@ use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_folder, read_optional, read_text};
-use crate::{EditError, NotePath, ProjectSlug, Vault};
+use crate::{Day, EditError, NotePath, ProjectSlug, Vault};
 
 /// A project note as read, remembering the file's content to notice
 /// changes made elsewhere before saving.
@@ -90,6 +90,49 @@ fn note_path(target: &str, project: Option<&ProjectSlug>) -> Option<NotePath> {
         Some((slug, name)) => NotePath::new(slug.parse().ok()?, name).ok(),
         None => NotePath::new(project?.clone(), target).ok(),
     }
+}
+
+/// Points the wiki links to `from` in the day note and block texts of `day`
+/// to `to`. Returns whether there were any.
+fn relink_day(day: &mut Day, from: &NotePath, to: &NotePath) -> bool {
+    let mut changed = false;
+    if let Some(note) = relinked(&day.note, None, from, to) {
+        day.note = note;
+        changed = true;
+    }
+    for block in &mut day.blocks {
+        if let Some(text) = relinked(&block.text, Some(&block.project), from, to) {
+            block.text = text;
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// `text` of the project `project` with its wiki links to `from` pointing
+/// to `to`, keeping their `|text` and `#heading`, or `None` if it has none.
+fn relinked(
+    text: &str,
+    project: Option<&ProjectSlug>,
+    from: &NotePath,
+    to: &NotePath,
+) -> Option<String> {
+    let mut relinked = text.to_owned();
+    let mut changed = false;
+    // From the end, so that the ranges before stay valid.
+    for link in wiki_links(text, project).iter().rev() {
+        if link.note.as_ref() != Some(from) {
+            continue;
+        }
+        let target = if link.is_short(text) {
+            to.name().to_owned()
+        } else {
+            format!("{}/{}", to.project(), to.name())
+        };
+        relinked.replace_range(link.range.clone(), &target);
+        changed = true;
+    }
+    changed.then_some(relinked)
 }
 
 fn parser(text: &str) -> Parser<'_> {
@@ -198,23 +241,6 @@ impl Vault {
         )))
     }
 
-    /// The notes of all projects with a wiki link to `target`.
-    pub fn notes_linking_to(&self, target: &NotePath) -> Result<Vec<NotePath>, ReadError> {
-        let mut linking = Vec::new();
-        for project in self.projects() {
-            for note in self.notes(&project.slug)? {
-                let file = self.load_note(&note)?;
-                if wiki_links(&file.text, Some(&project.slug))
-                    .iter()
-                    .any(|link| link.note.as_ref() == Some(target))
-                {
-                    linking.push(note);
-                }
-            }
-        }
-        Ok(linking)
-    }
-
     /// Creates the note `name` in the project `project` from the vault's
     /// note template, or empty without one.
     pub fn create_note(
@@ -241,8 +267,8 @@ impl Vault {
     }
 
     /// Renames the note `note` to `name`, within its project. With
-    /// `update_links`, wiki links to it in all notes are changed to the new
-    /// name, keeping their `|text` and `#heading`.
+    /// `update_links`, wiki links to it in all notes and day files are
+    /// changed to the new name, keeping their `|text` and `#heading`.
     pub fn rename_note(
         &self,
         note: &NotePath,
@@ -263,31 +289,41 @@ impl Vault {
         self.record_write(&from, None);
         fs::rename(&from, &to).map_err(|source| SaveError::Write { path: to, source })?;
         if update_links {
-            // The renamed note itself included, for links to itself.
-            for linking in self.notes_linking_to(note)? {
-                self.relink(&linking, note, &renamed)?;
-            }
+            self.relink_notes(note, &renamed)?;
+            self.relink_days(note, &renamed)?;
         }
         Ok(renamed)
     }
 
-    /// Changes the wiki links to `from` in the note `note` to point to `to`.
-    fn relink(&self, note: &NotePath, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
-        let mut text = self.load_note(note)?.text;
-        let links = wiki_links(&text, Some(note.project()));
-        // From the end, so that the ranges before stay valid.
-        for link in links.iter().rev() {
-            if link.note.as_ref() != Some(from) {
-                continue;
+    /// Changes the wiki links to `from` in all notes to point to `to`, those
+    /// in the renamed note itself included.
+    fn relink_notes(&self, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
+        for project in self.projects() {
+            for note in self.notes(&project.slug)? {
+                let text = self.load_note(&note)?.text;
+                if let Some(text) = relinked(&text, Some(&project.slug), from, to) {
+                    self.write(&self.note_path(&note), &text)?;
+                }
             }
-            let target = if link.is_short(&text) {
-                to.name().to_owned()
-            } else {
-                format!("{}/{}", to.project(), to.name())
-            };
-            text.replace_range(link.range.clone(), &target);
         }
-        self.write(&self.note_path(note), &text)
+        Ok(())
+    }
+
+    /// Changes the wiki links to `from` in all day files to point to `to`.
+    /// Days that cannot be read are left alone; `knotbook doctor` names them.
+    fn relink_days(&self, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
+        for date in self.all_days()? {
+            let Ok(Some(file)) = self.load_day(date) else {
+                continue;
+            };
+            if relink_day(&mut file.day.clone(), from, to) {
+                self.update_day(&file, |day| {
+                    relink_day(day, from, to);
+                    Ok(())
+                })?;
+            }
+        }
+        Ok(())
     }
 
     /// Deletes the note `note` for good.
@@ -446,16 +482,44 @@ mod tests {
     }
 
     #[test]
+    fn rename_note_updates_day_files() {
+        let (_dir, vault) = sample_copy();
+        let deployment = note("projects/infra/notes/deployment.md");
+        let date = |day| NaiveDate::from_ymd_opt(2026, 9, day).unwrap();
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                // A short link in the day note points nowhere.
+                day.note = "See [[deployment]] and [[infra/deployment|steps]].".to_owned();
+                // Block m1n2 belongs to infra.
+                day.blocks[5].text = "See [[deployment#Steps]].".to_owned();
+                Ok(())
+            })
+            .unwrap();
+
+        let renamed = vault.rename_note(&deployment, "Deploy", true).unwrap();
+        let day = vault.load_day(date(21)).unwrap().unwrap().day;
+        assert_eq!(day.note, "See [[deployment]] and [[infra/Deploy|steps]].");
+        assert_eq!(day.blocks[5].text, "See [[Deploy#Steps]].");
+        let day = vault.load_day(date(23)).unwrap().unwrap().day;
+        assert!(
+            day.blocks
+                .iter()
+                .any(|block| block.text.contains("[[infra/Deploy]]"))
+        );
+
+        // Without updating, days stay as they are.
+        vault.rename_note(&renamed, "deployment", false).unwrap();
+        let day = vault.load_day(date(21)).unwrap().unwrap().day;
+        assert_eq!(day.blocks[5].text, "See [[Deploy#Steps]].");
+    }
+
+    #[test]
     fn rename_note_and_links() {
         let (_dir, vault) = sample_copy();
         let checkout = note("projects/webshop/notes/checkout-flow.md");
         let deployment = note("projects/infra/notes/deployment.md");
         let provider = note("projects/webshop/notes/payment-provider.md");
-        assert_eq!(
-            vault.notes_linking_to(&checkout).unwrap(),
-            [deployment.clone(), provider.clone()]
-        );
-
         // Short links, links to headings and links in code.
         let provider_text = vault.load_note(&provider).unwrap().text
             + "[[checkout-flow#Payment|pay]] `[[webshop/checkout-flow]]`\n";

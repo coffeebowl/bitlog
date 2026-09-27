@@ -433,8 +433,8 @@ created; any other text in `{{…}}` stays as it is:
 Without a template, or if the file is missing, a new note is empty.
 
 **Renaming** a note changes only its file name. Knotbook offers to change the
-wiki links to it in all notes as well; it then replaces only the link targets
-and keeps the rest of each link.
+wiki links to it in all notes, day notes and block texts as well; it then
+replaces only the link targets and keeps the rest of each link.
 
 ## Exports: `exports/`
 
@@ -461,7 +461,7 @@ their texts.
 | `knotbook.toml`, `tasks.toml`, `project.toml` | Knotbook | any time, preserving formatting and comments |
 | `tasks-archive-YYYY.toml` | Knotbook | when archiving, preserving formatting and comments |
 | Day file: front matter, date heading and block headings | Knotbook | any time |
-| Day file: day note and block texts | user | always; Knotbook keeps them unchanged |
+| Day file: day note and block texts | user | always; Knotbook keeps them unchanged, except, if the user agrees, for wiki links to a renamed note |
 | Project notes | user | always; Knotbook only when creating them from the template and, if the user agrees, in wiki links to a renamed note |
 | `exports/*` | Knotbook | may be overwritten completely |
 | `.knotbook/*` | Knotbook | local |
