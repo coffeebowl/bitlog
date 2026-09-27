@@ -11,6 +11,7 @@ use knotbook_core::{EditError, Project, ProjectSlug, check_repo_path};
 
 use crate::alert::show_error;
 use crate::format::{PROJECT_STATUSES, status_name};
+use crate::preferences_dialog::changed;
 
 mod imp {
     use super::*;
@@ -21,6 +22,9 @@ mod imp {
         /// The ID last made from the name, replaced along with the name
         /// until the user types another one.
         pub derived_slug: RefCell<String>,
+        /// The project as the dialog showed it at first, to save only what
+        /// the user changed.
+        pub shown: RefCell<Option<Project>>,
         /// The repository folder as chosen, shown in `repo_row`.
         pub repo: RefCell<Option<PathBuf>>,
         #[template_child]
@@ -157,6 +161,7 @@ impl ProjectDialog {
             dialog.set_title(&gettext("New Project"));
             imp.save_button.set_label(&gettext("_Add"));
         }
+        imp.shown.replace(Some(shown.clone()));
         dialog.update_save_button();
         dialog
     }
@@ -178,21 +183,34 @@ impl ProjectDialog {
         self.imp().slug_row.text().trim().parse().ok()
     }
 
-    /// Sets everything but the ID of `project` as entered.
+    /// Sets what the user changed of everything but the ID of `project`,
+    /// so that changes made elsewhere meanwhile are kept.
     pub fn apply(&self, project: &mut Project) -> Result<(), EditError> {
         let imp = self.imp();
-        project.name = self.name();
+        let shown = imp.shown.borrow();
+        let shown = shown.as_ref().expect("the dialog shows a project");
+        changed(&mut project.name, &shown.name, self.name());
         let rgba = imp.color_button.rgba();
         let channel = |value: f32| (value * 255.0).round() as u8;
-        project.set_color(&format!(
+        let color = format!(
             "#{:02x}{:02x}{:02x}",
             channel(rgba.red()),
             channel(rgba.green()),
             channel(rgba.blue())
-        ))?;
-        project.category = imp.category_row.text().trim().to_owned();
-        project.status = PROJECT_STATUSES[imp.status_row.selected() as usize];
-        project.pinned = imp.pinned_row.is_active();
+        );
+        // Files may write the digits in upper case.
+        if !color.eq_ignore_ascii_case(&shown.color) {
+            project.set_color(&color)?;
+        }
+        let category = imp.category_row.text().trim().to_owned();
+        changed(&mut project.category, &shown.category, category);
+        let status = PROJECT_STATUSES[imp.status_row.selected() as usize];
+        changed(&mut project.status, &shown.status, status);
+        changed(
+            &mut project.pinned,
+            &shown.pinned,
+            imp.pinned_row.is_active(),
+        );
         Ok(())
     }
 

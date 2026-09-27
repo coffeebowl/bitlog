@@ -152,6 +152,15 @@ const WEEKDAYS: [Weekday; 7] = [
     Weekday::Sun,
 ];
 
+/// Sets `field` to `entered` if that differs from `shown`, the value the
+/// dialog started with, so that a value changed elsewhere meanwhile is kept
+/// unless the user changed it too.
+pub fn changed<T: PartialEq>(field: &mut T, shown: &T, entered: T) {
+    if entered != *shown {
+        *field = entered;
+    }
+}
+
 /// The name of `weekday` in the user's language.
 fn weekday_name(weekday: Weekday) -> String {
     // September 21, 2026 is a Monday.
@@ -271,12 +280,6 @@ impl PreferencesDialog {
     /// that changes made elsewhere meanwhile are kept. Blocks already there
     /// keep their times, whatever the block length.
     pub fn apply(&self, config: &mut VaultConfig) -> Result<(), EditError> {
-        fn changed<T: PartialEq>(field: &mut T, shown: &T, entered: T) {
-            if entered != *shown {
-                *field = entered;
-            }
-        }
-
         let imp = self.imp();
         let shown = imp.shown.borrow();
         let shown = shown.as_ref().expect("the dialog shows settings");
