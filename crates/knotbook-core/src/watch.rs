@@ -2,13 +2,14 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Component, Path, PathBuf};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use std::{fmt, fs};
+use std::{fmt, fs, thread};
 
 use chrono::{Datelike, NaiveDate};
-use notify_debouncer_mini::notify::{self, RecommendedWatcher, RecursiveMode};
-use notify_debouncer_mini::{DebounceEventResult, Debouncer, new_debouncer};
+use notify::event::{AccessKind, AccessMode};
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use thiserror::Error;
 
 use crate::conflict::copy_of;
@@ -38,7 +39,7 @@ pub struct WatchError {
 
 /// Watches a vault until it is dropped.
 pub struct VaultWatcher {
-    _debouncer: Debouncer<RecommendedWatcher>,
+    _watcher: RecommendedWatcher,
 }
 
 impl fmt::Debug for VaultWatcher {
@@ -86,17 +87,32 @@ pub(crate) fn watch(
     };
     // Events name absolute, resolved paths.
     let root = fs::canonicalize(root).map_err(|err| error(err.into()))?;
-    let watched = root.clone();
-    let mut debouncer = new_debouncer(DEBOUNCE, move |result: DebounceEventResult| match result {
-        Ok(events) => {
-            let changes: BTreeSet<VaultChange> = events
+    let (sender, events) = mpsc::channel();
+    let mut watcher = notify::recommended_watcher(sender).map_err(error)?;
+    watcher
+        .watch(&root, RecursiveMode::Recursive)
+        .map_err(error)?;
+    // Ends when the watcher, and with it the sender, is dropped.
+    thread::spawn(move || {
+        while let Some(burst) = next_burst(&events) {
+            let paths = match burst {
+                Ok(paths) => paths,
+                Err(source) => {
+                    on_change(Err(WatchError {
+                        path: root.clone(),
+                        source,
+                    }));
+                    continue;
+                }
+            };
+            let changes: BTreeSet<VaultChange> = paths
                 .iter()
-                .filter_map(|event| {
-                    let relative = event.path.strip_prefix(&watched).ok()?;
+                .filter_map(|path| {
+                    let relative = path.strip_prefix(&root).ok()?;
                     // A conflict copy changes what there is to merge into
                     // its original.
                     let change = VaultChange::from_path(relative).or_else(|| copy_of(relative))?;
-                    let text = fs::read_to_string(&event.path).ok();
+                    let text = fs::read_to_string(path).ok();
                     (!own_writes.is_own(relative, text.as_deref())).then_some(change)
                 })
                 .collect();
@@ -104,19 +120,42 @@ pub(crate) fn watch(
                 on_change(Ok(changes.into_iter().collect()));
             }
         }
-        Err(source) => on_change(Err(WatchError {
-            path: watched.clone(),
-            source,
-        })),
-    })
-    .map_err(error)?;
-    debouncer
-        .watcher()
-        .watch(&root, RecursiveMode::Recursive)
-        .map_err(error)?;
-    Ok(VaultWatcher {
-        _debouncer: debouncer,
-    })
+    });
+    Ok(VaultWatcher { _watcher: watcher })
+}
+
+/// The files changed next, collected until no change comes for
+/// `DEBOUNCE`, or the first error. `None` once the watcher is gone.
+fn next_burst(
+    events: &mpsc::Receiver<notify::Result<notify::Event>>,
+) -> Option<Result<BTreeSet<PathBuf>, notify::Error>> {
+    let mut paths = BTreeSet::new();
+    loop {
+        let event = if paths.is_empty() {
+            events.recv().ok()?
+        } else {
+            match events.recv_timeout(DEBOUNCE) {
+                Ok(event) => event,
+                Err(RecvTimeoutError::Timeout) => return Some(Ok(paths)),
+                Err(RecvTimeoutError::Disconnected) => return None,
+            }
+        };
+        match event {
+            Ok(event) if changes_files(event.kind) => paths.extend(event.paths),
+            Ok(_) => {}
+            Err(err) => return Some(Err(err)),
+        }
+    }
+}
+
+/// Whether an event of `kind` can mean new content. Opening and reading
+/// a file, as this program does after every change, does not: counting
+/// that would reload the vault again and again.
+fn changes_files(kind: EventKind) -> bool {
+    match kind {
+        EventKind::Access(access) => access == AccessKind::Close(AccessMode::Write),
+        _ => true,
+    }
 }
 
 impl VaultChange {
@@ -153,6 +192,22 @@ impl VaultChange {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn reading_changes_nothing() {
+        use notify::event::{CreateKind, ModifyKind};
+        assert!(!changes_files(EventKind::Access(AccessKind::Open(
+            AccessMode::Any
+        ))));
+        assert!(!changes_files(EventKind::Access(AccessKind::Close(
+            AccessMode::Read
+        ))));
+        assert!(changes_files(EventKind::Access(AccessKind::Close(
+            AccessMode::Write
+        ))));
+        assert!(changes_files(EventKind::Modify(ModifyKind::Any)));
+        assert!(changes_files(EventKind::Create(CreateKind::File)));
+    }
 
     #[test]
     fn changes_of_paths() {
