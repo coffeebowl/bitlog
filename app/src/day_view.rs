@@ -259,10 +259,12 @@ impl DayView {
         let imp = self.imp();
         let is_today = self.date() == Local::now().date_naive();
         // One list is on the page of a day, the other on that of a day
-        // without a file.
-        for tasks in [&*imp.tasks, &*imp.empty_tasks] {
-            tasks.set_visible(is_today);
-            if is_today {
+        // without a file; only the one on the page shown is read.
+        let page = imp.stack.visible_child_name();
+        for (tasks, on) in [(&*imp.tasks, "day"), (&*imp.empty_tasks, "empty")] {
+            let shown = is_today && page.as_deref() == Some(on);
+            tasks.set_visible(shown);
+            if shown {
                 tasks.reload();
             }
         }
