@@ -118,9 +118,16 @@ mod imp {
     impl ObjectImpl for ProjectsPage {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            // Emitted after a project was saved, with the changed vault
-            // available through `vault()`.
-            SIGNALS.get_or_init(|| vec![Signal::builder("vault-changed").build()])
+            SIGNALS.get_or_init(|| {
+                vec![
+                    // Emitted after a project was saved, with the changed
+                    // vault available through `vault()`.
+                    Signal::builder("vault-changed").build(),
+                    // Emitted after links in day files were changed, which
+                    // watching the vault leaves out as own writes.
+                    Signal::builder("days-changed").build(),
+                ]
+            })
         }
     }
 
@@ -175,6 +182,14 @@ impl ProjectsPage {
     pub fn connect_vault_changed(&self, callback: impl Fn(&Self) + 'static) {
         self.connect_closure(
             "vault-changed",
+            false,
+            glib::closure_local!(move |page: &Self| callback(page)),
+        );
+    }
+
+    pub fn connect_days_changed(&self, callback: impl Fn(&Self) + 'static) {
+        self.connect_closure(
+            "days-changed",
             false,
             glib::closure_local!(move |page: &Self| callback(page)),
         );
@@ -403,6 +418,9 @@ impl ProjectsPage {
         };
         match vault.rename_note(&note, &name, update_links) {
             Ok(renamed) => {
+                if update_links {
+                    self.emit_by_name::<()>("days-changed", &[]);
+                }
                 self.show_project_again();
                 if imp.note_view.note() == Some(note) {
                     imp.note_view.forget();

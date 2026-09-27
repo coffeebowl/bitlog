@@ -260,6 +260,12 @@ mod imp {
                 self.obj(),
                 move |page| window.projects_changed(page.vault())
             ));
+            // Renaming a note may change links in the day shown.
+            self.projects_page.connect_days_changed(glib::clone!(
+                #[weak(rename_to = window)]
+                self.obj(),
+                move |_| window.imp().day_view.reload()
+            ));
             self.obj().connect_close_request(|window| {
                 window.save_texts_now();
                 glib::Propagation::Proceed
