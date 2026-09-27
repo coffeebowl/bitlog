@@ -3,9 +3,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::NaiveDate;
-use knotbook_core::{EditError, Project, ProjectSlug, ProjectStatus, Vault, check_repo_path};
+use knotbook_core::{
+    Commit, EditError, Project, ProjectSlug, ProjectStatus, Vault, check_repo_path, git_log,
+};
 
 /// A table of all projects: slug, name, category, status, color, whether
 /// they are pinned and the path of their repository on this device.
@@ -45,6 +47,44 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
                 .collect();
             line.push_str(&row[6]);
             format!("{}\n", line.trim_end())
+        })
+        .collect()
+}
+
+/// The latest `limit` commits of the repository of the project `slug`.
+pub fn log(vault: &Vault, slug: &ProjectSlug, limit: usize) -> Result<String> {
+    if vault.project(slug).is_none() {
+        return Err(EditError::UnknownProject(slug.clone()).into());
+    }
+    let repo = vault.repo_paths()?.remove(slug).with_context(|| {
+        format!(
+            "the project {slug} has no repository on this device, \
+             set one with `knotbook project edit {slug} --repo FOLDER`"
+        )
+    })?;
+    Ok(format_log(&git_log(&repo, 0, limit)?))
+}
+
+/// One line per commit: short hash, time, author and summary.
+fn format_log(commits: &[Commit]) -> String {
+    if commits.is_empty() {
+        return "No commits yet.\n".to_owned();
+    }
+    let width = commits
+        .iter()
+        .map(|commit| commit.author.chars().count())
+        .max()
+        .unwrap_or(0);
+    commits
+        .iter()
+        .map(|commit| {
+            format!(
+                "{}  {}  {:<width$}  {}\n",
+                commit.short_id(),
+                commit.time.format("%Y-%m-%d %H:%M"),
+                commit.author,
+                commit.summary
+            )
         })
         .collect()
 }

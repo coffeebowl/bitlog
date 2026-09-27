@@ -101,6 +101,7 @@ knotbook project list
 knotbook project add client-portal --name "Client portal" --color ff7800 --pin
 knotbook project edit client-portal --status archived --unpin
 knotbook project edit client-portal --repo ~/code/client-portal   # only on this device
+knotbook log client-portal --limit 5   # latest commits of that repository
 
 knotbook task list --all    # open tasks with their ids, then the finished ones
 knotbook task add "Renew the TLS certificate" --due 2026-09-30

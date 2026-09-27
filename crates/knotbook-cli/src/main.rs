@@ -104,6 +104,15 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
+    /// Show the latest commits of the current branch in a project's Git
+    /// repository on this device.
+    Log {
+        /// The slug of the project
+        project: ProjectSlug,
+        /// Show at most this many commits
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
     /// Write blocks, remote work days or a week report to the exports
     /// folder of the vault, replacing an earlier export of the same.
     Export {
@@ -356,6 +365,13 @@ fn main() -> Result<()> {
         Command::Doctor { fix } => doctor(&open_vault(cli.vault)?, fix),
         Command::Search { query, limit } => {
             search(&open_vault(cli.vault)?, &query.join(" "), limit)
+        }
+        Command::Log { project, limit } => {
+            print!(
+                "{}",
+                project::log(&open_vault(cli.vault)?, &project, limit)?
+            );
+            Ok(())
         }
         Command::Export { command } => export(&open_vault(cli.vault)?, command, today),
         Command::Stats {
@@ -731,6 +747,8 @@ mod tests {
         assert!(parse("knotbook task edit t9x2 --due 2026-09-30 --no-due").is_err());
         assert!(parse("knotbook task move t9x2 0").is_err());
         parse("knotbook standup 2026-09-23").unwrap();
+        parse("knotbook log webshop --limit 5").unwrap();
+        assert!(parse("knotbook log").is_err());
         parse("knotbook search release notes --limit 5").unwrap();
         assert!(parse("knotbook search").is_err());
         parse("knotbook export blocks").unwrap();

@@ -704,6 +704,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/git2/git2-0.21.0.crate",
+        "sha256": "ddddbf932745a6be37109b6112d3ee09696106f848449069d3a57bba937ab82e",
+        "dest": "cargo/vendor/git2-0.21.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"ddddbf932745a6be37109b6112d3ee09696106f848449069d3a57bba937ab82e\", \"files\": {}}",
+        "dest": "cargo/vendor/git2-0.21.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/glib/glib-0.22.10.crate",
         "sha256": "e4cf9e5bd8713f1990a92c422998826e0fb34824277b46bc59757373483c6694",
         "dest": "cargo/vendor/glib-0.22.10"
@@ -1003,6 +1016,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/jobserver/jobserver-0.1.35.crate",
+        "sha256": "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3",
+        "dest": "cargo/vendor/jobserver-0.1.35"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3\", \"files\": {}}",
+        "dest": "cargo/vendor/jobserver-0.1.35",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/js-sys/js-sys-0.3.106.crate",
         "sha256": "7883d941dae510fb2d978fc3fe018c71c9e2892fd38854de3e8b92c2e5ad9cc5",
         "dest": "cargo/vendor/js-sys-0.3.106"
@@ -1094,6 +1120,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/libgit2-sys/libgit2-sys-0.18.8+1.9.7.crate",
+        "sha256": "7f7c568b25d7489bc3fb2988ed69ab111d2944d2f5fec3d5c987fe545ea97b50",
+        "dest": "cargo/vendor/libgit2-sys-0.18.8+1.9.7"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"7f7c568b25d7489bc3fb2988ed69ab111d2944d2f5fec3d5c987fe545ea97b50\", \"files\": {}}",
+        "dest": "cargo/vendor/libgit2-sys-0.18.8+1.9.7",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/libsqlite3-sys/libsqlite3-sys-0.38.2.crate",
         "sha256": "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8",
         "dest": "cargo/vendor/libsqlite3-sys-0.38.2"
@@ -1102,6 +1141,19 @@
         "type": "inline",
         "contents": "{\"package\": \"f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8\", \"files\": {}}",
         "dest": "cargo/vendor/libsqlite3-sys-0.38.2",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/libz-sys/libz-sys-1.1.29.crate",
+        "sha256": "85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9",
+        "dest": "cargo/vendor/libz-sys-1.1.29"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"85bc9657773828b90eeb625adff10eeac83cc21bbfd8e23a03eaa8a33c9e28d9\", \"files\": {}}",
+        "dest": "cargo/vendor/libz-sys-1.1.29",
         "dest-filename": ".cargo-checksum.json"
     },
     {
