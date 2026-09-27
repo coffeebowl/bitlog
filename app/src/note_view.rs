@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::io;
 use std::rc::Rc;
 use std::time::Duration;
@@ -148,11 +149,8 @@ impl NoteView {
         imp.window_title.set_title(note.name());
         imp.window_title.set_subtitle(&project);
         imp.menu_button.set_menu_model(Some(&note_menu(note)));
-        let vault = self.vault();
         imp.editor
-            .set_wiki_links(note.project().clone(), move |note| {
-                vault.note_path(note).is_file()
-            });
+            .set_wiki_links(note.project().clone(), existing_notes(&self.vault()));
         // A new note starts with an empty undo history.
         imp.editor.set_markdown(&file.text);
         imp.file.replace(Some(file));
@@ -196,8 +194,10 @@ impl NoteView {
     /// Marks the wiki links again and looks up the links to the note, after
     /// notes were changed, added or removed.
     pub fn update_links(&self) {
-        self.imp().editor.restyle();
-        if self.note().is_some() {
+        if let Some(note) = self.note() {
+            self.imp()
+                .editor
+                .set_wiki_links(note.project().clone(), existing_notes(&self.vault()));
             self.show_backlinks();
         }
     }
@@ -342,6 +342,21 @@ impl NoteView {
         ));
         dialog.present(Some(self));
     }
+}
+
+/// The notes of all projects of `vault`, to tell which wiki links point to
+/// one. Projects whose notes cannot be listed count as having none.
+fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
+    vault
+        .projects()
+        .iter()
+        .flat_map(|project| {
+            vault.notes(&project.slug).unwrap_or_else(|err| {
+                glib::g_warning!("knotbook", "{err}");
+                Vec::new()
+            })
+        })
+        .collect()
 }
 
 /// A row naming the note, block or day note `found`, which links to a note.

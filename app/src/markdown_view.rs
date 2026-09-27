@@ -1,13 +1,16 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
+use std::ops::Range;
 use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use glib::SignalHandlerId;
 use glib::subclass::Signal;
 use glib::translate::IntoGlib;
 use gtk::{gdk, glib, pango};
 use knotbook_core::{
-    MarkdownMode, MarkdownStyle, NotePath, ProjectSlug, WikiLink, escape_headings, markdown_styles,
+    MarkdownMode, MarkdownStyle, NotePath, ProjectSlug, escape_headings, markdown_styles,
     wiki_links,
 };
 use sourceview5::prelude::*;
@@ -23,17 +26,11 @@ const BROKEN_LINK_TAG: &str = "broken-link";
 
 /// Tells the wiki links of a project note apart, see
 /// `MarkdownView::set_wiki_links`.
+#[derive(Debug)]
 pub struct WikiLinks {
     project: ProjectSlug,
-    exists: Box<dyn Fn(&NotePath) -> bool>,
-}
-
-impl std::fmt::Debug for WikiLinks {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("WikiLinks")
-            .field("project", &self.project)
-            .finish_non_exhaustive()
-    }
+    /// The notes there are, of all projects.
+    existing: HashSet<NotePath>,
 }
 
 mod imp {
@@ -53,6 +50,11 @@ mod imp {
         pub loading: Cell<bool>,
         /// Set for project notes, whose wiki links can be followed.
         pub wiki_links: RefCell<Option<WikiLinks>>,
+        /// The wiki links in the text as last styled, as character ranges
+        /// with the note each points to, if any.
+        pub links: RefCell<Vec<(Range<i32>, Option<NotePath>)>>,
+        /// Connected to the style manager, which outlives the view.
+        pub style_handlers: RefCell<Vec<SignalHandlerId>>,
     }
 
     #[glib::object_subclass]
@@ -149,8 +151,17 @@ mod imp {
                     ));
                 }
             );
-            style_manager.connect_dark_notify(on_change.clone());
-            style_manager.connect_high_contrast_notify(on_change);
+            self.style_handlers.replace(vec![
+                style_manager.connect_dark_notify(on_change.clone()),
+                style_manager.connect_high_contrast_notify(on_change),
+            ]);
+        }
+
+        fn dispose(&self) {
+            let style_manager = adw::StyleManager::default();
+            for handler in self.style_handlers.take() {
+                style_manager.disconnect(handler);
+            }
         }
     }
 
@@ -241,16 +252,11 @@ impl MarkdownView {
     }
 
     /// Makes the wiki links of this note of `project` followable, and dims
-    /// those for which `exists` is false.
-    pub fn set_wiki_links(
-        &self,
-        project: ProjectSlug,
-        exists: impl Fn(&NotePath) -> bool + 'static,
-    ) {
-        self.imp().wiki_links.replace(Some(WikiLinks {
-            project,
-            exists: Box::new(exists),
-        }));
+    /// those to notes missing from `existing`.
+    pub fn set_wiki_links(&self, project: ProjectSlug, existing: HashSet<NotePath>) {
+        self.imp()
+            .wiki_links
+            .replace(Some(WikiLinks { project, existing }));
         self.restyle();
     }
 
@@ -289,51 +295,56 @@ impl MarkdownView {
 
     /// Formats the whole text again, after every change, and after notes
     /// that wiki links point to were added or removed.
-    pub fn restyle(&self) {
+    fn restyle(&self) {
         let buffer = self.buffer();
         let (start, end) = buffer.bounds();
         // The buffer has no other tags: it has no language and no search.
         buffer.remove_all_tags(&start, &end);
         let text = self.text();
+        let offsets = char_offsets(&text);
+        let tag = |name: &str, range: &Range<usize>| {
+            let start = buffer.iter_at_offset(offsets[range.start]);
+            let end = buffer.iter_at_offset(offsets[range.end]);
+            buffer.apply_tag_by_name(name, &start, &end);
+        };
         let mode = if self.full() {
             MarkdownMode::Full
         } else {
             MarkdownMode::Block
         };
         for (range, style) in markdown_styles(&text, mode) {
-            let start = buffer.iter_at_offset(char_offset(&text, range.start));
-            let end = buffer.iter_at_offset(char_offset(&text, range.end));
-            buffer.apply_tag_by_name(&tag_name(style), &start, &end);
+            tag(&tag_name(style), &range);
         }
-        if let Some(links) = &*self.imp().wiki_links.borrow() {
-            for link in wiki_links(&text, Some(&links.project)) {
-                if !link.note.as_ref().is_some_and(|note| (links.exists)(note)) {
-                    let start = buffer.iter_at_offset(char_offset(&text, link.span.start));
-                    let end = buffer.iter_at_offset(char_offset(&text, link.span.end));
-                    buffer.apply_tag_by_name(BROKEN_LINK_TAG, &start, &end);
+        let mut links = Vec::new();
+        if let Some(wiki) = &*self.imp().wiki_links.borrow() {
+            for link in wiki_links(&text, Some(&wiki.project)) {
+                if !link
+                    .note
+                    .as_ref()
+                    .is_some_and(|note| wiki.existing.contains(note))
+                {
+                    tag(BROKEN_LINK_TAG, &link.span);
                 }
+                links.push((offsets[link.span.start]..offsets[link.span.end], link.note));
             }
         }
+        self.imp().links.replace(links);
     }
 
-    /// The wiki link at `iter`, if there is one.
-    fn wiki_link_at(&self, iter: &gtk::TextIter) -> Option<WikiLink> {
-        let links = self.imp().wiki_links.borrow();
-        let links = links.as_ref()?;
-        let text = self.text();
-        let offset = usize::try_from(iter.offset()).expect("offsets are not negative");
-        let byte = text
-            .char_indices()
-            .nth(offset)
-            .map_or(text.len(), |(byte, _)| byte);
-        wiki_links(&text, Some(&links.project))
-            .into_iter()
-            .find(|link| link.span.contains(&byte))
+    /// The wiki link at `iter`, if there is one: the note it points to, if
+    /// any.
+    fn wiki_link_at(&self, iter: &gtk::TextIter) -> Option<Option<NotePath>> {
+        self.imp()
+            .links
+            .borrow()
+            .iter()
+            .find(|(range, _)| range.contains(&iter.offset()))
+            .map(|(_, note)| note.clone())
     }
 
     /// Follows the wiki link at `iter`, if there is one.
     fn follow_link_at(&self, iter: &gtk::TextIter) {
-        match self.wiki_link_at(iter).map(|link| link.note) {
+        match self.wiki_link_at(iter) {
             Some(Some(note)) => {
                 self.emit_by_name::<()>("wiki-link-activated", &[&note.to_string()]);
             }
@@ -505,11 +516,33 @@ fn tag_name(style: MarkdownStyle) -> String {
     }
 }
 
-/// Text buffers count characters, the core counts bytes.
-fn char_offset(text: &str, byte: usize) -> i32 {
-    text[..byte]
-        .chars()
-        .count()
-        .try_into()
-        .expect("a note fits into a text buffer")
+/// The character offset of each byte offset in `text` that starts a
+/// character, and of its end: text buffers count characters, the core
+/// counts bytes. Built once per text, so that looking up is quick.
+fn char_offsets(text: &str) -> Vec<i32> {
+    let mut offsets = vec![0; text.len() + 1];
+    let mut count = 0;
+    for (byte, _) in text.char_indices() {
+        offsets[byte] = count;
+        count += 1;
+    }
+    offsets[text.len()] = count;
+    offsets
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn char_offsets_count_characters() {
+        // One, two, three and four bytes per character.
+        let offsets = char_offsets("aä€𝄞b");
+        let at = |byte: usize| offsets[byte];
+        assert_eq!(
+            [at(0), at(1), at(3), at(6), at(10), at(11)],
+            [0, 1, 2, 3, 4, 5]
+        );
+        assert_eq!(char_offsets(""), [0]);
+    }
 }
