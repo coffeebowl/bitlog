@@ -236,6 +236,69 @@ template $KnotbookProjectView: Adw.NavigationPage {
           }
         };
       }
+
+      Adw.ViewStackPage git_page {
+        name: "git";
+        title: _("Git");
+        visible: false;
+
+        child: Stack commits_stack {
+          StackPage {
+            name: "list";
+
+            child: ScrolledWindow {
+              hscrollbar-policy: never;
+
+              child: Adw.Clamp {
+                margin-top: 24;
+                margin-bottom: 24;
+                margin-start: 12;
+                margin-end: 12;
+
+                child: Box {
+                  orientation: vertical;
+                  spacing: 24;
+
+                  Box commits_box {
+                    orientation: vertical;
+                    spacing: 24;
+                  }
+
+                  Button more_commits_button {
+                    label: _("_Load More");
+                    use-underline: true;
+                    halign: center;
+                    visible: false;
+
+                    styles [
+                      "pill",
+                    ]
+                  }
+                };
+              };
+            };
+          }
+
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "document-open-recent-symbolic";
+              title: _("No Commits");
+              description: _("The current branch of the repository has no commits yet");
+            };
+          }
+
+          StackPage {
+            name: "error";
+
+            child: Adw.StatusPage commits_error_page {
+              icon-name: "dialog-error-symbolic";
+              title: _("Cannot Read Commits");
+            };
+          }
+        };
+      }
     };
   };
 }

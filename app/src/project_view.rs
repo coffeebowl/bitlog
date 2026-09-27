@@ -1,21 +1,26 @@
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{NotePath, Project, ProjectSlug, Vault};
+use knotbook_core::{Commit, NotePath, Project, ProjectSlug, Vault, git_log};
 use knotbook_index::ProjectBlock;
 
 use crate::calendar_view::week_start;
-use crate::format::{format_duration, format_full_date, format_share};
+use crate::format::{format_duration, format_full_date, format_share, format_time};
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::search_index::{ProjectData, SearchIndex};
 
 /// Blocks the timeline shows at first and adds with "Load More".
 const BLOCKS_AT_ONCE: u32 = 50;
+
+/// Commits the log shows at first and adds with "Load More".
+const COMMITS_AT_ONCE: usize = 50;
 
 mod imp {
     use super::*;
@@ -33,6 +38,15 @@ mod imp {
         pub lookups: Cell<u32>,
         /// How many blocks the timeline shows.
         pub blocks_shown: Cell<u32>,
+        /// The project's repository on this device, if it has one.
+        pub repo: RefCell<Option<PathBuf>>,
+        /// The time spent on the project on each day, to mark the days of
+        /// commits.
+        pub activity: RefCell<BTreeMap<NaiveDate, TimeDelta>>,
+        /// How many commits the log shows.
+        pub commits_shown: Cell<usize>,
+        /// The last day shown in the log, which commits loaded later join.
+        pub last_day: RefCell<Option<(NaiveDate, adw::PreferencesGroup)>>,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
@@ -75,6 +89,16 @@ mod imp {
         pub timeline_list: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub more_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub git_page: TemplateChild<adw::ViewStackPage>,
+        #[template_child]
+        pub commits_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub commits_box: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub more_commits_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub commits_error_page: TemplateChild<adw::StatusPage>,
     }
 
     #[glib::object_subclass]
@@ -101,6 +125,11 @@ mod imp {
                 self.obj(),
                 move |_| view.show_more_blocks()
             ));
+            self.more_commits_button.connect_clicked(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                move |_| view.show_more_commits()
+            ));
         }
     }
     impl WidgetImpl for ProjectView {}
@@ -126,12 +155,23 @@ impl ProjectView {
     }
 
     /// Shows `project` of `vault` with its notes, and looks up the time
-    /// spent on it and its blocks in the background.
+    /// spent on it, its blocks and its commits in the background.
     pub fn show(&self, vault: &Vault, project: &Project) {
         let imp = self.imp();
-        if imp.slug.borrow().as_ref() != Some(&project.slug) {
+        let repo = vault
+            .repo_paths()
+            .map(|mut repos| repos.remove(&project.slug))
+            .unwrap_or_else(|err| {
+                glib::g_warning!("knotbook", "{err}");
+                None
+            });
+        let git = imp.view_stack.visible_child_name().as_deref() == Some("git");
+        if imp.slug.borrow().as_ref() != Some(&project.slug) || (git && repo.is_none()) {
             imp.view_stack.set_visible_child_name("overview");
         }
+        // Projects without code have no repository, and then no Git page.
+        imp.git_page.set_visible(repo.is_some());
+        imp.repo.replace(repo);
         imp.slug.replace(Some(project.slug.clone()));
         imp.vault.replace(Some(vault.clone()));
         self.look_up(vault, project);
@@ -193,6 +233,9 @@ impl ProjectView {
                     Ok(data) => view.show_data(&vault, &project, data, today),
                     Err(err) => glib::g_warning!("knotbook", "{err}"),
                 }
+                // After the activity, which marks the days of commits.
+                view.clear_commits();
+                view.show_more_commits();
             }
         ));
     }
@@ -259,6 +302,7 @@ impl ProjectView {
                 imp.longest_row.set_activatable(false);
             }
         }
+        imp.activity.replace(activity.iter().copied().collect());
         let color = gdk::RGBA::parse(project.color.as_str()).expect("project colors are valid");
         let first_day = vault.config().week.first_day;
         imp.heatmap.show(
@@ -313,6 +357,117 @@ impl ProjectView {
             }
         ));
     }
+}
+
+impl ProjectView {
+    fn clear_commits(&self) {
+        let imp = self.imp();
+        while let Some(child) = imp.commits_box.first_child() {
+            imp.commits_box.remove(&child);
+        }
+        imp.commits_shown.set(0);
+        imp.last_day.replace(None);
+        imp.more_commits_button.set_visible(false);
+    }
+
+    /// Reads the next commits from the repository in the background and
+    /// adds them to the log.
+    fn show_more_commits(&self) {
+        let imp = self.imp();
+        let Some(repo) = imp.repo.borrow().clone() else {
+            return;
+        };
+        let lookup = imp.lookups.get();
+        let skip = imp.commits_shown.get();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            async move {
+                let commits = gio::spawn_blocking(move || git_log(&repo, skip, COMMITS_AT_ONCE))
+                    .await
+                    .expect("reading the log does not panic");
+                let imp = view.imp();
+                if imp.lookups.get() != lookup {
+                    return;
+                }
+                match commits {
+                    Ok(commits) => view.add_commits(&commits),
+                    Err(err) => {
+                        imp.commits_error_page
+                            .set_description(Some(&err.to_string()));
+                        imp.commits_stack.set_visible_child_name("error");
+                    }
+                }
+            }
+        ));
+    }
+
+    /// Adds `commits`, newest first, to the end of the log, grouped by the
+    /// local day they were made on.
+    fn add_commits(&self, commits: &[Commit]) {
+        let imp = self.imp();
+        let today = Local::now().date_naive();
+        for commit in commits {
+            let date = commit.time.with_timezone(&Local).date_naive();
+            let group = match &*imp.last_day.borrow() {
+                Some((last, group)) if *last == date => group.clone(),
+                _ => {
+                    let group = self.day_group(date, today);
+                    imp.commits_box.append(&group);
+                    group
+                }
+            };
+            group.add(&commit_row(commit, date));
+            imp.last_day.replace(Some((date, group)));
+        }
+        let shown = imp.commits_shown.get() + commits.len();
+        imp.commits_shown.set(shown);
+        // A full batch may have more behind it.
+        imp.more_commits_button
+            .set_visible(commits.len() == COMMITS_AT_ONCE);
+        imp.commits_stack
+            .set_visible_child_name(if shown == 0 { "empty" } else { "list" });
+    }
+
+    /// The group of the commits made on `date`. It tells the time spent
+    /// on the project that day, if any.
+    fn day_group(&self, date: NaiveDate, today: NaiveDate) -> adw::PreferencesGroup {
+        let title = if date == today {
+            gettext("Today")
+        } else if today.pred_opt() == Some(date) {
+            gettext("Yesterday")
+        } else {
+            format_full_date(date)
+        };
+        let group = adw::PreferencesGroup::builder().title(title).build();
+        if let Some(time) = self.imp().activity.borrow().get(&date) {
+            // Translators: The time spent on a project on a day, as in
+            // "2 h 30 min in blocks".
+            let description =
+                gettext("{time} in blocks").replace("{time}", &format_duration(*time));
+            group.set_description(Some(&description));
+        }
+        group
+    }
+}
+
+/// A commit in the log: its summary, then hash, author and time, opening
+/// its day when activated.
+fn commit_row(commit: &Commit, date: NaiveDate) -> adw::ActionRow {
+    let time = commit.time.with_timezone(&Local).time();
+    adw::ActionRow::builder()
+        .title(&commit.summary)
+        .subtitle(format!(
+            "{} · {} · {}",
+            commit.short_id(),
+            commit.author,
+            format_time(time)
+        ))
+        .use_markup(false)
+        .activatable(true)
+        .action_target(&date.to_string().to_variant())
+        .action_name("win.show-day")
+        .build()
 }
 
 /// The first and last day of the month `date` lies in.
