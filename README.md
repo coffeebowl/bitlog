@@ -11,6 +11,23 @@ The file format is described in [docs/format-spec.md](docs/format-spec.md).
 
 Knotbook is at an early stage of development.
 
+## Installing
+
+Every [release](https://github.com/coffeebowl/knotbook/releases) comes with
+a Flatpak bundle, `knotbook-<version>.flatpak`. Download it and install it,
+either with a double click in GNOME Software or KDE Discover, or on the
+command line:
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user ./knotbook-<version>.flatpak
+flatpak run dev.knotbook.Knotbook
+```
+
+Flatpak fetches the GNOME runtime from Flathub along the way. The bundle
+does not update itself: to update, install the bundle of the new release
+with `flatpak install --user --reinstall`.
+
 ## Building
 
 Knotbook is written in Rust (stable). The app needs GTK 4.22, libadwaita 1.9
@@ -68,6 +85,10 @@ rm flatpak-cargo-generator.py
 
 The app gets access to the home folder, so that a vault can live anywhere in
 it.
+
+For a release, `build-aux/flatpak-bundle.sh` builds the Flatpak and packs
+it into `_dist/knotbook-<version>.flatpak`, which goes into the release's
+assets.
 
 ## Command line
 

@@ -3,3 +3,5 @@
 /_install
 /.flatpak-builder
 /_flatpak
+/_repo
+/_dist

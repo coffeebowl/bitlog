@@ -32,7 +32,7 @@ const VAULT_VARIABLE: &str = "KNOTBOOK_VAULT";
 
 /// A daily dev log in plain text files.
 #[derive(Parser)]
-#[command(name = "knotbook", version)]
+#[command(name = "knotbook", version = env!("KNOTBOOK_VERSION"))]
 struct Cli {
     /// The vault folder [default: $KNOTBOOK_VAULT, or else the current folder
     /// or the closest folder above it that holds a knotbook.toml]
