@@ -14,7 +14,7 @@ use crate::{EditError, ProjectSlug, Vault};
 
 impl Vault {
     /// Where the settings of this device live.
-    pub fn device_path(&self) -> PathBuf {
+    pub(crate) fn device_path(&self) -> PathBuf {
         self.root().join(".knotbook").join("device.toml")
     }
 

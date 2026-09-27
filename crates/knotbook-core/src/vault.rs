@@ -218,7 +218,7 @@ impl Vault {
     }
 
     /// Where exports go. Knotbook may overwrite anything in there.
-    pub fn exports_path(&self) -> PathBuf {
+    fn exports_path(&self) -> PathBuf {
         self.root.join("exports")
     }
 

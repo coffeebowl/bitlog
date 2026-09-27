@@ -30,7 +30,7 @@ pub use git_log::{Commit, GitLogError, git_log};
 pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;
 pub use markdown::{MarkdownMode, MarkdownStyle, escape_headings, markdown_styles};
-pub use notes::{NoteFile, SavedNote, WikiLink, tags, wiki_links};
+pub use notes::{NoteFile, SavedNote, WikiLink, wiki_links};
 pub use project::{Project, ProjectStatus};
 pub use tasks::{Task, TaskList, TaskStatus};
 pub use vault::{DayFile, Vault};

@@ -1,4 +1,4 @@
-//! Project notes: finding them, reading their links and tags, and creating,
+//! Project notes: finding them, reading their links, and creating,
 //! renaming and deleting them.
 
 use std::fs;
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 
 use chrono::NaiveDate;
 use chrono::format::StrftimeItems;
-use pulldown_cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_optional, read_text};
@@ -90,40 +90,6 @@ fn note_path(target: &str, project: Option<&ProjectSlug>) -> Option<NotePath> {
         Some((slug, name)) => NotePath::new(slug.parse().ok()?, name).ok(),
         None => NotePath::new(project?.clone(), target).ok(),
     }
-}
-
-/// The tags in `text`, without `#`, each once, in the order they first
-/// appear. A tag is a `#` at the start of a word, followed by letters,
-/// digits, `-`, `_` or `/`, not digits only, so that `#123` stays an issue
-/// number. Code, front matter and link targets hold no tags.
-pub fn tags(text: &str) -> Vec<String> {
-    let mut tags: Vec<String> = Vec::new();
-    let mut code_block = false;
-    for event in pulldown_cmark::TextMergeStream::new(parser(text)) {
-        match event {
-            Event::Start(Tag::CodeBlock(_) | Tag::MetadataBlock(_)) => code_block = true,
-            Event::End(TagEnd::CodeBlock | TagEnd::MetadataBlock(_)) => code_block = false,
-            Event::Text(text) if !code_block => {
-                for tag in text_tags(&text) {
-                    if !tags.iter().any(|known| known == tag) {
-                        tags.push(tag.to_owned());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-    tags
-}
-
-fn text_tags(text: &str) -> impl Iterator<Item = &str> {
-    let is_tag_char = |c: char| c.is_alphanumeric() || matches!(c, '-' | '_' | '/');
-    text.split(char::is_whitespace).filter_map(move |word| {
-        let rest = word.strip_prefix('#')?;
-        let end = rest.find(|c| !is_tag_char(c)).unwrap_or(rest.len());
-        let tag = &rest[..end];
-        tag.chars().any(|c| !c.is_ascii_digit()).then_some(tag)
-    })
 }
 
 fn parser(text: &str) -> Parser<'_> {
@@ -379,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn links_and_tags_of_sample_notes() {
+    fn links_of_sample_notes() {
         let (_dir, vault) = sample_copy();
         let checkout = note("projects/webshop/notes/checkout-flow.md");
         let text = vault.load_note(&checkout).unwrap().text;
@@ -394,13 +360,6 @@ mod tests {
                 "projects/infra/notes/deployment.md"
             ]
         );
-        assert_eq!(tags(&text), ["checkout"]);
-
-        // The front matter and the code block hold no tags.
-        let provider = vault
-            .load_note(&note("projects/webshop/notes/payment-provider.md"))
-            .unwrap();
-        assert_eq!(tags(&provider.text), ["payments"]);
     }
 
     #[test]
@@ -446,14 +405,6 @@ mod tests {
             notes,
             [Some(note("projects/infra/notes/deployment.md")), None]
         );
-    }
-
-    #[test]
-    fn tag_rules() {
-        let text = "#start, see #123 and #v2 or #a/b-c_d.\n\
-                    word#no https://x.example/#frag *#bold*\n\n\
-                    # Heading #in-heading\n\n    #indented-code\n";
-        assert_eq!(tags(text), ["start", "v2", "a/b-c_d", "bold", "in-heading"]);
     }
 
     #[test]

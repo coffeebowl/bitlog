@@ -149,7 +149,7 @@ impl Project {
             .join("project.toml")
     }
 
-    pub fn load(vault: &Path, slug: ProjectSlug) -> Result<Self, ReadError> {
+    fn load(vault: &Path, slug: ProjectSlug) -> Result<Self, ReadError> {
         read_file(&Self::path(vault, &slug), |text| Self::parse(slug, text))
     }
 

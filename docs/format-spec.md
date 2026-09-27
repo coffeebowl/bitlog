@@ -396,7 +396,8 @@ take these defaults:
 - Live in `projects/<slug>/notes/` and belong to the project only through this
   folder.
 - Plain Markdown; front matter is allowed but not evaluated.
-- Knotbook only reads wiki links and tags from them.
+- Knotbook only reads wiki links from them. Tags are defined below, but not
+  evaluated yet.
 - Full Markdown, including headings.
 - Checkboxes are text, not managed tasks.
 - Only `.md` files directly in `notes/` are notes; subfolders are ignored.

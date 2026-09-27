@@ -114,7 +114,7 @@ fn local_time<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveTime, D
 }
 
 impl VaultConfig {
-    pub fn load(path: &Path) -> Result<Self, ReadError> {
+    pub(crate) fn load(path: &Path) -> Result<Self, ReadError> {
         read_file(path, Self::parse)
     }
 
