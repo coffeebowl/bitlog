@@ -73,6 +73,41 @@ template $KnotbookProjectDialog: Adw.Dialog {
           subtitle: _("Listed first when choosing the project of a block");
         }
       }
+
+      Adw.PreferencesGroup repo_group {
+        title: _("Git Repository");
+        description: _("Only kept on this device");
+        visible: false;
+
+        Adw.ActionRow repo_row {
+          title: _("Folder");
+          subtitle-selectable: true;
+          activatable-widget: choose_repo_button;
+
+          [suffix]
+          Button clear_repo_button {
+            icon-name: "edit-clear-symbolic";
+            tooltip-text: _("Remove Repository");
+            valign: center;
+            visible: false;
+
+            styles [
+              "flat",
+            ]
+          }
+
+          [suffix]
+          Button choose_repo_button {
+            icon-name: "folder-open-symbolic";
+            tooltip-text: _("Choose Folder");
+            valign: center;
+
+            styles [
+              "flat",
+            ]
+          }
+        }
+      }
     };
   };
 }

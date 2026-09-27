@@ -43,6 +43,10 @@ pub enum EditError {
     UnknownNote(NotePath),
     #[error("the note {0} exists already")]
     NoteExists(NotePath),
+    #[error("a repository path has to be absolute, found {}", .0.display())]
+    InvalidRepoPath(PathBuf),
+    #[error("{} is not a Git repository", .0.display())]
+    NotARepository(PathBuf),
     #[error(transparent)]
     InvalidId(#[from] InvalidId),
 }

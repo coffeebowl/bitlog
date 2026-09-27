@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
@@ -508,24 +509,45 @@ impl ProjectsPage {
         let vault = self.vault();
         let project = slug.as_ref().and_then(|slug| vault.project(slug));
         let dialog = ProjectDialog::new(project);
+        // Read when the dialog opens, so that saving only writes a change.
+        let repo = slug.as_ref().map(|slug| {
+            vault
+                .repo_paths()
+                .map(|mut repos| repos.remove(slug))
+                .map_err(|err| err.to_string())
+        });
+        if let Some(repo) = repo.clone() {
+            dialog.show_repo(repo);
+        }
         dialog.connect_save(glib::clone!(
             #[weak(rename_to = page)]
             self,
-            move |dialog| page.save(dialog, slug.as_ref())
+            move |dialog| page.save(dialog, slug.as_ref(), repo.as_ref())
         ));
         dialog.present(Some(self));
     }
 
     /// Saves what `dialog` holds for the project `slug`, or as a new
-    /// project, and closes it. On failure it stays open.
-    fn save(&self, dialog: &ProjectDialog, slug: Option<&ProjectSlug>) {
+    /// project, and closes it. On failure it stays open. `repo` is the
+    /// repository shown when the dialog opened, if it showed one.
+    fn save(
+        &self,
+        dialog: &ProjectDialog,
+        slug: Option<&ProjectSlug>,
+        repo: Option<&Result<Option<PathBuf>, String>>,
+    ) {
         // A copy shares the record of own writes, so watching the vault
         // goes on as before.
         let mut vault = Vault::clone(&self.vault());
         let saved: Result<(), SaveError> = match slug {
-            Some(slug) => vault
-                .update_project(slug, |project| dialog.apply(project))
-                .map(|_| ()),
+            Some(slug) => match repo {
+                Some(Ok(repo)) if *repo != dialog.repo() => {
+                    vault.set_repo_path(slug, dialog.repo().as_deref())
+                }
+                _ => Ok(()),
+            }
+            .and_then(|()| vault.update_project(slug, |project| dialog.apply(project)))
+            .map(|_| ()),
             None => {
                 let slug = dialog
                     .slug()

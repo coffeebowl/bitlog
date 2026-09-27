@@ -1,5 +1,6 @@
 //! `knotbook`, the command line interface of Knotbook.
 
+use std::collections::BTreeMap;
 use std::env;
 use std::io::{self, IsTerminal};
 use std::path::{self, Path, PathBuf};
@@ -199,6 +200,9 @@ enum ProjectCommand {
         /// Stop listing the project first
         #[arg(long, group = "change", conflicts_with = "pin")]
         unpin: bool,
+        /// Forget the project's repository on this device
+        #[arg(long, group = "change", conflicts_with = "repo")]
+        no_repo: bool,
     },
 }
 
@@ -277,6 +281,9 @@ struct ProjectArgs {
     /// List the project first when picking one for a block
     #[arg(long, group = "change")]
     pin: bool,
+    /// The folder of the project's Git repository on this device
+    #[arg(long, group = "change", value_name = "FOLDER")]
+    repo: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -514,34 +521,52 @@ fn doctor(vault: &Vault, fix: bool) -> Result<()> {
 }
 
 fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Result<()> {
-    let changes = |values: ProjectArgs, status, pinned| ProjectChanges {
-        name: values.name,
-        color: values.color,
-        category: values.category,
-        status,
-        pinned,
+    let changes = |values: ProjectArgs, status, pinned, no_repo: bool| -> Result<ProjectChanges> {
+        let repo = match values.repo {
+            Some(repo) => {
+                Some(Some(path::absolute(&repo).with_context(|| {
+                    format!("cannot find the folder {}", repo.display())
+                })?))
+            }
+            None => no_repo.then_some(None),
+        };
+        Ok(ProjectChanges {
+            name: values.name,
+            color: values.color,
+            category: values.category,
+            status,
+            pinned,
+            repo,
+        })
     };
     match command {
         ProjectCommand::List => {
-            print!("{}", project::format_projects(&vault));
+            let repos = vault.repo_paths().unwrap_or_else(|err| {
+                eprintln!("warning: {err}");
+                BTreeMap::new()
+            });
+            print!("{}", project::format_projects(&vault, &repos));
             Ok(())
         }
         ProjectCommand::Add { slug, values } => {
             let pinned = Some(values.pin);
-            project::add_project(&mut vault, slug, changes(values, None, pinned), today)
+            let changes = changes(values, None, pinned, false)?;
+            project::add_project(&mut vault, slug, changes, today)
         }
         ProjectCommand::Edit {
             slug,
             values,
             status,
             unpin,
+            no_repo,
         } => {
             let pinned = if values.pin {
                 Some(true)
             } else {
                 unpin.then_some(false)
             };
-            project::edit_project(&mut vault, &slug, changes(values, status, pinned))
+            let changes = changes(values, status, pinned, no_repo)?;
+            project::edit_project(&mut vault, &slug, changes)
         }
     }
 }
@@ -698,6 +723,9 @@ mod tests {
         parse("knotbook project edit docs --status paused --unpin").unwrap();
         assert!(parse("knotbook project edit docs").is_err());
         assert!(parse("knotbook project edit docs --pin --unpin").is_err());
+        parse("knotbook project add docs --repo ../docs").unwrap();
+        parse("knotbook project edit docs --no-repo").unwrap();
+        assert!(parse("knotbook project edit docs --repo ../docs --no-repo").is_err());
         parse("knotbook task edit t9x2 --title Call --no-due").unwrap();
         assert!(parse("knotbook task edit t9x2").is_err());
         assert!(parse("knotbook task edit t9x2 --due 2026-09-30 --no-due").is_err());

@@ -319,6 +319,12 @@ is stored per device in `.knotbook/device.toml`:
 project-a = "/home/me/code/project-a"
 ```
 
+Each entry maps a project slug to the absolute path of a folder with a Git
+repository. A missing file or table means no repositories. Entries of
+unknown projects are ignored and, like comments and other tables, kept when
+Knotbook writes the file. Knotbook only sets paths of folders that hold
+`.git`.
+
 **Default projects of a new vault:**
 
 | Slug | Category | Counts as working time | Pinned |

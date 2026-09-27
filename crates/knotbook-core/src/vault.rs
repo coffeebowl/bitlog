@@ -807,9 +807,10 @@ mod tests {
         let mut reported = BTreeSet::new();
         while !reported.contains(&VaultChange::Config) || reported.len() < 3 {
             reported.extend(next());
+            // The first change may be reported once more, split over two
+            // batches; counting it would end the loop too early.
+            reported.remove(&VaultChange::Day(date(2026, 9, 22)));
         }
-        // The first change may be reported once more, split over two batches.
-        reported.remove(&VaultChange::Day(date(2026, 9, 22)));
         assert_eq!(
             Vec::from_iter(reported),
             [

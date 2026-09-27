@@ -1,12 +1,13 @@
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gettextrs::gettext;
 use glib::subclass::Signal;
-use gtk::{gdk, glib};
-use knotbook_core::{EditError, Project, ProjectSlug};
+use gtk::{gdk, gio, glib};
+use knotbook_core::{EditError, Project, ProjectSlug, check_repo_path};
 
 use crate::format::{PROJECT_STATUSES, status_name};
 
@@ -19,6 +20,8 @@ mod imp {
         /// The ID last made from the name, replaced along with the name
         /// until the user types another one.
         pub derived_slug: RefCell<String>,
+        /// The repository folder as chosen, shown in `repo_row`.
+        pub repo: RefCell<Option<PathBuf>>,
         #[template_child]
         pub cancel_button: TemplateChild<gtk::Button>,
         #[template_child]
@@ -37,6 +40,14 @@ mod imp {
         pub status_row: TemplateChild<adw::ComboRow>,
         #[template_child]
         pub pinned_row: TemplateChild<adw::SwitchRow>,
+        #[template_child]
+        pub repo_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub repo_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub clear_repo_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub choose_repo_button: TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -90,6 +101,18 @@ mod imp {
                 #[weak]
                 dialog,
                 move |_| dialog.update_save_button()
+            ));
+            self.choose_repo_button.connect_clicked(glib::clone!(
+                #[weak]
+                dialog,
+                move |_| {
+                    glib::spawn_future_local(async move { dialog.choose_repo().await });
+                }
+            ));
+            self.clear_repo_button.connect_clicked(glib::clone!(
+                #[weak]
+                dialog,
+                move |_| dialog.set_repo(None)
             ));
         }
     }
@@ -170,6 +193,68 @@ impl ProjectDialog {
         project.status = PROJECT_STATUSES[imp.status_row.selected() as usize];
         project.pinned = imp.pinned_row.is_active();
         Ok(())
+    }
+
+    /// Shows the repository `repo` of the project on this device, or why
+    /// it cannot be read.
+    pub fn show_repo(&self, repo: Result<Option<PathBuf>, String>) {
+        let imp = self.imp();
+        imp.repo_group.set_visible(true);
+        match repo {
+            Ok(repo) => self.set_repo(repo),
+            Err(err) => {
+                imp.repo_row.set_subtitle(&err);
+                imp.repo_row.set_sensitive(false);
+            }
+        }
+    }
+
+    /// The repository folder as chosen.
+    pub fn repo(&self) -> Option<PathBuf> {
+        self.imp().repo.borrow().clone()
+    }
+
+    fn set_repo(&self, repo: Option<PathBuf>) {
+        let imp = self.imp();
+        let shown = repo
+            .as_deref()
+            .map_or_else(|| gettext("None"), |repo| repo.display().to_string());
+        imp.repo_row.set_subtitle(&shown);
+        imp.clear_repo_button.set_visible(repo.is_some());
+        imp.repo.replace(repo);
+    }
+
+    async fn choose_repo(&self) {
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Choose Repository"))
+            .modal(true)
+            .build();
+        if let Some(repo) = self.repo() {
+            dialog.set_initial_folder(Some(&gio::File::for_path(repo)));
+        }
+        let root = self.root().and_downcast::<gtk::Window>();
+        // Dismissing the dialog is reported as an error, too.
+        let Ok(folder) = dialog.select_folder_future(root.as_ref()).await else {
+            return;
+        };
+        let checked = folder
+            .path()
+            .ok_or_else(|| gettext("Choose a folder on a local file system."))
+            .and_then(|path| {
+                check_repo_path(&path)
+                    .map(|()| path)
+                    .map_err(|err| err.to_string())
+            });
+        match checked {
+            Ok(path) => self.set_repo(Some(path)),
+            Err(message) => self.show_repo_error(&message),
+        }
+    }
+
+    fn show_repo_error(&self, message: &str) {
+        let alert = adw::AlertDialog::new(Some(&gettext("Cannot Use Folder")), Some(message));
+        alert.add_response("close", &gettext("_Close"));
+        alert.present(Some(self));
     }
 
     fn name_changed(&self) {
