@@ -13,11 +13,13 @@ use std::collections::HashSet;
 use std::fs::{self, Metadata};
 use std::io;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use std::time::UNIX_EPOCH;
 
 use chrono::NaiveDate;
 use knotbook_core::{NotePath, ReadError, Vault, VaultChange, content_hash};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::types::Type;
+use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 use rusqlite_migration::{M, Migrations};
 use thiserror::Error;
 
@@ -39,7 +41,7 @@ const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 pub enum IndexError {
     #[error("cannot create {path}: {source}")]
     Folder { path: PathBuf, source: io::Error },
-    #[error("index database: {0}")]
+    #[error("index database: {0}; deleting .knotbook/index.sqlite rebuilds it")]
     Database(#[from] rusqlite::Error),
     #[error("cannot update the index schema: {0}")]
     Migration(#[from] rusqlite_migration::Error),
@@ -54,7 +56,7 @@ pub struct Index {
 
 impl Index {
     /// Where the index of `vault` lives.
-    pub fn path(vault: &Vault) -> PathBuf {
+    fn path(vault: &Vault) -> PathBuf {
         vault.root().join(".knotbook").join("index.sqlite")
     }
 
@@ -76,22 +78,6 @@ impl Index {
         Ok(Self { connection })
     }
 
-    /// Replaces the whole content of the index with what the files of
-    /// `vault` hold now.
-    ///
-    /// Day files, notes and the task list that cannot be read are left out
-    /// and returned, so that one broken file does not stop the rest.
-    pub fn rebuild(&mut self, vault: &Vault) -> Result<Vec<ReadError>, IndexError> {
-        let tx = self.connection.transaction()?;
-        tx.execute_batch(
-            "DELETE FROM files; DELETE FROM blocks; DELETE FROM days; DELETE FROM notes;
-             DELETE FROM projects; DELETE FROM tasks;",
-        )?;
-        let skipped = refresh(&tx, vault)?;
-        tx.commit()?;
-        Ok(skipped)
-    }
-
     /// Brings the index up to date with the files of `vault`, reading only
     /// those that changed since they were last read. It looks at every file,
     /// so it also finds changes made while nobody was watching, and those
@@ -101,29 +87,6 @@ impl Index {
     pub fn refresh(&mut self, vault: &Vault) -> Result<Vec<ReadError>, IndexError> {
         let tx = self.connection.transaction()?;
         let skipped = refresh(&tx, vault)?;
-        tx.commit()?;
-        Ok(skipped)
-    }
-
-    /// Brings the index up to date with the files named in `changes`, as
-    /// reported by [`Vault::watch`]. `vault` has to be up to date with
-    /// changes to projects.
-    ///
-    /// Files that cannot be read are taken out of the index and returned.
-    pub fn apply(
-        &mut self,
-        vault: &Vault,
-        changes: &[VaultChange],
-    ) -> Result<Vec<ReadError>, IndexError> {
-        let tx = self.connection.transaction()?;
-        let mut skipped = Vec::new();
-        for change in changes {
-            if let VaultChange::Project(_) = change {
-                sync_projects(&tx, vault)?;
-            } else if let Some(file) = IndexFile::from_change(change) {
-                skipped.extend(update(&tx, vault, &file)?);
-            }
-        }
         tx.commit()?;
         Ok(skipped)
     }
@@ -158,13 +121,9 @@ impl IndexFile {
     }
 
     fn from_key(key: &str) -> Option<Self> {
-        Self::from_change(&VaultChange::from_path(Path::new(key))?)
-    }
-
-    fn from_change(change: &VaultChange) -> Option<Self> {
-        match change {
-            VaultChange::Day(date) => Some(Self::Day(*date)),
-            VaultChange::Note(note) => Some(Self::Note(note.clone())),
+        match VaultChange::from_path(Path::new(key))? {
+            VaultChange::Day(date) => Some(Self::Day(date)),
+            VaultChange::Note(note) => Some(Self::Note(note)),
             VaultChange::Tasks => Some(Self::Tasks),
             VaultChange::Config | VaultChange::Project(_) => None,
         }
@@ -280,6 +239,28 @@ fn forget(tx: &Transaction, key: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// Column `index` of `row` as read through `FromStr`. A value the core does
+/// not accept is an error rather than a panic: something other than this
+/// crate may have changed the index.
+pub(crate) fn parsed<T>(row: &Row, index: usize) -> rusqlite::Result<T>
+where
+    T: FromStr,
+    T::Err: std::error::Error + Send + Sync + 'static,
+{
+    let text: String = row.get(index)?;
+    text.parse().map_err(|err| invalid(index, err))
+}
+
+/// The note named by the columns `project` and `name` of `row`.
+pub(crate) fn note_path(row: &Row, project: usize, name: usize) -> rusqlite::Result<NotePath> {
+    let text: String = row.get(name)?;
+    NotePath::new(parsed(row, project)?, &text).map_err(|err| invalid(name, err))
+}
+
+fn invalid(index: usize, err: impl std::error::Error + Send + Sync + 'static) -> rusqlite::Error {
+    rusqlite::Error::FromSqlConversionFailure(index, Type::Text, Box::new(err))
+}
+
 /// Modification time in nanoseconds since 1970 and size of a file.
 fn stamp(metadata: &Metadata) -> (i64, i64) {
     let modified = metadata
@@ -355,7 +336,7 @@ mod tests {
         );
         let vault = Vault::open(&dir.0).unwrap();
         let mut index = Index::open(&vault).unwrap();
-        index.rebuild(&vault).unwrap();
+        index.refresh(&vault).unwrap();
         (dir, vault, index)
     }
 
@@ -393,9 +374,9 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_reads_the_whole_vault() {
+    fn refresh_reads_the_whole_vault() {
         let mut index = in_memory();
-        let skipped = index.rebuild(&sample()).unwrap();
+        let skipped = index.refresh(&sample()).unwrap();
         assert!(skipped.is_empty(), "{skipped:?}");
         assert_eq!(count(&index, "projects"), 5);
         // The sync conflict copy is not a day.
@@ -406,9 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_stores_blocks_in_minutes() {
+    fn refresh_stores_blocks_in_minutes() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         let (project, start, end): (String, u32, u32) = index
             .connection
             .query_row(
@@ -425,12 +406,19 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_replaces_the_old_content() {
+    fn invalid_rows_are_errors() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
-        index.rebuild(&sample()).unwrap();
-        assert_eq!(count(&index, "days"), 3);
-        assert_eq!(count(&index, "blocks"), 17);
+        index.refresh(&sample()).unwrap();
+        index
+            .connection
+            .execute(
+                "UPDATE blocks SET project = 'Not A Slug', id = 'X' WHERE id = 'ff66'",
+                [],
+            )
+            .unwrap();
+        let err = index.project_time(date(23), date(23)).unwrap_err();
+        assert!(err.to_string().contains("index.sqlite"), "{err}");
+        assert!(index.search("deploy", 10).is_err());
     }
 
     #[test]
@@ -439,7 +427,7 @@ mod tests {
         let today = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
         let vault = Vault::create(&dir.0, "Test", today).unwrap();
         let mut index = Index::open(&vault).unwrap();
-        index.rebuild(&vault).unwrap();
+        index.refresh(&vault).unwrap();
         assert!(dir.0.join(".knotbook/index.sqlite").is_file());
         // Opening again finds the schema up to date.
         drop(index);
@@ -448,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn rebuild_skips_unreadable_files() {
+    fn refresh_skips_unreadable_files() {
         let dir = TempDir::new();
         let today = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
         let vault = Vault::create(&dir.0, "Test", today).unwrap();
@@ -456,7 +444,7 @@ mod tests {
         fs::create_dir_all(broken.parent().unwrap()).unwrap();
         fs::write(&broken, "---\nformat: [\n---\n").unwrap();
         let mut index = Index::open(&vault).unwrap();
-        let skipped = index.rebuild(&vault).unwrap();
+        let skipped = index.refresh(&vault).unwrap();
         assert!(
             matches!(&skipped[..], [ReadError::Invalid { path, .. }] if *path == broken),
             "{skipped:?}"
@@ -560,42 +548,6 @@ mod tests {
         assert_eq!(count(&index, "blocks"), 17);
     }
 
-    #[test]
-    fn apply_reads_the_changed_files() {
-        let (dir, vault, mut index) = sample_copy();
-        tamper(&index, "ff66");
-        tamper(&index, "a1b2");
-        append(&vault.day_path(date(23)), "Rolled back at 00:20.\n");
-        fs::remove_file(vault.day_path(date(22))).unwrap();
-        let changes = [VaultChange::Day(date(22)), VaultChange::Day(date(23))];
-        assert!(index.apply(&vault, &changes).unwrap().is_empty());
-        assert_eq!(block_title(&index, "ff66").unwrap(), "Release deployment");
-        assert_eq!(block_title(&index, "a1b2").unwrap(), "stale");
-        assert_eq!(count(&index, "days"), 2);
-
-        let project = dir.0.join("projects/webshop/project.toml");
-        let text = fs::read_to_string(&project).unwrap();
-        fs::write(
-            &project,
-            text.replace("name = \"Webshop\"", "name = \"Shop\""),
-        )
-        .unwrap();
-        let slug = "webshop".parse().unwrap();
-        index
-            .apply(&Vault::open(&dir.0).unwrap(), &[VaultChange::Project(slug)])
-            .unwrap();
-        let name: String = index
-            .connection
-            .query_row(
-                "SELECT name FROM projects WHERE slug = 'webshop'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(name, "Shop");
-        assert_eq!(count(&index, "notes"), 3);
-    }
-
     fn found(hits: &[SearchHit]) -> Vec<&Found> {
         hits.iter().map(|hit| &hit.found).collect()
     }
@@ -610,7 +562,7 @@ mod tests {
     #[test]
     fn search_finds_parts_of_words_everywhere() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         let hits = index.search("deploy", 10).unwrap();
         let note = |project: &str, name| {
             Found::Note(NotePath::new(project.parse().unwrap(), name).unwrap())
@@ -636,7 +588,7 @@ mod tests {
     #[test]
     fn search_needs_all_words_and_phrases() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         assert_eq!(index.search("release deployment", 10).unwrap().len(), 4);
         let hits = index.search("\"release deploy\"", 10).unwrap();
         assert_eq!(found(&hits), [&block(23, "ff66"), &block(23, "cc33")]);
@@ -646,7 +598,7 @@ mod tests {
     #[test]
     fn search_leaves_out_short_words_and_syntax() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         assert!(index.search("to", 10).unwrap().is_empty());
         assert_eq!(index.search("TLS to", 10).unwrap().len(), 1);
         for query in ["", "\"", "NOT OR", "title:tls", "tls*", "(tls", "tls\"x"] {
@@ -694,7 +646,7 @@ mod tests {
     fn project_time_sums_blocks() {
         let vault = sample();
         let mut index = in_memory();
-        index.rebuild(&vault).unwrap();
+        index.refresh(&vault).unwrap();
         let mut expected = std::collections::BTreeMap::<ProjectSlug, TimeDelta>::new();
         for day in [21, 22, 23] {
             for block in vault.load_day(date(day)).unwrap().unwrap().day.blocks {
@@ -816,7 +768,7 @@ mod tests {
     #[test]
     fn project_activity_and_blocks() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         let infra: ProjectSlug = "infra".parse().unwrap();
         assert_eq!(
             index.project_activity(&infra).unwrap(),
@@ -844,7 +796,7 @@ mod tests {
     #[test]
     fn project_time_per_day_matches_the_sums() {
         let mut index = in_memory();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         let days = index.project_time_per_day(date(22), date(23)).unwrap();
         assert!(days.iter().all(|(day, _, _)| *day != date(21)));
         let infra: ProjectSlug = "infra".parse().unwrap();

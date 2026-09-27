@@ -210,7 +210,7 @@ mod tests {
     fn index() -> Index {
         let mut index =
             Index::with_connection(rusqlite::Connection::open_in_memory().unwrap()).unwrap();
-        index.rebuild(&sample()).unwrap();
+        index.refresh(&sample()).unwrap();
         index
     }
 

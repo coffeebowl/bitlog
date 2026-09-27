@@ -5,7 +5,7 @@ use knotbook_core::{BlockId, NotePath, ProjectSlug};
 
 use rusqlite::OptionalExtension;
 
-use crate::{Found, Index, IndexError};
+use crate::{Found, Index, IndexError, note_path, parsed};
 
 /// How many work days of a year were spent remote or hybrid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,10 +39,9 @@ impl ProjectBlock {
 const PROJECT_BLOCK_COLUMNS: &str = "date, id, start_minute, end_minute, title, text";
 
 fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
-    let id: String = row.get(1)?;
     Ok(ProjectBlock {
         date: row.get(0)?,
-        id: id.parse().expect("the index holds valid block ids"),
+        id: parsed(row, 1)?,
         start_minute: row.get(2)?,
         end_minute: row.get(3)?,
         title: row.get(4)?,
@@ -64,10 +63,9 @@ impl Index {
         )?;
         let times = statement
             .query_map((first, last), |row| {
-                let project: String = row.get(1)?;
                 Ok((
                     row.get(0)?,
-                    project.parse().expect("the index holds valid slugs"),
+                    parsed(row, 1)?,
                     TimeDelta::minutes(row.get(2)?),
                 ))
             })?
@@ -107,11 +105,7 @@ impl Index {
         ))?;
         let blocks = statement
             .query_map((first, last), |row| {
-                let project: String = row.get(6)?;
-                Ok((
-                    project.parse().expect("the index holds valid slugs"),
-                    project_block(row)?,
-                ))
+                Ok((parsed(row, 6)?, project_block(row)?))
             })?
             .collect::<Result<_, _>>()?;
         Ok(blocks)
@@ -162,12 +156,7 @@ impl Index {
         )?;
         let times = statement
             .query_map((first, last), |row| {
-                let project: String = row.get(0)?;
-                let minutes: i64 = row.get(1)?;
-                Ok((
-                    project.parse().expect("the index holds valid slugs"),
-                    TimeDelta::minutes(minutes),
-                ))
+                Ok((parsed(row, 0)?, TimeDelta::minutes(row.get(1)?)))
             })?
             .collect::<Result<_, _>>()?;
         Ok(times)
@@ -185,20 +174,17 @@ impl Index {
         let sources = statement
             .query_map((target.project().as_str(), target.name()), |row| {
                 let project: Option<String> = row.get(0)?;
-                let name: Option<String> = row.get(1)?;
                 let date: Option<NaiveDate> = row.get(2)?;
                 let block: Option<String> = row.get(3)?;
-                Ok(match (project, name, date, block) {
-                    (Some(project), Some(name), _, _) => Found::Note(
-                        NotePath::new(project.parse().expect("the index holds valid slugs"), &name)
-                            .expect("the index holds valid note names"),
-                    ),
-                    (_, _, Some(date), Some(block)) => Found::Block {
+                Ok(match (project, date, block) {
+                    (Some(_), _, _) => Found::Note(note_path(row, 0, 1)?),
+                    (None, Some(date), Some(_)) => Found::Block {
                         date,
-                        id: block.parse().expect("the index holds valid block ids"),
+                        id: parsed(row, 3)?,
                     },
-                    (_, _, Some(date), None) => Found::DayNote(date),
-                    _ => unreachable!("a link lies in a note or a day"),
+                    (None, Some(date), None) => Found::DayNote(date),
+                    // A check of the table keeps links out that lie nowhere.
+                    (None, None, _) => unreachable!("a link lies in a note or a day"),
                 })
             })?
             .collect::<Result<_, _>>()?;

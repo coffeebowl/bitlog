@@ -4,8 +4,9 @@ use std::ops::Range;
 
 use chrono::NaiveDate;
 use knotbook_core::{BlockId, NotePath, TaskId};
+use rusqlite::Row;
 
-use crate::{Index, IndexError};
+use crate::{Index, IndexError, note_path, parsed};
 
 /// Marks the start and end of a match in a snippet from SQLite.
 const MATCH_START: char = '\u{2}';
@@ -81,51 +82,32 @@ impl Index {
         let mut statement = self.connection.prepare_cached(&sql)?;
         let hits = statement
             .query_map(rusqlite::params![query, limit], |row| {
-                let kind: u8 = row.get("kind")?;
-                let date: Option<NaiveDate> = row.get("date")?;
-                let key: Option<String> = row.get("key")?;
-                let project: Option<String> = row.get("project")?;
                 let snippet: String = row.get("snippet")?;
-                Ok((kind, date, key, project, snippet))
-            })?
-            .map(|row| {
-                let (kind, date, key, project, snippet) = row?;
                 let (snippet, matches) = unmark(&snippet);
                 Ok(SearchHit {
-                    found: found(kind, date, key, project),
+                    found: found(row)?,
                     snippet,
                     matches,
                 })
-            })
-            .collect::<Result<_, rusqlite::Error>>()?;
+            })?
+            .collect::<Result<_, _>>()?;
         Ok(hits)
     }
 }
 
-/// What a row of the search query points to. The index holds only valid
-/// values, as the core read them.
-fn found(kind: u8, date: Option<NaiveDate>, key: Option<String>, project: Option<String>) -> Found {
-    let date = || date.expect("blocks and days have a date");
-    let key = || key.expect("blocks, notes and tasks have a key");
-    match kind {
+/// What a row of the search query points to, by its columns `kind`,
+/// `date`, `key` and `project`.
+fn found(row: &Row) -> rusqlite::Result<Found> {
+    Ok(match row.get::<_, u8>(0)? {
         0 => Found::Block {
-            date: date(),
-            id: key().parse().expect("the index holds valid block ids"),
+            date: row.get(1)?,
+            id: parsed(row, 2)?,
         },
-        1 => Found::DayNote(date()),
-        2 => Found::Note(
-            NotePath::new(
-                project
-                    .expect("notes have a project")
-                    .parse()
-                    .expect("the index holds valid slugs"),
-                &key(),
-            )
-            .expect("the index holds valid note names"),
-        ),
-        3 => Found::Task(key().parse().expect("the index holds valid task ids")),
+        1 => Found::DayNote(row.get(1)?),
+        2 => Found::Note(note_path(row, 3, 2)?),
+        3 => Found::Task(parsed(row, 2)?),
         _ => unreachable!("the search query has four kinds"),
-    }
+    })
 }
 
 /// The FTS5 query for what a user typed: each word, or part in double
