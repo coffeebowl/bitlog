@@ -351,29 +351,27 @@ enum BlockCommand {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let today = Local::now().date_naive();
-    match cli.command {
-        Command::Init { name } => init(cli.vault, name),
-        Command::Today => show_day(&open_vault(cli.vault)?, today),
-        Command::Day { date } => show_day(&open_vault(cli.vault)?, date.unwrap_or(today)),
+    let command = match cli.command {
+        Command::Init { name } => return init(cli.vault, name),
+        command => command,
+    };
+    let vault = open_vault(cli.vault)?;
+    match command {
+        Command::Init { .. } => unreachable!("a vault is created above"),
+        Command::Today => show_day(&vault, today),
+        Command::Day { date } => show_day(&vault, date.unwrap_or(today)),
         Command::Standup { date } => {
-            print!("{}", open_vault(cli.vault)?.standup(date.unwrap_or(today))?);
+            print!("{}", vault.standup(date.unwrap_or(today))?);
             Ok(())
         }
-        Command::Block { command, date } => {
-            block(&open_vault(cli.vault)?, date.date.unwrap_or(today), command)
-        }
-        Command::Doctor { fix } => doctor(&open_vault(cli.vault)?, fix),
-        Command::Search { query, limit } => {
-            search(&open_vault(cli.vault)?, &query.join(" "), limit)
-        }
+        Command::Block { command, date } => block(&vault, date.date.unwrap_or(today), command),
+        Command::Doctor { fix } => doctor(&vault, fix),
+        Command::Search { query, limit } => search(&vault, &query.join(" "), limit),
         Command::Log { project, limit } => {
-            print!(
-                "{}",
-                project::log(&open_vault(cli.vault)?, &project, limit)?
-            );
+            print!("{}", project::log(&vault, &project, limit)?);
             Ok(())
         }
-        Command::Export { command } => export(&open_vault(cli.vault)?, command, today),
+        Command::Export { command } => export(&vault, command, today),
         Command::Stats {
             week,
             month: _,
@@ -381,7 +379,6 @@ fn main() -> Result<()> {
             from,
             to,
         } => {
-            let vault = open_vault(cli.vault)?;
             let period = match (from, to) {
                 (Some(from), Some(to)) => (from, to),
                 _ => {
@@ -397,8 +394,8 @@ fn main() -> Result<()> {
             };
             stats(&vault, period)
         }
-        Command::Project { command } => project(open_vault(cli.vault)?, command, today),
-        Command::Task { command } => task(&open_vault(cli.vault)?, command, today),
+        Command::Project { command } => project(vault, command, today),
+        Command::Task { command } => task(&vault, command, today),
         Command::Set {
             kind,
             location,
@@ -407,7 +404,7 @@ fn main() -> Result<()> {
             no_work,
             date,
         } => edit::set_day(
-            &open_vault(cli.vault)?,
+            &vault,
             date.date.unwrap_or(today),
             DayChanges {
                 kind,

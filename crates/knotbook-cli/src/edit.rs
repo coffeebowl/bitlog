@@ -1,7 +1,9 @@
 //! Commands that change a day.
 
 use std::env;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::process;
 
 use anyhow::{Context, Result, bail};
@@ -112,8 +114,16 @@ pub fn edit_block_text(vault: &Vault, date: NaiveDate, id: &BlockId) -> Result<(
         .iter()
         .find(|block| block.id == *id)
         .ok_or(EditError::UnknownBlock(id.clone()))?;
-    let path = env::temp_dir().join(format!("knotbook-{date}-{id}.md"));
-    fs::write(&path, format!("{}\n", block.text))
+    // A new file under a name nobody knows in advance, readable only by
+    // this user, so that nobody else can read the text or slip in a file.
+    let name = format!("knotbook-{date}-{id}-{:08x}.md", fastrand::u32(..));
+    let path = env::temp_dir().join(name);
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .and_then(|mut copy| writeln!(copy, "{}", block.text))
         .with_context(|| format!("cannot write {}", path.display()))?;
     let edited = run_editor(&path).and_then(|()| {
         fs::read_to_string(&path).with_context(|| format!("cannot read {}", path.display()))

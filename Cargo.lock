@@ -805,6 +805,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "fastrand",
  "knotbook-core",
  "knotbook-index",
 ]
