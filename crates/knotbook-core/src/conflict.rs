@@ -221,17 +221,17 @@ impl Vault {
     fn versions(&self, copy: &ConflictCopy) -> Result<Versions, ReadError> {
         let copy_path = self.root().join(&copy.path);
         let theirs = read_text(&copy_path)?;
-        let Some(ours) = read_optional(&self.original_path(copy))? else {
+        let original = self.original_path(copy);
+        let Some(ours) = read_optional(&original)? else {
             return Ok(Versions::Missing(theirs));
         };
         if ours == theirs {
             return Ok(Versions::Same(theirs));
         }
+        // Parsed from the text read above, which may be gone from disk by now.
         Ok(match &copy.of {
             VaultChange::Day(date) => {
-                let file = self
-                    .load_day(*date)?
-                    .expect("the original was read just now");
+                let file = DayFile::read(&original, &ours)?;
                 let other = parse_text(&copy_path, &theirs, |text| {
                     let (day, _) = Day::parse(text)?;
                     if day.date == *date {
@@ -242,9 +242,10 @@ impl Vault {
                 })?;
                 Versions::Days(file, other)
             }
-            VaultChange::Tasks => {
-                Versions::Tasks(self.load_tasks()?, TaskList::read(&copy_path, &theirs)?)
-            }
+            VaultChange::Tasks => Versions::Tasks(
+                TaskList::read(&original, &ours)?,
+                TaskList::read(&copy_path, &theirs)?,
+            ),
             VaultChange::Config | VaultChange::Project(_) | VaultChange::Note(_) => {
                 Versions::Texts(ours, theirs)
             }

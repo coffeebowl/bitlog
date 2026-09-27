@@ -42,7 +42,7 @@ impl DayFile {
         }
     }
 
-    fn read(path: &Path, text: &str) -> Result<Self, ReadError> {
+    pub(crate) fn read(path: &Path, text: &str) -> Result<Self, ReadError> {
         let (day, warnings) = Day::read(path, text)?;
         Ok(Self {
             day,
