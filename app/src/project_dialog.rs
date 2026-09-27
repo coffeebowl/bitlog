@@ -9,6 +9,7 @@ use glib::subclass::Signal;
 use gtk::{gdk, gio, glib};
 use knotbook_core::{EditError, Project, ProjectSlug, check_repo_path};
 
+use crate::alert::show_error;
 use crate::format::{PROJECT_STATUSES, status_name};
 
 mod imp {
@@ -247,14 +248,8 @@ impl ProjectDialog {
             });
         match checked {
             Ok(path) => self.set_repo(Some(path)),
-            Err(message) => self.show_repo_error(&message),
+            Err(message) => show_error(self, &gettext("Cannot Use Folder"), &message),
         }
-    }
-
-    fn show_repo_error(&self, message: &str) {
-        let alert = adw::AlertDialog::new(Some(&gettext("Cannot Use Folder")), Some(message));
-        alert.add_response("close", &gettext("_Close"));
-        alert.present(Some(self));
     }
 
     fn name_changed(&self) {

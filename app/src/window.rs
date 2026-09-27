@@ -13,6 +13,7 @@ use knotbook_core::{
 };
 use knotbook_index::Found;
 
+use crate::alert::show_error;
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
@@ -161,11 +162,11 @@ mod imp {
             klass.install_action("win.today", None, |window, _, _| {
                 let today = Local::now().date_naive();
                 let imp = window.imp();
-                if window.shows_calendar() {
+                if window.shows(&imp.calendar_view) {
                     imp.calendar_view.show(today);
-                } else if window.shows_reports() {
+                } else if window.shows(&imp.reports_page) {
                     imp.reports_page.show(today);
-                } else if window.shows_day() {
+                } else if window.shows(&imp.day_view) {
                     imp.day_view.show_date(today);
                 }
             });
@@ -174,10 +175,10 @@ mod imp {
             });
             // Forwarded, so that the shortcut works wherever the focus is.
             klass.install_action("win.new-block", None, |window, _, _| {
-                if window.shows_day() {
+                let day_view = &window.imp().day_view;
+                if window.shows(day_view) {
                     // Fails on days without a file, which have no blocks yet.
-                    let _ =
-                        WidgetExt::activate_action(&window.imp().day_view, "day.new-block", None);
+                    let _ = WidgetExt::activate_action(day_view, "day.new-block", None);
                 }
             });
             klass.install_action("win.show-calendar", None, |window, _, _| {
@@ -311,7 +312,8 @@ impl Window {
         let folder = gio::File::for_uri(&uri);
         match folder.path() {
             Some(path) => self.open_vault(&path),
-            None => self.show_error(
+            None => show_error(
+                self,
                 &gettext("Cannot Open Vault"),
                 &gettext("The vault is not on a local file system."),
             ),
@@ -329,7 +331,8 @@ impl Window {
         };
         match folder.path() {
             Some(path) => self.open_vault(&path),
-            None => self.show_error(
+            None => show_error(
+                self,
                 &gettext("Cannot Open Vault"),
                 &gettext("Choose a folder on a local file system."),
             ),
@@ -348,7 +351,8 @@ impl Window {
             return;
         };
         let Some(path) = folder.path() else {
-            self.show_error(
+            show_error(
+                self,
                 &gettext("Cannot Create Vault"),
                 &gettext("Choose a folder on a local file system."),
             );
@@ -365,7 +369,7 @@ impl Window {
             .map_or("Knotbook".into(), |name| name.to_string_lossy());
         match Vault::create(path, &name, Local::now().date_naive()) {
             Ok(_) => self.open_vault(path),
-            Err(err) => self.show_error(&gettext("Cannot Create Vault"), &err.to_string()),
+            Err(err) => show_error(self, &gettext("Cannot Create Vault"), &err.to_string()),
         }
     }
 
@@ -375,7 +379,7 @@ impl Window {
     fn open_vault(&self, path: &Path) {
         let imp = self.imp();
         if let Err(err) = self.load_vault(path) {
-            self.show_error(&gettext("Cannot Open Vault"), &err.to_string());
+            show_error(self, &gettext("Cannot Open Vault"), &err.to_string());
             return;
         }
         let today = Local::now().date_naive();
@@ -428,7 +432,11 @@ impl Window {
             }
             Err(err) => {
                 imp.watcher.replace(None);
-                self.show_watch_error(&err);
+                let message = format!(
+                    "{}\n\n{err}",
+                    gettext("Changes made elsewhere only show up after going to another day.")
+                );
+                show_error(self, &gettext("Cannot Watch Vault"), &message);
             }
         }
         Ok(())
@@ -531,7 +539,11 @@ impl Window {
                 ));
                 dialog.present(Some(self));
             }
-            Err(err) => self.show_error(&gettext("Cannot Read Sync Conflict"), &err.to_string()),
+            Err(err) => show_error(
+                self,
+                &gettext("Cannot Read Sync Conflict"),
+                &err.to_string(),
+            ),
         }
     }
 
@@ -549,7 +561,7 @@ impl Window {
         }
         if changes.contains(&VaultChange::Tasks) {
             imp.day_view.show_tasks();
-            if self.shows_tasks() {
+            if self.shows(&imp.tasks_page) {
                 imp.tasks_page.reload();
             }
         }
@@ -564,10 +576,10 @@ impl Window {
             imp.projects_page.notes_changed(&notes);
         }
         let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
-        if self.shows_calendar() && changes.iter().any(changes_day) {
+        if self.shows(&imp.calendar_view) && changes.iter().any(changes_day) {
             imp.calendar_view.reload();
         }
-        if self.shows_reports() && changes.iter().any(changes_day) {
+        if self.shows(&imp.reports_page) && changes.iter().any(changes_day) {
             imp.reports_page.reload();
         }
     }
@@ -587,43 +599,36 @@ impl Window {
                 imp.calendar_view.reload();
                 imp.tasks_page.reload();
                 imp.projects_page.reload();
-                if self.shows_reports() {
+                if self.shows(&imp.reports_page) {
                     imp.reports_page.reload();
                 }
                 self.check_conflicts();
             }
-            Err(err) => self.show_error(&gettext("Cannot Open Vault"), &err.to_string()),
+            Err(err) => show_error(self, &gettext("Cannot Open Vault"), &err.to_string()),
         }
     }
 
-    fn shows_day(&self) -> bool {
-        let imp = self.imp();
-        imp.split_view.content().as_ref() == Some(imp.day_view.upcast_ref())
+    /// Whether `page` is the page shown.
+    fn shows(&self, page: &impl IsA<adw::NavigationPage>) -> bool {
+        self.imp().split_view.content().as_ref() == Some(page.upcast_ref())
     }
 
-    fn shows_calendar(&self) -> bool {
+    /// Shows `page` with `row` selected in the sidebar.
+    fn show_page(&self, page: &impl IsA<adw::NavigationPage>, row: &gtk::ListBoxRow) {
         let imp = self.imp();
-        imp.split_view.content().as_ref() == Some(imp.calendar_view.upcast_ref())
-    }
-
-    fn shows_reports(&self) -> bool {
-        let imp = self.imp();
-        imp.split_view.content().as_ref() == Some(imp.reports_page.upcast_ref())
-    }
-
-    fn shows_tasks(&self) -> bool {
-        let imp = self.imp();
-        imp.split_view.content().as_ref() == Some(imp.tasks_page.upcast_ref())
+        imp.split_view.set_content(Some(page));
+        imp.split_view.set_show_content(true);
+        imp.sidebar_list.select_row(Some(row));
     }
 
     /// Shows the day, week or month `steps` steps after the one shown now.
     fn step(&self, steps: i32) {
         let imp = self.imp();
-        if self.shows_calendar() {
+        if self.shows(&imp.calendar_view) {
             imp.calendar_view.step(steps);
-        } else if self.shows_reports() {
+        } else if self.shows(&imp.reports_page) {
             imp.reports_page.step(steps);
-        } else if self.shows_day() {
+        } else if self.shows(&imp.day_view) {
             let date = imp.day_view.date();
             let date = date.checked_add_signed(TimeDelta::days(steps.into()));
             imp.day_view
@@ -635,36 +640,28 @@ impl Window {
         let imp = self.imp();
         imp.projects_page.save_now();
         imp.day_view.show_date(date);
-        imp.split_view.set_content(Some(&imp.day_view));
-        imp.split_view.set_show_content(true);
-        imp.sidebar_list.select_row(Some(&*imp.today_row));
+        self.show_page(&imp.day_view, &imp.today_row);
     }
 
     fn show_calendar(&self) {
         let imp = self.imp();
         self.save_texts_now();
         imp.calendar_view.reload();
-        imp.split_view.set_content(Some(&imp.calendar_view));
-        imp.split_view.set_show_content(true);
-        imp.sidebar_list.select_row(Some(&*imp.calendar_row));
+        self.show_page(&imp.calendar_view, &imp.calendar_row);
     }
 
     fn show_tasks(&self) {
         let imp = self.imp();
         self.save_texts_now();
         imp.tasks_page.reload();
-        imp.split_view.set_content(Some(&imp.tasks_page));
-        imp.split_view.set_show_content(true);
-        imp.sidebar_list.select_row(Some(&*imp.tasks_row));
+        self.show_page(&imp.tasks_page, &imp.tasks_row);
     }
 
     fn show_projects(&self) {
         let imp = self.imp();
         self.save_texts_now();
         imp.projects_page.reload();
-        imp.split_view.set_content(Some(&imp.projects_page));
-        imp.split_view.set_show_content(true);
-        imp.sidebar_list.select_row(Some(&*imp.projects_row));
+        self.show_page(&imp.projects_page, &imp.projects_row);
     }
 
     fn show_preferences(&self) {
@@ -703,14 +700,11 @@ impl Window {
                 dialog.close();
                 self.config_changed(Rc::new(vault));
             }
-            Err(err) => {
-                let alert = adw::AlertDialog::new(
-                    Some(&gettext("Cannot Save Preferences")),
-                    Some(&err.to_string()),
-                );
-                alert.add_response("close", &gettext("_Close"));
-                alert.present(Some(dialog));
-            }
+            Err(err) => show_error(
+                dialog,
+                &gettext("Cannot Save Preferences"),
+                &err.to_string(),
+            ),
         }
     }
 
@@ -722,7 +716,7 @@ impl Window {
         imp.day_view.show_date(imp.day_view.date());
         imp.calendar_view.reload();
         imp.projects_page.reload();
-        if self.shows_reports() {
+        if self.shows(&imp.reports_page) {
             imp.reports_page.reload();
         }
     }
@@ -737,7 +731,8 @@ impl Window {
         // So that the search finds what was just typed.
         self.save_texts_now();
         let vault = imp.vault.borrow().clone().expect("search needs a vault");
-        let dialog = SearchDialog::new(vault, imp.index.borrow().clone(), self.shows_day());
+        let dialog =
+            SearchDialog::new(vault, imp.index.borrow().clone(), self.shows(&imp.day_view));
         dialog.present(Some(self));
     }
 
@@ -747,9 +742,7 @@ impl Window {
         let imp = self.imp();
         self.save_texts_now();
         imp.reports_page.reload();
-        imp.split_view.set_content(Some(&imp.reports_page));
-        imp.split_view.set_show_content(true);
-        imp.sidebar_list.select_row(Some(&*imp.reports_row));
+        self.show_page(&imp.reports_page, &imp.reports_row);
     }
 
     /// Saves what is being typed on any page, if there are unsaved changes.
@@ -757,23 +750,5 @@ impl Window {
         let imp = self.imp();
         imp.day_view.save_texts_now();
         imp.projects_page.save_now();
-    }
-
-    fn show_watch_error(&self, err: &WatchError) {
-        let dialog = adw::AlertDialog::new(
-            Some(&gettext("Cannot Watch Vault")),
-            Some(&format!(
-                "{}\n\n{err}",
-                gettext("Changes made elsewhere only show up after going to another day.")
-            )),
-        );
-        dialog.add_response("close", &gettext("_Close"));
-        dialog.present(Some(self));
-    }
-
-    fn show_error(&self, heading: &str, message: &str) {
-        let dialog = adw::AlertDialog::new(Some(heading), Some(message));
-        dialog.add_response("close", &gettext("_Close"));
-        dialog.present(Some(self));
     }
 }

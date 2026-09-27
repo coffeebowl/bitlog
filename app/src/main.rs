@@ -1,3 +1,4 @@
+mod alert;
 mod calendar_view;
 mod config;
 mod conflict_dialog;

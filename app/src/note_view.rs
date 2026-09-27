@@ -11,6 +11,7 @@ use gtk::glib;
 use knotbook_core::{NoteFile, NotePath, ReadError, SavedNote, Vault};
 use knotbook_index::{Backlink, Found};
 
+use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
 use crate::format::format_full_date;
 use crate::markdown_view::MarkdownView;
@@ -298,14 +299,7 @@ impl NoteView {
                 imp.file.replace(Some(saved));
             }
             Ok(SavedNote::Conflict(theirs)) => self.choose_version(text, theirs),
-            Err(err) => {
-                let alert = adw::AlertDialog::new(
-                    Some(&gettext("Cannot Save Note")),
-                    Some(&err.to_string()),
-                );
-                alert.add_response("close", &gettext("_Close"));
-                alert.present(Some(self));
-            }
+            Err(err) => show_error(self, &gettext("Cannot Save Note"), &err.to_string()),
         }
     }
 

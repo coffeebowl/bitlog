@@ -1,3 +1,4 @@
+app/src/alert.rs
 app/src/calendar_view.rs
 app/src/conflict_dialog.rs
 app/src/day_view.rs

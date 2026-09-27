@@ -12,6 +12,7 @@ use knotbook_core::{
     TaskList, TaskStatus, Vault, VaultChange,
 };
 
+use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
 use crate::format::{format_full_date, format_time, kind_name};
 
@@ -173,10 +174,7 @@ impl SyncConflictDialog {
                 self.emit_by_name::<()>("merged", &[]);
             }
             Err(err) => {
-                let alert =
-                    adw::AlertDialog::new(Some(&gettext("Cannot Merge")), Some(&err.to_string()));
-                alert.add_response("close", &gettext("_Close"));
-                alert.present(Some(self));
+                show_error(self, &gettext("Cannot Merge"), &err.to_string());
             }
         }
     }

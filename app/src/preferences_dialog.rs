@@ -10,6 +10,7 @@ use glib::subclass::Signal;
 use gtk::{gio, glib};
 use knotbook_core::{EditError, LocationKey, Vault, VaultConfig};
 
+use crate::alert::show_error;
 use crate::format::{format_date, format_duration, format_time};
 
 /// The block lengths offered, besides the one set.
@@ -360,14 +361,11 @@ impl PreferencesDialog {
             .and_then(|path| path.strip_prefix(&root).ok().map(ToOwned::to_owned));
         match relative {
             Some(relative) => self.set_template(Some(relative)),
-            None => {
-                let alert = adw::AlertDialog::new(
-                    Some(&gettext("Cannot Use File")),
-                    Some(&gettext("The template has to lie in the vault folder.")),
-                );
-                alert.add_response("close", &gettext("_Close"));
-                alert.present(Some(self));
-            }
+            None => show_error(
+                self,
+                &gettext("Cannot Use File"),
+                &gettext("The template has to lie in the vault folder."),
+            ),
         }
     }
 

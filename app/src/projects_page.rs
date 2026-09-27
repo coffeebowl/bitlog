@@ -11,6 +11,7 @@ use glib::subclass::Signal;
 use gtk::glib;
 use knotbook_core::{NotePath, Project, ProjectSlug, SaveError, Vault};
 
+use crate::alert::show_error;
 use crate::format::{PROJECT_STATUSES, status_name};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
@@ -294,7 +295,7 @@ impl ProjectsPage {
         match imp.note_view.show_note(note) {
             Ok(()) if !self.shows("note") => imp.nav.push(&imp.note_view),
             Ok(()) => {}
-            Err(err) => self.show_error(&gettext("Cannot Open Note"), &err.to_string()),
+            Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
         }
     }
 
@@ -320,7 +321,7 @@ impl ProjectsPage {
                 self.show_project_again();
                 self.open_note(&note);
             }
-            Err(err) => self.show_error(&gettext("Cannot Create Note"), &err.to_string()),
+            Err(err) => show_error(self, &gettext("Cannot Create Note"), &err.to_string()),
         }
     }
 
@@ -355,7 +356,7 @@ impl ProjectsPage {
                 self.show_project_again();
                 self.open_note(&note);
             }
-            Err(err) => self.show_error(&gettext("Cannot Create Note"), &err.to_string()),
+            Err(err) => show_error(self, &gettext("Cannot Create Note"), &err.to_string()),
         }
     }
 
@@ -378,7 +379,7 @@ impl ProjectsPage {
         let linking = match vault.notes_linking_to(&note) {
             Ok(linking) => linking,
             Err(err) => {
-                self.show_error(&gettext("Cannot Rename Note"), &err.to_string());
+                show_error(self, &gettext("Cannot Rename Note"), &err.to_string());
                 return;
             }
         };
@@ -402,7 +403,7 @@ impl ProjectsPage {
                     imp.note_view.reload();
                 }
             }
-            Err(err) => self.show_error(&gettext("Cannot Rename Note"), &err.to_string()),
+            Err(err) => show_error(self, &gettext("Cannot Rename Note"), &err.to_string()),
         }
     }
 
@@ -427,7 +428,7 @@ impl ProjectsPage {
             self.close_note();
         }
         if let Err(err) = self.vault().delete_note(&note) {
-            self.show_error(&gettext("Cannot Delete Note"), &err.to_string());
+            show_error(self, &gettext("Cannot Delete Note"), &err.to_string());
         }
         self.show_project_again();
     }
@@ -563,21 +564,8 @@ impl ProjectsPage {
                 self.reload();
                 self.emit_by_name::<()>("vault-changed", &[]);
             }
-            Err(err) => {
-                let alert = adw::AlertDialog::new(
-                    Some(&gettext("Cannot Save Project")),
-                    Some(&err.to_string()),
-                );
-                alert.add_response("close", &gettext("_Close"));
-                alert.present(Some(dialog));
-            }
+            Err(err) => show_error(dialog, &gettext("Cannot Save Project"), &err.to_string()),
         }
-    }
-
-    fn show_error(&self, heading: &str, message: &str) {
-        let dialog = adw::AlertDialog::new(Some(heading), Some(message));
-        dialog.add_response("close", &gettext("_Close"));
-        dialog.present(Some(self));
     }
 }
 

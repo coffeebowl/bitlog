@@ -10,6 +10,7 @@ use gtk::{gdk, gio, glib};
 use knotbook_core::{Period, Vault};
 use knotbook_index::export;
 
+use crate::alert::show_error;
 use crate::format::{format_date, format_duration, format_share, format_short_date};
 use crate::heatmap::Heatmap;
 use crate::search_index::{ReportData, SearchIndex};
@@ -234,11 +235,7 @@ impl ReportsPage {
                     .expect("pages lie in the window's toast overlay")
                     .add_toast(toast);
             }
-            Err(message) => {
-                let dialog = adw::AlertDialog::new(Some(&gettext("Cannot Export")), Some(&message));
-                dialog.add_response("close", &gettext("_Close"));
-                dialog.present(Some(self));
-            }
+            Err(message) => show_error(self, &gettext("Cannot Export"), &message),
         }
     }
 

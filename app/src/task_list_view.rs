@@ -8,6 +8,7 @@ use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
 use knotbook_core::{EditError, SaveError, Task, TaskId, TaskList, TaskStatus, Vault};
 
+use crate::alert::show_error;
 use crate::format::{format_short_date, glib_date, naive_date};
 
 mod imp {
@@ -637,12 +638,7 @@ impl TaskListView {
                 true
             }
             Err(err) => {
-                let dialog = adw::AlertDialog::new(
-                    Some(&gettext("Cannot Save Tasks")),
-                    Some(&err.to_string()),
-                );
-                dialog.add_response("close", &gettext("_Close"));
-                dialog.present(Some(self));
+                show_error(self, &gettext("Cannot Save Tasks"), &err.to_string());
                 self.reload();
                 false
             }

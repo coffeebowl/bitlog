@@ -12,6 +12,7 @@ use knotbook_core::{
     Vault,
 };
 
+use crate::alert::show_error;
 use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_time, kind_name,
 };
@@ -554,14 +555,7 @@ impl DayView {
         self.save_texts_now();
         match self.vault().standup(self.date()) {
             Ok(text) => StandupDialog::new(&text).present(Some(self)),
-            Err(err) => {
-                let dialog = adw::AlertDialog::new(
-                    Some(&gettext("Cannot Summarize")),
-                    Some(&err.to_string()),
-                );
-                dialog.add_response("close", &gettext("_Close"));
-                dialog.present(Some(self));
-            }
+            Err(err) => show_error(self, &gettext("Cannot Summarize"), &err.to_string()),
         }
     }
 
@@ -687,10 +681,7 @@ impl DayView {
     }
 
     fn show_save_error(&self, err: &SaveError) {
-        let dialog =
-            adw::AlertDialog::new(Some(&gettext("Cannot Save Day")), Some(&err.to_string()));
-        dialog.add_response("close", &gettext("_Close"));
-        dialog.present(Some(self));
+        show_error(self, &gettext("Cannot Save Day"), &err.to_string());
     }
 
     /// Adds the actions behind the kind and location menus, which save the
