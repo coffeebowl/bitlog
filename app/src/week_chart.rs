@@ -5,8 +5,8 @@ use adw::subclass::prelude::*;
 use chrono::TimeDelta;
 use gtk::{gdk, glib, graphene, gsk};
 
+use crate::colors::{sea_green, with_alpha};
 use crate::format::format_duration;
-use crate::timeline::SEA_GREEN;
 
 const HEIGHT: f32 = 320.0;
 /// Room for the hour labels on the left and the target label on the right.
@@ -136,7 +136,7 @@ mod imp {
                 self.append_text(snapshot, &text, x, y, 0.0, &foreground);
             }
 
-            let green = gdk::RGBA::parse(SEA_GREEN).expect("the colour is valid");
+            let green = sea_green();
             let path = gsk::PathBuilder::new();
             for (index, total) in totals.iter().enumerate() {
                 let point = (plot.x() + column * (index as f32 + 0.5), y_week(*total));
@@ -205,8 +205,4 @@ fn scale(value: f32) -> (f32, f32) {
 
 fn hours_label(hours: f32) -> String {
     format_duration(TimeDelta::minutes((hours * 60.0).round() as i64))
-}
-
-fn with_alpha(color: &gdk::RGBA, alpha: f32) -> gdk::RGBA {
-    color.with_alpha(color.alpha() * alpha)
 }

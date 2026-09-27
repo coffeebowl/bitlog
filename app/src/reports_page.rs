@@ -11,11 +11,11 @@ use knotbook_core::{Period, Vault};
 use knotbook_index::export;
 
 use crate::alert::show_error;
-use crate::format::{format_date, format_duration, format_share, format_short_date};
+use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot, sea_green};
+use crate::format::{capitalize, format_date, format_duration, format_share, format_short_date};
 use crate::heatmap::Heatmap;
 use crate::search_index::{ReportData, SearchIndex};
 use crate::share_bar::ShareBar;
-use crate::timeline::SEA_GREEN;
 
 /// Colors for the categories, which have none of their own: the accent
 /// colors of GNOME, used in turn.
@@ -23,9 +23,6 @@ const CATEGORY_COLORS: [&str; 9] = [
     "#3584e4", "#2190a4", "#3a944a", "#c88800", "#ed5b00", "#e62d42", "#d56199", "#9141ac",
     "#6f8396",
 ];
-
-/// For projects that are not in the vault.
-const UNKNOWN_COLOR: &str = "#9a9996";
 
 /// What the export menu offers.
 #[derive(Debug, Clone, Copy)]
@@ -295,9 +292,9 @@ impl ReportsPage {
         for (slug, time) in &work {
             let (name, color) = match vault.project(slug) {
                 Some(project) => (project.name.clone(), project.color.as_str()),
-                None => (slug.to_string(), UNKNOWN_COLOR),
+                None => (slug.to_string(), UNKNOWN_PROJECT_COLOR),
             };
-            let row = time_row(&dot(color), &name, *time, total);
+            let row = time_row(&color_dot(color), &name, *time, total);
             let color = gdk::RGBA::parse(color).expect("project colors are valid");
             row.add_suffix(&ShareBar::new(vec![(color, share(*time, most))]));
             rows.push((imp.projects_group.get(), row));
@@ -333,7 +330,7 @@ impl ReportsPage {
         categories.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
         let mut parts = Vec::new();
         for ((category, time), color) in categories.iter().zip(CATEGORY_COLORS.iter().cycle()) {
-            let row = time_row(&dot(color), &capitalize(category), *time, total);
+            let row = time_row(&color_dot(color), &capitalize(category), *time, total);
             rows.push((imp.categories_group.get(), row));
             let color = gdk::RGBA::parse(*color).expect("the category colors are valid");
             parts.push((color, share(*time, total)));
@@ -352,7 +349,7 @@ impl ReportsPage {
             }
         }
         let days: Vec<(NaiveDate, TimeDelta)> = days.into_iter().collect();
-        let green = gdk::RGBA::parse(SEA_GREEN).expect("the colour is valid");
+        let green = sea_green();
         imp.heatmap
             .show(&days, green, year, vault.config().week.first_day);
     }
@@ -381,24 +378,10 @@ fn duration_label(time: TimeDelta) -> gtk::Label {
         .build()
 }
 
-/// A colored dot as Pango markup.
-fn dot(color: &str) -> String {
-    format!("<span foreground=\"{color}\">●</span>")
-}
-
 fn share(part: TimeDelta, whole: TimeDelta) -> f32 {
     if whole.is_zero() {
         0.0
     } else {
         part.num_minutes() as f32 / whole.num_minutes() as f32
     }
-}
-
-/// `text` with a capital first letter, as categories are usually written in
-/// lowercase.
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
 }

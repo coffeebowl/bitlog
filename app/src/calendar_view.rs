@@ -10,11 +10,9 @@ use gettextrs::gettext;
 use gtk::{gdk, glib, pango};
 use knotbook_core::{DayFile, Period, ProjectSlug, Vault, week_start};
 
+use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot};
 use crate::format::{format_date, format_duration, format_full_date, kind_name};
 use crate::week_chart::{ChartDay, WeekChart};
-
-/// For blocks of projects the vault does not know.
-const UNKNOWN_PROJECT_COLOR: &str = "#9a9996";
 
 mod imp {
     use super::*;
@@ -233,8 +231,8 @@ impl CalendarView {
         for (slug, time) in per_project {
             let name = vault.project_name(&slug);
             let markup = format!(
-                "<span foreground=\"{}\">●</span> {} · {}",
-                hex(&slug),
+                "{} {} · {}",
+                color_dot(&hex(&slug)),
                 glib::markup_escape_text(name),
                 glib::markup_escape_text(&format_duration(time)),
             );

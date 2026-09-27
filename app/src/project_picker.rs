@@ -4,6 +4,8 @@ use adw::prelude::*;
 use gtk::glib;
 use knotbook_core::{Project, ProjectSlug, ProjectStatus, Vault};
 
+use crate::colors::color_dot;
+
 /// A popover with the projects of `vault` that are not archived, pinned ones
 /// first. Choosing one closes it and calls `on_chosen`.
 pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static) -> gtk::Popover {
@@ -49,14 +51,9 @@ pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static)
 pub fn project_markup(project: &Project) -> String {
     format!(
         "{} {}",
-        color_dot(project),
+        color_dot(&project.color),
         glib::markup_escape_text(&project.name),
     )
-}
-
-/// A dot in the colour of `project`, as Pango markup.
-pub fn color_dot(project: &Project) -> String {
-    format!("<span foreground=\"{}\">●</span>", project.color)
 }
 
 fn project_row(project: &Project) -> gtk::Label {

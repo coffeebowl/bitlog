@@ -8,6 +8,7 @@ use gettextrs::gettext;
 use gtk::{gdk, glib, graphene, gsk};
 use knotbook_core::week_start;
 
+use crate::colors::with_alpha;
 use crate::format::{format_date, format_duration, format_full_date};
 
 /// Weeks shown for the last 12 months, and before anything is shown.
@@ -205,10 +206,6 @@ fn level(time: TimeDelta) -> f32 {
         120..240 => 0.75,
         _ => 1.0,
     }
-}
-
-fn with_alpha(color: &gdk::RGBA, alpha: f32) -> gdk::RGBA {
-    gdk::RGBA::new(color.red(), color.green(), color.blue(), alpha)
 }
 
 /// The widget's font at 80 %, for the month labels.

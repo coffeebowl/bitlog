@@ -14,7 +14,7 @@ use knotbook_core::{
 
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
-use crate::format::{format_full_date, format_time, kind_name};
+use crate::format::{format_full_date, format_span, kind_name};
 
 mod imp {
     use super::*;
@@ -298,7 +298,7 @@ fn block_name(vault: &Vault, block: &Block) -> String {
 /// As in "09:00–10:30 · Webshop · Checkout".
 fn block_summary(vault: &Vault, block: &Block) -> String {
     let mut parts = vec![
-        format!("{}–{}", format_time(block.start), format_time(block.end)),
+        format_span(block.start, block.end),
         vault.project_name(&block.project).to_owned(),
     ];
     if !block.title.is_empty() {
@@ -332,7 +332,7 @@ fn field_value(vault: &Vault, day: &Day, name: &str) -> String {
         "tags" => day.tags.join(", "),
         "energy" => day.energy.map_or_else(none, |energy| energy.to_string()),
         "work" => match (day.work_start, day.work_end) {
-            (Some(start), Some(end)) => format!("{}–{}", format_time(start), format_time(end)),
+            (Some(start), Some(end)) => format_span(start, end),
             _ => none(),
         },
         _ => day

@@ -12,10 +12,10 @@ use gtk::glib;
 use knotbook_core::{NotePath, Project, ProjectSlug, SaveError, Vault};
 
 use crate::alert::show_error;
+use crate::colors::color_dot;
 use crate::format::{PROJECT_STATUSES, status_name};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
-use crate::project_picker::color_dot;
 use crate::project_view::ProjectView;
 use crate::search_index::SearchIndex;
 
@@ -579,7 +579,7 @@ fn project_row(project: &Project) -> adw::ActionRow {
         .action_target(&project.slug.to_string().to_variant())
         .build();
     let dot = gtk::Label::builder()
-        .label(color_dot(project))
+        .label(color_dot(&project.color))
         .use_markup(true)
         .build();
     row.add_prefix(&dot);

@@ -4,6 +4,8 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gdk, glib, graphene, gsk};
 
+use crate::colors::with_alpha;
+
 const HEIGHT: i32 = 10;
 const WIDTH: i32 = 120;
 
@@ -47,10 +49,7 @@ mod imp {
             );
             snapshot.push_rounded_clip(&whole);
             let track = widget.color();
-            snapshot.append_color(
-                &gdk::RGBA::new(track.red(), track.green(), track.blue(), 0.1),
-                whole.bounds(),
-            );
+            snapshot.append_color(&with_alpha(&track, 0.1), whole.bounds());
             let mut x = 0.0;
             for (color, share) in self.parts.borrow().iter() {
                 let part = width * share.clamp(0.0, 1.0);

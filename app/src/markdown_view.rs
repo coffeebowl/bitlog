@@ -16,6 +16,8 @@ use knotbook_core::{
 use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 
+use crate::colors::with_alpha;
+
 /// How much Markdown syntax is dimmed, as the alpha of the text colour.
 const MARKUP_ALPHA: f32 = 0.45;
 const HEADING_SCALES: [f64; 6] = [1.6, 1.4, 1.25, 1.1, 1.0, 1.0];
@@ -185,7 +187,7 @@ mod imp {
             let color = view.color();
             snapshot.save();
             snapshot.translate(&gtk::graphene::Point::new(x as f32, y as f32));
-            snapshot.append_layout(&layout, &color.with_alpha(color.alpha() * MARKUP_ALPHA));
+            snapshot.append_layout(&layout, &with_alpha(&color, MARKUP_ALPHA));
             snapshot.restore();
         }
     }
@@ -207,7 +209,7 @@ mod imp {
                 .tag_table()
                 .lookup("markup")
                 .expect("the tags are created on construction");
-            let dimmed = color.with_alpha(color.alpha() * MARKUP_ALPHA);
+            let dimmed = with_alpha(&color, MARKUP_ALPHA);
             markup.set_foreground_rgba(Some(&dimmed));
             view.buffer()
                 .tag_table()

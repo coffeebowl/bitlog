@@ -14,7 +14,7 @@ use knotbook_core::{
 
 use crate::alert::show_error;
 use crate::format::{
-    DAY_KINDS, format_date, format_duration, format_full_date, format_time, kind_name,
+    DAY_KINDS, format_date, format_duration, format_full_date, format_span, format_time, kind_name,
 };
 use crate::markdown_view::MarkdownView;
 use crate::project_picker::{project_markup, project_popover};
@@ -312,7 +312,7 @@ impl DayView {
         imp.working_time_label
             .set_label(&format_duration(day.working_time(vault.projects())));
         let hours = match (day.work_start, day.work_end) {
-            (Some(start), Some(end)) => format!("{}–{}", format_time(start), format_time(end)),
+            (Some(start), Some(end)) => format_span(start, end),
             _ => gettext("No work hours"),
         };
         imp.work_hours_label.set_label(&hours);
@@ -814,11 +814,8 @@ impl DayView {
             imp.block_title.set_text(&block.title);
         }
         imp.block_title.set_placeholder_text(Some(project_name));
-        imp.block_time_button.set_label(&format!(
-            "{}–{}",
-            format_time(block.start),
-            format_time(block.end)
-        ));
+        imp.block_time_button
+            .set_label(&format_span(block.start, block.end));
         imp.block_project_label.set_label(&project.map_or_else(
             || glib::markup_escape_text(project_name).to_string(),
             project_markup,

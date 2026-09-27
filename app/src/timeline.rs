@@ -8,6 +8,8 @@ use glib::subclass::Signal;
 use gtk::{gdk, glib, graphene, gsk, pango};
 use knotbook_core::{Block, Day, Vault, minute_of_day};
 
+use crate::colors::{sea_green, with_alpha};
+
 /// Height of one minute. A 15 minute block is just high enough for one line.
 const MINUTE_HEIGHT: f32 = 1.6;
 /// Room above the first and below the last hour line for its label.
@@ -21,8 +23,6 @@ const KNOT_RADIUS: f32 = 5.0;
 const CURRENT_KNOT_RADIUS: f32 = 7.0;
 /// Height of the edges that change start or end of a block when dragged.
 const EDGE: f32 = 6.0;
-/// The accent colour of the brand, used sparingly.
-pub const SEA_GREEN: &str = "#3ba99c";
 
 mod imp {
     use super::*;
@@ -352,8 +352,7 @@ mod imp {
                 }
 
                 let (radius, knot_color) = if is_current {
-                    let color = gdk::RGBA::parse(SEA_GREEN).expect("the colour is valid");
-                    (CURRENT_KNOT_RADIUS, color)
+                    (CURRENT_KNOT_RADIUS, sea_green())
                 } else {
                     (KNOT_RADIUS, foreground)
                 };
@@ -764,8 +763,4 @@ fn append_knot(snapshot: &gtk::Snapshot, y: f32, radius: f32, color: &gdk::RGBA)
     snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bounds, radius));
     snapshot.append_color(color, &bounds);
     snapshot.pop();
-}
-
-fn with_alpha(color: &gdk::RGBA, alpha: f32) -> gdk::RGBA {
-    color.with_alpha(color.alpha() * alpha)
 }

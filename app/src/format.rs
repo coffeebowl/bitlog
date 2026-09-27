@@ -55,6 +55,11 @@ pub fn format_time(time: NaiveTime) -> String {
     time.format("%H:%M").to_string()
 }
 
+/// From `start` to `end`, as in "09:00–10:30".
+pub fn format_span(start: NaiveTime, end: NaiveTime) -> String {
+    format!("{}–{}", format_time(start), format_time(end))
+}
+
 pub fn format_duration(duration: TimeDelta) -> String {
     let total = duration.num_minutes();
     let (hours, minutes) = (total / 60, total % 60);
@@ -108,7 +113,9 @@ pub fn status_name(status: ProjectStatus) -> String {
     }
 }
 
-fn capitalize(text: &str) -> String {
+/// `text` with a capital first letter, as kinds of day and categories are
+/// usually written in lowercase.
+pub fn capitalize(text: &str) -> String {
     let mut chars = text.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
