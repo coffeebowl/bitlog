@@ -10,6 +10,7 @@ use knotbook_index::{Found, IndexError, SearchHit};
 
 use crate::format::format_full_date;
 use crate::search_index::SearchIndex;
+use crate::window::show_action;
 
 /// Search results shown at most.
 const LIMIT: u32 = 50;
@@ -330,18 +331,14 @@ fn command_row(command: &Command) -> (adw::ActionRow, RowAction) {
 }
 
 fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
-    let (icon, place, action, target) = match &hit.found {
-        Found::Block { date, id } => (
+    let (icon, place) = match &hit.found {
+        Found::Block { date, .. } => (
             "x-office-calendar-symbolic",
             format!("{} · {}", gettext("Block"), format_full_date(*date)),
-            "win.show-block",
-            (date.to_string(), id.to_string()).to_variant(),
         ),
         Found::DayNote(date) => (
             "x-office-calendar-symbolic",
             format!("{} · {}", gettext("Day Note"), format_full_date(*date)),
-            "win.show-day",
-            date.to_string().to_variant(),
         ),
         Found::Note(note) => {
             let project = vault
@@ -350,17 +347,11 @@ fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
             (
                 "text-x-generic-symbolic",
                 format!("{} · {project} / {}", gettext("Note"), note.name()),
-                "win.show-note",
-                note.to_string().to_variant(),
             )
         }
-        Found::Task(id) => (
-            "checkbox-checked-symbolic",
-            gettext("Task"),
-            "win.show-task",
-            id.to_string().to_variant(),
-        ),
+        Found::Task(_) => ("checkbox-checked-symbolic", gettext("Task")),
     };
+    let (action, target) = show_action(&hit.found);
     let row = adw::ActionRow::builder()
         .title(snippet_markup(hit))
         .title_lines(1)

@@ -25,7 +25,7 @@ use thiserror::Error;
 
 use crate::content::{insert, remove, sync_projects};
 
-pub use queries::{ProjectBlock, RemoteDays};
+pub use queries::{Backlink, ProjectBlock, RemoteDays};
 pub use search::{Found, SearchHit};
 
 /// The schema, one step per migration. Add steps, never change them.
@@ -670,21 +670,32 @@ mod tests {
         NotePath::new(project.parse().unwrap(), name).unwrap()
     }
 
+    /// Where the backlinks to `target` lie.
+    fn places(index: &Index, target: &NotePath) -> Vec<Found> {
+        let backlinks = index.backlinks(target).unwrap();
+        backlinks.into_iter().map(|link| link.found).collect()
+    }
+
     #[test]
     fn backlinks_come_from_notes_and_days() {
         let (_dir, vault, mut index) = sample_copy();
         let deployment = note_path("infra", "deployment");
+        let backlinks = index.backlinks(&deployment).unwrap();
         assert_eq!(
-            index.backlinks(&deployment).unwrap(),
+            backlinks,
             [
-                Found::Note(note_path("webshop", "checkout-flow")),
-                block(23, "cc33"),
+                Backlink {
+                    found: Found::Note(note_path("webshop", "checkout-flow")),
+                    title: None,
+                },
+                Backlink {
+                    found: block(23, "cc33"),
+                    title: Some("Prepare release deployment".to_owned()),
+                },
             ]
         );
         assert_eq!(
-            index
-                .backlinks(&note_path("webshop", "checkout-flow"))
-                .unwrap(),
+            places(&index, &note_path("webshop", "checkout-flow")),
             [
                 Found::Note(deployment.clone()),
                 Found::Note(note_path("webshop", "payment-provider")),
@@ -702,7 +713,7 @@ mod tests {
             .unwrap();
         index.refresh(&vault).unwrap();
         assert_eq!(
-            index.backlinks(&deployment).unwrap(),
+            places(&index, &deployment),
             [
                 Found::Note(note_path("webshop", "checkout-flow")),
                 block(23, "cc33"),

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use chrono::{NaiveDate, TimeDelta};
 use gtk::{gio, glib};
 use knotbook_core::{NotePath, ProjectSlug, Vault};
-use knotbook_index::{Found, Index, IndexError, ProjectBlock, SearchHit};
+use knotbook_index::{Backlink, Index, IndexError, ProjectBlock, SearchHit};
 
 /// What the project page shows of a project.
 #[derive(Debug)]
@@ -57,7 +57,11 @@ impl SearchIndex {
 
     /// Where the wiki links to `note` lie, after bringing the index up to
     /// date, see [`Index::backlinks`].
-    pub async fn backlinks(&self, vault: &Vault, note: NotePath) -> Result<Vec<Found>, IndexError> {
+    pub async fn backlinks(
+        &self,
+        vault: &Vault,
+        note: NotePath,
+    ) -> Result<Vec<Backlink>, IndexError> {
         self.run(vault, move |index, vault| {
             refresh(index, vault)?;
             index.backlinks(&note)

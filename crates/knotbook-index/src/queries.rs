@@ -36,6 +36,14 @@ impl ProjectBlock {
     }
 }
 
+/// A place with a wiki link to a note.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Backlink {
+    pub found: Found,
+    /// The title of the block the link lies in, if it has one.
+    pub title: Option<String>,
+}
+
 const PROJECT_BLOCK_COLUMNS: &str = "date, id, start_minute, end_minute, title, text";
 
 fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
@@ -165,18 +173,19 @@ impl Index {
     /// Where the wiki links to the note `target` lie: notes by project and
     /// name, then days, newest first, each with its day note before its
     /// block texts. A place with more than one link to `target` comes once.
-    pub fn backlinks(&self, target: &NotePath) -> Result<Vec<Found>, IndexError> {
+    pub fn backlinks(&self, target: &NotePath) -> Result<Vec<Backlink>, IndexError> {
         let mut statement = self.connection.prepare_cached(
-            "SELECT DISTINCT note_project, note_name, date, block FROM links
-             WHERE target_project = ? AND target_name = ?
-             ORDER BY note_project IS NULL, note_project, note_name, date DESC, block",
+            "SELECT DISTINCT l.note_project, l.note_name, l.date, l.block, b.title FROM links l
+             LEFT JOIN blocks b ON b.date = l.date AND b.id = l.block
+             WHERE l.target_project = ? AND l.target_name = ?
+             ORDER BY l.note_project IS NULL, l.note_project, l.note_name, l.date DESC, l.block",
         )?;
-        let sources = statement
+        let backlinks = statement
             .query_map((target.project().as_str(), target.name()), |row| {
                 let project: Option<String> = row.get(0)?;
                 let date: Option<NaiveDate> = row.get(2)?;
                 let block: Option<String> = row.get(3)?;
-                Ok(match (project, date, block) {
+                let found = match (project, date, block) {
                     (Some(_), _, _) => Found::Note(note_path(row, 0, 1)?),
                     (None, Some(date), Some(_)) => Found::Block {
                         date,
@@ -185,10 +194,15 @@ impl Index {
                     (None, Some(date), None) => Found::DayNote(date),
                     // A check of the table keeps links out that lie nowhere.
                     (None, None, _) => unreachable!("a link lies in a note or a day"),
+                };
+                let title: Option<String> = row.get(4)?;
+                Ok(Backlink {
+                    found,
+                    title: title.filter(|title| !title.is_empty()),
                 })
             })?
             .collect::<Result<_, _>>()?;
-        Ok(sources)
+        Ok(backlinks)
     }
 
     /// The remote and hybrid work days of each year that has any, oldest

@@ -9,13 +9,14 @@ use adw::subclass::prelude::*;
 use gettextrs::{gettext, ngettext};
 use gtk::glib;
 use knotbook_core::{NoteFile, NotePath, ReadError, SavedNote, Vault};
-use knotbook_index::Found;
+use knotbook_index::{Backlink, Found};
 
 use crate::conflict_dialog::ConflictDialog;
 use crate::format::format_full_date;
 use crate::markdown_view::MarkdownView;
 use crate::project_view::note_menu;
 use crate::search_index::SearchIndex;
+use crate::window::show_action;
 
 mod imp {
     use super::*;
@@ -26,7 +27,7 @@ mod imp {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub index: RefCell<SearchIndex>,
         /// The places linking to the note, as the popover lists them.
-        pub backlinks: RefCell<Vec<Found>>,
+        pub backlinks: RefCell<Vec<Backlink>>,
         /// Counts the lookups of backlinks, so that an older one finishing
         /// late is dropped.
         pub lookups: Cell<u32>,
@@ -227,8 +228,8 @@ impl NoteView {
                     Vec::new()
                 });
                 imp.backlinks_list.remove_all();
-                for found in &backlinks {
-                    imp.backlinks_list.append(&backlink_row(&vault, found));
+                for backlink in &backlinks {
+                    imp.backlinks_list.append(&backlink_row(&vault, backlink));
                 }
                 let count = u32::try_from(backlinks.len()).unwrap_or(u32::MAX);
                 let label = ngettext("{count} Link", "{count} Links", count)
@@ -244,15 +245,7 @@ impl NoteView {
     fn follow_backlink(&self, index: i32) {
         let imp = self.imp();
         let index = usize::try_from(index).expect("rows in the list have an index");
-        let (action, target) = match &imp.backlinks.borrow()[index] {
-            Found::Note(note) => ("win.show-note", note.to_string().to_variant()),
-            Found::Block { date, id } => (
-                "win.show-block",
-                (date.to_string(), id.to_string()).to_variant(),
-            ),
-            Found::DayNote(date) => ("win.show-day", date.to_string().to_variant()),
-            Found::Task(_) => unreachable!("tasks hold no links"),
-        };
+        let (action, target) = show_action(&imp.backlinks.borrow()[index].found);
         imp.backlinks_button.popdown();
         WidgetExt::activate_action(self, action, Some(&target))
             .expect("the window shows notes and days");
@@ -359,27 +352,19 @@ fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
         .collect()
 }
 
-/// A row naming the note, block or day note `found`, which links to a note.
-fn backlink_row(vault: &Vault, found: &Found) -> adw::ActionRow {
-    let (title, subtitle) = match found {
+/// A row naming the note, block or day note of `backlink`.
+fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
+    let (title, subtitle) = match &backlink.found {
         Found::Note(note) => {
             let project = vault
                 .project(note.project())
                 .map_or(note.project().as_str(), |project| &project.name);
             (note.name().to_owned(), project.to_owned())
         }
-        Found::Block { date, id } => {
-            // The index knows no titles; reading a day is quick.
-            let title = vault
-                .load_day(*date)
-                .ok()
-                .flatten()
-                .and_then(|file| file.day.blocks.into_iter().find(|block| block.id == *id))
-                .map(|block| block.title)
-                .filter(|title| !title.is_empty())
-                .unwrap_or_else(|| gettext("Block"));
-            (title, format_full_date(*date))
-        }
+        Found::Block { date, .. } => (
+            backlink.title.clone().unwrap_or_else(|| gettext("Block")),
+            format_full_date(*date),
+        ),
         Found::DayNote(date) => (gettext("Day Note"), format_full_date(*date)),
         Found::Task(_) => unreachable!("tasks hold no links"),
     };

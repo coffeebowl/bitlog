@@ -11,6 +11,7 @@ use knotbook_core::{
     BlockId, ConflictCopy, NotePath, ReadError, TaskId, Vault, VaultChange, VaultWatcher,
     WatchError,
 };
+use knotbook_index::Found;
 
 use crate::calendar_view::CalendarView;
 use crate::config;
@@ -43,6 +44,20 @@ const VAULT_ACTIONS: [&str; 17] = [
     "win.search",
     "win.resolve-conflict",
 ];
+
+/// The window action that shows `found`, with its target, as the actions
+/// below read it.
+pub fn show_action(found: &Found) -> (&'static str, glib::Variant) {
+    match found {
+        Found::Block { date, id } => (
+            "win.show-block",
+            (date.to_string(), id.to_string()).to_variant(),
+        ),
+        Found::DayNote(date) => ("win.show-day", date.to_string().to_variant()),
+        Found::Note(note) => ("win.show-note", note.to_string().to_variant()),
+        Found::Task(id) => ("win.show-task", id.to_string().to_variant()),
+    }
+}
 
 mod imp {
     use super::*;

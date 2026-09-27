@@ -8,13 +8,14 @@ use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
 use knotbook_core::{Commit, NotePath, Project, ProjectSlug, Vault, git_log};
-use knotbook_index::ProjectBlock;
+use knotbook_index::{Found, ProjectBlock};
 
 use crate::calendar_view::week_start;
 use crate::format::{format_duration, format_full_date, format_share, format_time};
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::search_index::{ProjectData, SearchIndex};
+use crate::window::show_action;
 
 /// Blocks the timeline shows at first and adds with "Load More".
 const BLOCKS_AT_ONCE: u32 = 50;
@@ -291,9 +292,9 @@ impl ProjectView {
                     format_full_date(block.date)
                 ));
                 // The target first, which the action needs.
-                imp.longest_row
-                    .set_action_target_value(Some(&block_target(block)));
-                imp.longest_row.set_action_name(Some("win.show-block"));
+                let (action, target) = block_action(block);
+                imp.longest_row.set_action_target_value(Some(&target));
+                imp.longest_row.set_action_name(Some(action));
                 imp.longest_row.set_activatable(true);
             }
             None => {
@@ -479,9 +480,12 @@ fn month_of(date: NaiveDate) -> (NaiveDate, NaiveDate) {
     (first, last)
 }
 
-/// The target of `win.show-block` for `block`.
-fn block_target(block: &ProjectBlock) -> glib::Variant {
-    (block.date.to_string(), block.id.to_string()).to_variant()
+/// The window action that shows `block`, with its target.
+fn block_action(block: &ProjectBlock) -> (&'static str, glib::Variant) {
+    show_action(&Found::Block {
+        date: block.date,
+        id: block.id.clone(),
+    })
 }
 
 /// A block in the timeline: its title, when it was and its text, opening
@@ -532,11 +536,12 @@ fn block_row(block: &ProjectBlock) -> gtk::ListBoxRow {
         text.set_margin_top(6);
         content.append(&text);
     }
+    let (action, target) = block_action(block);
     gtk::ListBoxRow::builder()
         .child(&content)
         .activatable(true)
-        .action_target(&block_target(block))
-        .action_name("win.show-block")
+        .action_target(&target)
+        .action_name(action)
         .build()
 }
 
