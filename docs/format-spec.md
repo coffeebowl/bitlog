@@ -100,7 +100,7 @@ Only `format` is required. Missing fields take these defaults:
 | `grid.day_end` | `19:00:00` | TOML local time |
 | `locations` | none | keys are location keys, values display names |
 | `defaults.location` | none | a key from `[locations]`; the location of new days |
-| `defaults.note_template` | none | path relative to the vault |
+| `defaults.note_template` | none | path of a file in the vault, relative to it, without `..` |
 
 A new vault is created with the locations `remote`, `office` and `hybrid`
 as in the example; `hybrid` is meant for days spent partly in each place.

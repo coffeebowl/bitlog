@@ -1,7 +1,7 @@
 //! The vault configuration, `knotbook.toml`.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use chrono::{NaiveTime, Timelike, Weekday};
 use serde::{Deserialize, Deserializer};
@@ -240,8 +240,26 @@ impl VaultConfig {
                 "defaults.location {location:?} is not listed in [locations]"
             ));
         }
+        // New notes are made from the template, so it must not reach out of
+        // the vault and copy other files into it.
+        if let Some(template) = &self.defaults.note_template
+            && !is_inside(template)
+        {
+            return Err(format!(
+                "defaults.note_template {:?} must be a file in the vault, relative to it",
+                template.display().to_string()
+            ));
+        }
         Ok(())
     }
+}
+
+/// Whether `path`, relative to the vault, names a file inside it.
+fn is_inside(path: &Path) -> bool {
+    path.file_name().is_some()
+        && path
+            .components()
+            .all(|part| matches!(part, Component::Normal(_) | Component::CurDir))
 }
 
 /// The table `section` of `document`, or the document itself for `None`.
@@ -370,6 +388,12 @@ mod tests {
         .unwrap();
         assert_eq!(config.week.first_day, Weekday::Sun);
         assert_eq!(config.grid.day_start, time(6, 30));
+        let config =
+            VaultConfig::parse("format = 1\n[defaults]\nnote_template = \"./note.md\"").unwrap();
+        assert_eq!(
+            config.defaults.note_template,
+            Some(PathBuf::from("./note.md"))
+        );
     }
 
     #[test]
@@ -386,6 +410,10 @@ mod tests {
             "format = 1\n[week]\ntarget_hours = -1.0",
             "format = 1\n[locations]\nHome = \"Home\"",
             "format = 1\n[defaults]\nlocation = \"office\"",
+            "format = 1\n[defaults]\nnote_template = \"/etc/passwd\"",
+            "format = 1\n[defaults]\nnote_template = \"../note.md\"",
+            "format = 1\n[defaults]\nnote_template = \"templates/../../note.md\"",
+            "format = 1\n[defaults]\nnote_template = \"\"",
         ] {
             assert!(VaultConfig::parse(text).is_err(), "{text:?}");
         }
