@@ -9,12 +9,9 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use crate::conflict::Merger;
 use crate::error::ReadError;
-use crate::file::{content_hash, parse_text};
+use crate::file::{FORMAT, check_format, content_hash, parse_text, read_optional};
 use crate::toml_values::{local_date, same_item, set, set_date};
 use crate::{Contradiction, EditError, TaskId};
-
-/// The only format version this code knows.
-const FORMAT: u32 = 1;
 
 /// Task fields of format version 1. Everything else is kept as is.
 const KNOWN_FIELDS: [&str; 6] = ["id", "title", "status", "created", "due", "done"];
@@ -271,6 +268,14 @@ impl TaskList {
         self.tasks.sort_by_key(|task| !task.is_open());
     }
 
+    /// Reads the task file at `path`, a list empty while there is no file.
+    pub(crate) fn load(path: &Path) -> Result<Self, ReadError> {
+        match read_optional(path)? {
+            Some(text) => Self::read(path, &text),
+            None => Ok(Self::default()),
+        }
+    }
+
     /// Reads the content `text` of the task file at `path`.
     pub(crate) fn read(path: &Path, text: &str) -> Result<Self, ReadError> {
         parse_text(path, text, Self::parse)
@@ -288,9 +293,7 @@ impl TaskList {
             .parse()
             .map_err(|err: toml_edit::TomlError| err.to_string())?;
 
-        if file.format != FORMAT {
-            return Err(format!("unsupported format version {}", file.format));
-        }
+        check_format(file.format)?;
         let mut ids = HashSet::new();
         if let Some(task) = file.task.iter().find(|task| !ids.insert(&task.id)) {
             return Err(format!("task id {} is used twice", task.id));

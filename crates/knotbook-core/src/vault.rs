@@ -1,14 +1,12 @@
 //! Read access to a whole vault.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Months, NaiveDate};
 
 use crate::error::{ReadError, SaveError};
-use crate::file::{content_hash, read_optional, read_text, write_atomic};
+use crate::file::{content_hash, read_folder, read_optional, read_text, write_atomic};
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
 use crate::{Day, DayWarning, EditError, Project, ProjectSlug, TaskList, VaultConfig};
 
@@ -125,11 +123,7 @@ impl Vault {
 
     /// Where the file of the day `date` lives.
     pub fn day_path(&self, date: NaiveDate) -> PathBuf {
-        self.root
-            .join("daily")
-            .join(format!("{:04}", date.year()))
-            .join(format!("{:02}", date.month()))
-            .join(format!("{}.md", date.format("%Y-%m-%d")))
+        self.root.join(day_file(date))
     }
 
     /// Reads the day `date`, or returns `None` if there is no file for it.
@@ -255,11 +249,7 @@ impl Vault {
 
     /// Reads the global task list, which is empty while there is no file.
     pub fn load_tasks(&self) -> Result<TaskList, ReadError> {
-        let path = self.tasks_path();
-        match read_optional(&path)? {
-            Some(text) => TaskList::read(&path, &text),
-            None => Ok(TaskList::default()),
-        }
+        TaskList::load(&self.tasks_path())
     }
 
     /// Applies `change` to the task list `tasks` and saves it. The file is
@@ -291,11 +281,7 @@ impl Vault {
         // twice rather than lost.
         for (year, finished) in years {
             let path = self.task_archive_path(year);
-            let text = read_optional(&path)?;
-            let mut archive = match &text {
-                Some(text) => TaskList::read(&path, text)?,
-                None => TaskList::default(),
-            };
+            let mut archive = TaskList::load(&path)?;
             for task in finished {
                 archive.push_finished(task);
             }
@@ -385,23 +371,8 @@ impl Vault {
 
     /// All dates with a day file, oldest first.
     pub fn all_days(&self) -> Result<Vec<NaiveDate>, ReadError> {
-        let folder = self.root().join("daily");
-        let entries = match fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(source) => {
-                return Err(ReadError::Io {
-                    path: folder,
-                    source,
-                });
-            }
-        };
         let mut dates = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(|source| ReadError::Io {
-                path: folder.clone(),
-                source,
-            })?;
+        for entry in read_folder(&self.root().join("daily"))? {
             let year = entry
                 .file_name()
                 .to_str()
@@ -416,6 +387,14 @@ impl Vault {
         dates.sort();
         Ok(dates)
     }
+}
+
+/// Where the file of the day `date` lies, relative to the vault.
+pub(crate) fn day_file(date: NaiveDate) -> PathBuf {
+    Path::new("daily")
+        .join(format!("{:04}", date.year()))
+        .join(format!("{:02}", date.month()))
+        .join(format!("{}.md", date.format("%Y-%m-%d")))
 }
 
 /// The date of a day file named `name`. Only names of the exact form
@@ -433,22 +412,12 @@ pub(crate) fn day_file_date(name: &str) -> Option<NaiveDate> {
 /// Only names of the exact form `YYYY-MM-DD.md` of that month count, which
 /// leaves out sync conflict copies and any other file.
 fn day_files(folder: &Path) -> Result<Vec<NaiveDate>, ReadError> {
-    let io_error = |source| ReadError::Io {
-        path: folder.to_owned(),
-        source,
-    };
-    let entries = match fs::read_dir(folder) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(err) => return Err(io_error(err)),
-    };
     let mut dates = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(io_error)?;
+    for entry in read_folder(folder)? {
         let Some(date) = entry.file_name().to_str().and_then(day_file_date) else {
             continue;
         };
-        if folder.ends_with(format!("{:04}/{:02}", date.year(), date.month())) {
+        if folder.ends_with(day_file(date).parent().expect("day files lie in a folder")) {
             dates.push(date);
         }
     }
@@ -458,6 +427,7 @@ fn day_files(folder: &Path) -> Result<Vec<NaiveDate>, ReadError> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::fs;
 
     use chrono::TimeDelta;
 

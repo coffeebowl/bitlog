@@ -8,6 +8,18 @@ use std::path::Path;
 use crate::conflict::has_git_markers;
 use crate::error::{ReadError, SaveError};
 
+/// The only format version of vault files this code knows.
+pub(crate) const FORMAT: u32 = 1;
+
+/// Whether `format`, the version a file gives, is the one this code knows.
+pub(crate) fn check_format(format: u32) -> Result<(), String> {
+    if format == FORMAT {
+        Ok(())
+    } else {
+        Err(format!("unsupported format version {format}"))
+    }
+}
+
 /// Reads `path` and parses it, attaching the path to any error.
 pub(crate) fn read_file<T>(
     path: &Path,
@@ -33,6 +45,19 @@ pub(crate) fn read_optional(path: &Path) -> Result<Option<String>, ReadError> {
             path: path.to_owned(),
             source,
         }),
+    }
+}
+
+/// The entries of the folder `path`, or none if there is no such folder.
+pub(crate) fn read_folder(path: &Path) -> Result<Vec<fs::DirEntry>, ReadError> {
+    let io_error = |source| ReadError::Io {
+        path: path.to_owned(),
+        source,
+    };
+    match fs::read_dir(path) {
+        Ok(entries) => entries.collect::<Result<_, _>>().map_err(io_error),
+        Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(err) => Err(io_error(err)),
     }
 }
 

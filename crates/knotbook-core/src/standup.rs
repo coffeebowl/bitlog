@@ -3,7 +3,6 @@
 use chrono::{Datelike, NaiveDate};
 
 use crate::error::ReadError;
-use crate::file::read_optional;
 use crate::{Day, ProjectSlug, TaskList, TaskStatus, Vault};
 
 impl Vault {
@@ -92,11 +91,7 @@ impl Vault {
 
     /// The titles of the tasks done on `date`, also those archived since.
     fn tasks_done_on(&self, date: NaiveDate) -> Result<Vec<String>, ReadError> {
-        let path = self.task_archive_path(date.year());
-        let archive = match read_optional(&path)? {
-            Some(text) => TaskList::read(&path, &text)?,
-            None => TaskList::default(),
-        };
+        let archive = TaskList::load(&self.task_archive_path(date.year()))?;
         let tasks = self.load_tasks()?;
         Ok(tasks
             .tasks()

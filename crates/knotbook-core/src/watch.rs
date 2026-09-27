@@ -7,14 +7,14 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{fmt, fs, thread};
 
-use chrono::{Datelike, NaiveDate};
+use chrono::NaiveDate;
 use notify::event::{AccessKind, AccessMode};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use thiserror::Error;
 
 use crate::conflict::copy_of;
 use crate::file::content_hash;
-use crate::vault::day_file_date;
+use crate::vault::{day_file, day_file_date};
 use crate::{NotePath, ProjectSlug};
 
 /// Long enough to see a sync tool's burst of writes as one change.
@@ -178,11 +178,8 @@ impl VaultChange {
                     .ok()
                     .map(VaultChange::Note)
             }
-            ["daily", year, month, name] => day_file_date(name)
-                .filter(|date| {
-                    *year == format!("{:04}", date.year())
-                        && *month == format!("{:02}", date.month())
-                })
+            ["daily", _, _, name] => day_file_date(name)
+                .filter(|date| relative == day_file(*date))
                 .map(VaultChange::Day),
             _ => None,
         }

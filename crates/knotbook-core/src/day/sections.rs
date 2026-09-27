@@ -15,17 +15,10 @@ pub(super) struct Body<'a> {
 }
 
 pub(super) struct Section<'a> {
-    pub id: BlockId,
+    /// The id of the block, as the marker of its heading gives it.
+    pub id: &'a str,
     pub title: &'a str,
     pub text: &'a str,
-}
-
-/// A block heading: where its line starts and ends, its title and its block.
-struct Boundary<'a> {
-    start: usize,
-    end: usize,
-    title: &'a str,
-    id: BlockId,
 }
 
 pub(super) fn split<'a>(body: &'a str, date: NaiveDate, ids: &[BlockId]) -> Body<'a> {
@@ -40,7 +33,7 @@ pub(super) fn split<'a>(body: &'a str, date: NaiveDate, ids: &[BlockId]) -> Body
         .map(|(i, boundary)| {
             let text_end = boundaries.get(i + 1).map_or(body.len(), |next| next.start);
             Section {
-                id: boundary.id.clone(),
+                id: boundary.marker,
                 title: boundary.title,
                 text: trim_blank_lines(&body[boundary.end..text_end]),
             }
@@ -91,18 +84,16 @@ fn marker_headings(text: &str) -> Vec<MarkerHeading<'_>> {
 
 /// Finds the headings that start a block: the first marker heading of each
 /// known block.
-fn find_boundaries<'a>(body: &'a str, ids: &[BlockId]) -> (Vec<Boundary<'a>>, Vec<DayWarning>) {
+fn find_boundaries<'a>(
+    body: &'a str,
+    ids: &[BlockId],
+) -> (Vec<MarkerHeading<'a>>, Vec<DayWarning>) {
     let mut boundaries = Vec::new();
     let mut warnings = Vec::new();
     let mut seen = HashSet::new();
     for heading in marker_headings(body) {
         match ids.iter().find(|id| id.as_str() == heading.marker) {
-            Some(id) if seen.insert(id) => boundaries.push(Boundary {
-                start: heading.start,
-                end: heading.end,
-                title: heading.title,
-                id: id.clone(),
-            }),
+            Some(id) if seen.insert(id) => boundaries.push(heading),
             Some(id) => warnings.push(DayWarning::DuplicateMarker { id: id.clone() }),
             None => warnings.push(DayWarning::UnknownMarker {
                 id: heading.marker.to_owned(),

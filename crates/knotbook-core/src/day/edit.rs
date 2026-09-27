@@ -116,11 +116,11 @@ impl Day {
         if block.start == block.end {
             return Err(EditError::EmptyBlock);
         }
-        let (start, end) = block.span();
-        match self.blocks.iter().find(|other| {
-            let (other_start, other_end) = other.span();
-            other.id != block.id && start < other_end && other_start < end
-        }) {
+        match self
+            .blocks
+            .iter()
+            .find(|other| other.id != block.id && other.overlaps(block))
+        {
             Some(other) => Err(EditError::Overlap(other.id.clone())),
             None => Ok(()),
         }

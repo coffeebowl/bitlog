@@ -11,7 +11,7 @@ use chrono::format::StrftimeItems;
 use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
 
 use crate::error::{ReadError, SaveError};
-use crate::file::{content_hash, read_optional, read_text};
+use crate::file::{content_hash, read_folder, read_optional, read_text};
 use crate::{EditError, NotePath, ProjectSlug, Vault};
 
 /// A project note as read, remembering the file's content to notice
@@ -138,32 +138,22 @@ fn instantiate(template: &str, title: &str, project: &str, today: NaiveDate) -> 
 impl Vault {
     /// Where the note `note` lives.
     pub fn note_path(&self, note: &NotePath) -> PathBuf {
+        self.notes_folder(note.project())
+            .join(format!("{}.md", note.name()))
+    }
+
+    /// Where the notes of the project `project` live.
+    fn notes_folder(&self, project: &ProjectSlug) -> PathBuf {
         self.root()
             .join("projects")
-            .join(note.project().as_str())
+            .join(project.as_str())
             .join("notes")
-            .join(format!("{}.md", note.name()))
     }
 
     /// The notes of the project `project`, sorted by name.
     pub fn notes(&self, project: &ProjectSlug) -> Result<Vec<NotePath>, ReadError> {
-        let folder = self
-            .root()
-            .join("projects")
-            .join(project.as_str())
-            .join("notes");
-        let io_error = |source| ReadError::Io {
-            path: folder.clone(),
-            source,
-        };
-        let entries = match fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(err) => return Err(io_error(err)),
-        };
         let mut notes = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(io_error)?;
+        for entry in read_folder(&self.notes_folder(project))? {
             let note = entry
                 .file_name()
                 .to_str()

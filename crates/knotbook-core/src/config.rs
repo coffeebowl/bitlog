@@ -3,17 +3,14 @@
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
 
-use chrono::{NaiveTime, Timelike, Weekday};
-use serde::{Deserialize, Deserializer};
+use chrono::{NaiveTime, Weekday};
+use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::LocationKey;
 use crate::error::ReadError;
-use crate::file::{content_hash, parse_text, read_file};
-use crate::toml_values::set;
-
-/// The only format version this code knows.
-const FORMAT: u32 = 1;
+use crate::file::{FORMAT, check_format, content_hash, parse_text, read_file};
+use crate::toml_values::{local_time, set, toml_time};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VaultConfig {
@@ -88,28 +85,6 @@ impl Default for GridConfig {
             day_start: NaiveTime::from_hms_opt(7, 0, 0).expect("valid time"),
             day_end: NaiveTime::from_hms_opt(19, 0, 0).expect("valid time"),
         }
-    }
-}
-
-/// Reads a TOML local time such as `07:00:00`.
-fn local_time<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveTime, D::Error> {
-    use serde::de::Error;
-
-    let value = toml::value::Datetime::deserialize(deserializer)?;
-    match value {
-        toml::value::Datetime {
-            date: None,
-            time: Some(time),
-            offset: None,
-        } => NaiveTime::from_hms_opt(
-            time.hour.into(),
-            time.minute.into(),
-            time.second.unwrap_or(0).into(),
-        )
-        .ok_or_else(|| D::Error::custom(format!("invalid time {value}"))),
-        _ => Err(D::Error::custom(format!(
-            "expected a time of day like 07:00:00, found {value}"
-        ))),
     }
 }
 
@@ -217,9 +192,7 @@ impl VaultConfig {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if self.format != FORMAT {
-            return Err(format!("unsupported format version {}", self.format));
-        }
+        check_format(self.format)?;
         if self.week.target_hours < 0.0 {
             return Err("week.target_hours must not be negative".to_owned());
         }
@@ -318,20 +291,6 @@ fn weekday_name(weekday: Weekday) -> &'static str {
         Weekday::Fri => "fri",
         Weekday::Sat => "sat",
         Weekday::Sun => "sun",
-    }
-}
-
-fn toml_time(time: NaiveTime) -> toml_edit::Datetime {
-    let part = |value: u32| u8::try_from(value).expect("time parts fit into u8");
-    toml_edit::Datetime {
-        date: None,
-        time: Some(toml_edit::Time {
-            hour: part(time.hour()),
-            minute: part(time.minute()),
-            second: Some(part(time.second())),
-            nanosecond: None,
-        }),
-        offset: None,
     }
 }
 

@@ -1,6 +1,6 @@
 //! Reading and writing values of the TOML files a vault holds.
 
-use chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate, NaiveTime, Timelike};
 use serde::{Deserialize, Deserializer};
 use toml_edit::{Item, Table, Value};
 
@@ -33,6 +33,44 @@ pub(crate) fn toml_date(date: NaiveDate) -> toml_edit::Datetime {
             day: u8::try_from(date.day()).expect("days fit into u8"),
         }),
         time: None,
+        offset: None,
+    }
+}
+
+/// Reads a TOML local time such as `07:00:00`.
+pub(crate) fn local_time<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<NaiveTime, D::Error> {
+    use serde::de::Error;
+
+    let value = toml::value::Datetime::deserialize(deserializer)?;
+    match value {
+        toml::value::Datetime {
+            date: None,
+            time: Some(time),
+            offset: None,
+        } => NaiveTime::from_hms_opt(
+            time.hour.into(),
+            time.minute.into(),
+            time.second.unwrap_or(0).into(),
+        )
+        .ok_or_else(|| D::Error::custom(format!("invalid time {value}"))),
+        _ => Err(D::Error::custom(format!(
+            "expected a time of day like 07:00:00, found {value}"
+        ))),
+    }
+}
+
+pub(crate) fn toml_time(time: NaiveTime) -> toml_edit::Datetime {
+    let part = |value: u32| u8::try_from(value).expect("time parts fit into u8");
+    toml_edit::Datetime {
+        date: None,
+        time: Some(toml_edit::Time {
+            hour: part(time.hour()),
+            minute: part(time.minute()),
+            second: Some(part(time.second())),
+            nanosecond: None,
+        }),
         offset: None,
     }
 }

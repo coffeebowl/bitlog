@@ -1,7 +1,5 @@
 //! Creating new vaults.
 
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
@@ -9,7 +7,7 @@ use thiserror::Error;
 use toml_edit::DocumentMut;
 
 use crate::error::{ReadError, SaveError};
-use crate::file::{read_optional, write_atomic};
+use crate::file::{read_folder, read_optional, write_atomic};
 use crate::{Project, Vault};
 
 const CONFIG: &str = include_str!("init/knotbook.toml");
@@ -58,22 +56,8 @@ impl Vault {
 }
 
 fn check_empty(root: &Path) -> Result<(), CreateError> {
-    let io_error = |source| ReadError::Io {
-        path: root.to_owned(),
-        source,
-    };
-    let entries = match fs::read_dir(root) {
-        Ok(entries) => entries,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(()),
-        Err(err) => return Err(io_error(err).into()),
-    };
-    for entry in entries {
-        if !entry
-            .map_err(io_error)?
-            .file_name()
-            .to_string_lossy()
-            .starts_with('.')
-        {
+    for entry in read_folder(root)? {
+        if !entry.file_name().to_string_lossy().starts_with('.') {
             return Err(CreateError::NotEmpty {
                 path: root.to_owned(),
             });
@@ -98,6 +82,8 @@ fn add_line(path: &Path, line: &str) -> Result<(), SaveError> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
     use crate::file::TempDir;
 

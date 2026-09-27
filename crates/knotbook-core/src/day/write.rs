@@ -3,7 +3,8 @@
 use chrono::NaiveTime;
 
 use super::sections::escape_block_headings;
-use super::{Block, BlockId, Day, FORMAT};
+use super::{Block, BlockId, Day};
+use crate::file::FORMAT;
 
 impl Day {
     /// The content of the day file. The front matter is written in canonical

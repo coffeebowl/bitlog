@@ -1,6 +1,6 @@
 //! Merging a conflict copy of a day into the day.
 
-use super::{Block, Day};
+use super::Day;
 use crate::Contradiction;
 use crate::conflict::{Merger, take};
 
@@ -56,15 +56,10 @@ impl Day {
                 });
                 continue;
             }
-            let (start, end) = theirs.span();
-            let overlaps = |ours: &Block| {
-                let (ours_start, ours_end) = ours.span();
-                ours_start < end && start < ours_end
-            };
-            if !self.blocks.iter().any(overlaps) {
+            if !self.blocks.iter().any(|ours| ours.overlaps(theirs)) {
                 added.push(theirs.clone());
             } else if merger.contradiction(Contradiction::Overlap(theirs.id.clone())) {
-                self.blocks.retain(|ours| !overlaps(ours));
+                self.blocks.retain(|ours| !ours.overlaps(theirs));
                 added.push(theirs.clone());
             }
         }

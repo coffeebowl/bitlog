@@ -1,7 +1,5 @@
 //! Projects, `projects/<slug>/project.toml`.
 
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -10,12 +8,9 @@ use serde::Deserialize;
 use toml_edit::DocumentMut;
 
 use crate::error::ReadError;
-use crate::file::{content_hash, parse_text, read_file};
+use crate::file::{FORMAT, check_format, content_hash, parse_text, read_file, read_folder};
 use crate::toml_values::{local_date, set, set_date};
 use crate::{EditError, ProjectSlug};
-
-/// The only format version this code knows.
-const FORMAT: u32 = 1;
 
 const DEFAULT_COLOR: &str = "#3584e4";
 const DEFAULT_CATEGORY: &str = "work";
@@ -179,19 +174,8 @@ impl Project {
     /// Only folders below `projects/` whose name is a valid slug and that
     /// contain a `project.toml` are projects. Everything else is ignored.
     pub fn load_all(vault: &Path) -> Result<Vec<Self>, ReadError> {
-        let folder = vault.join("projects");
-        let io_error = |source| ReadError::Io {
-            path: folder.clone(),
-            source,
-        };
-        let entries = match fs::read_dir(&folder) {
-            Ok(entries) => entries,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(err) => return Err(io_error(err)),
-        };
         let mut projects = Vec::new();
-        for entry in entries {
-            let entry = entry.map_err(io_error)?;
+        for entry in read_folder(&vault.join("projects"))? {
             let Some(slug) = entry
                 .file_name()
                 .to_str()
@@ -214,9 +198,7 @@ impl Project {
             .parse()
             .map_err(|err: toml_edit::TomlError| err.to_string())?;
 
-        if file.format != FORMAT {
-            return Err(format!("unsupported format version {}", file.format));
-        }
+        check_format(file.format)?;
         let color = file.color.unwrap_or_else(|| DEFAULT_COLOR.to_owned());
         if !is_color(&color) {
             return Err(format!("color must look like \"#3584e4\", found {color:?}"));
@@ -254,6 +236,8 @@ impl Project {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use super::*;
 
     fn sample_vault() -> PathBuf {

@@ -13,13 +13,10 @@ use chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
 use serde::{Deserialize, Deserializer};
 
 use crate::error::ReadError;
-use crate::file::parse_text;
+use crate::file::{check_format, parse_text};
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
 pub use edit::RemovedText;
-
-/// The only format version this code knows.
-const FORMAT: u32 = 1;
 
 /// Front matter fields of format version 1. Everything else is kept as is.
 const KNOWN_FIELDS: [&str; 8] = [
@@ -101,6 +98,12 @@ impl Block {
 
     pub fn duration(&self) -> TimeDelta {
         TimeDelta::minutes(minutes_until(self.start, self.end).into())
+    }
+
+    /// Whether this block and `other` share some time of the day.
+    pub fn overlaps(&self, other: &Block) -> bool {
+        let ((start, end), (other_start, other_end)) = (self.span(), other.span());
+        start < other_end && other_start < end
     }
 
     /// Whether the block belongs to a `break` project. Blocks of projects
@@ -245,7 +248,7 @@ impl Day {
         for section in parsed.sections {
             let block = blocks
                 .iter_mut()
-                .find(|block| block.id == section.id)
+                .find(|block| block.id.as_str() == section.id)
                 .expect("sections only exist for known blocks");
             block.title = section.title.to_owned();
             block.text = section.text.to_owned();
@@ -316,12 +319,7 @@ fn split_front_matter(text: &str) -> Result<(&str, &str), String> {
 }
 
 fn validate(front_matter: &FrontMatter) -> Result<(), String> {
-    if front_matter.format != FORMAT {
-        return Err(format!(
-            "unsupported format version {}",
-            front_matter.format
-        ));
-    }
+    check_format(front_matter.format)?;
     if let Some(energy) = front_matter.energy
         && !(1..=5).contains(&energy)
     {
