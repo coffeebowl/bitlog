@@ -1,33 +1,10 @@
 //! Time per project and remote work days as the terminal shows them.
 
-use chrono::{Datelike, Days, Months, NaiveDate, TimeDelta, Weekday};
+use chrono::{Datelike, NaiveDate, TimeDelta};
 use knotbook_core::{ProjectSlug, Vault};
 use knotbook_index::RemoteDays;
 
 use crate::day::format_duration;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Period {
-    Week,
-    Month,
-    Year,
-}
-
-/// The first and last day of the `period` that holds `today`. Weeks start
-/// on `first_day`.
-pub fn current(period: Period, today: NaiveDate, first_day: Weekday) -> (NaiveDate, NaiveDate) {
-    let first = match period {
-        Period::Week => today - Days::new(today.weekday().days_since(first_day).into()),
-        Period::Month => today.with_day(1).expect("every month has a first day"),
-        Period::Year => today.with_ordinal(1).expect("every year has a first day"),
-    };
-    let next = match period {
-        Period::Week => first + Days::new(7),
-        Period::Month => first + Months::new(1),
-        Period::Year => first + Months::new(12),
-    };
-    (first, next.pred_opt().expect("the day before exists"))
-}
 
 /// The period, a table of the time per project without breaks, most
 /// first, with each project's share, the total and the breaks, then the
@@ -98,36 +75,6 @@ mod tests {
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(year, month, day).unwrap()
-    }
-
-    #[test]
-    fn current_periods() {
-        // A Wednesday.
-        let today = date(2026, 9, 23);
-        assert_eq!(
-            current(Period::Week, today, Weekday::Mon),
-            (date(2026, 9, 21), date(2026, 9, 27))
-        );
-        assert_eq!(
-            current(Period::Week, today, Weekday::Sun),
-            (date(2026, 9, 20), date(2026, 9, 26))
-        );
-        assert_eq!(
-            current(Period::Week, date(2026, 9, 21), Weekday::Mon).0,
-            date(2026, 9, 21)
-        );
-        assert_eq!(
-            current(Period::Month, today, Weekday::Mon),
-            (date(2026, 9, 1), date(2026, 9, 30))
-        );
-        assert_eq!(
-            current(Period::Month, date(2028, 2, 10), Weekday::Mon),
-            (date(2028, 2, 1), date(2028, 2, 29))
-        );
-        assert_eq!(
-            current(Period::Year, today, Weekday::Mon),
-            (date(2026, 1, 1), date(2026, 12, 31))
-        );
     }
 
     #[test]

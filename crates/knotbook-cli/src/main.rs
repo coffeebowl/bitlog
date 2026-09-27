@@ -10,14 +10,13 @@ use anyhow::{Context, Result, bail};
 use chrono::{Local, NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
 use knotbook_core::{
-    BlockId, LocationKey, Problem, ProjectSlug, ProjectStatus, RemovedText, TaskId, TaskStatus,
-    Vault,
+    BlockId, LocationKey, Period, Problem, ProjectSlug, ProjectStatus, RemovedText, TaskId,
+    TaskStatus, Vault, week_start,
 };
 use knotbook_index::{Index, export};
 
 use crate::edit::{BlockChanges, DayChanges, parse_span};
 use crate::project::ProjectChanges;
-use crate::stats::Period;
 use crate::task::TaskChanges;
 
 mod day;
@@ -389,7 +388,7 @@ fn main() -> Result<()> {
                     } else {
                         Period::Month
                     };
-                    stats::current(period, today, vault.config().week.first_day)
+                    period.range(today, vault.config().week.first_day)
                 }
             };
             stats(&vault, period)
@@ -454,7 +453,7 @@ fn export(vault: &Vault, command: ExportCommand, today: NaiveDate) -> Result<()>
         ),
         ExportCommand::Week { date } => {
             let date = date.unwrap_or(today);
-            let (first, _) = stats::current(Period::Week, date, vault.config().week.first_day);
+            let first = week_start(date, vault.config().week.first_day);
             (
                 export::week_file_name(first),
                 export::week_report(vault, first)?,

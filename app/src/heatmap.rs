@@ -6,8 +6,8 @@ use adw::subclass::prelude::*;
 use chrono::{Datelike, Days, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{gdk, glib, graphene, gsk};
+use knotbook_core::week_start;
 
-use crate::calendar_view::week_start;
 use crate::format::{format_date, format_duration, format_full_date};
 
 /// Weeks shown for the last 12 months, and before anything is shown.

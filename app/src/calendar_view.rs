@@ -5,10 +5,10 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use std::collections::BTreeMap;
 
-use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta, Weekday};
+use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, glib, pango};
-use knotbook_core::{DayFile, ProjectSlug, Vault};
+use knotbook_core::{DayFile, Period, ProjectSlug, Vault, week_start};
 
 use crate::format::{format_date, format_duration, format_full_date, kind_name};
 use crate::week_chart::{ChartDay, WeekChart};
@@ -111,16 +111,13 @@ impl CalendarView {
 
     /// Shows the month or week `steps` months or weeks after the one shown.
     pub fn step(&self, steps: i32) {
-        let date = self.imp().date.get();
-        let unreachable = "nobody steps this way to the end of the calendar";
-        let date = if self.imp().view_toggle.active_name().as_deref() == Some("week") {
-            date.checked_add_signed(TimeDelta::weeks(steps.into()))
-        } else if steps < 0 {
-            date.checked_sub_months(Months::new(steps.unsigned_abs()))
+        let period = if self.imp().view_toggle.active_name().as_deref() == Some("week") {
+            Period::Week
         } else {
-            date.checked_add_months(Months::new(steps.unsigned_abs()))
+            Period::Month
         };
-        self.show(date.expect(unreachable));
+        let date = period.step(self.imp().date.get(), steps);
+        self.show(date.expect("nobody steps this way to the end of the calendar"));
     }
 
     fn vault(&self) -> Rc<Vault> {
@@ -133,7 +130,10 @@ impl CalendarView {
 
     fn show_month(&self, date: NaiveDate) {
         let imp = self.imp();
-        let first = date.with_day(1).expect("every month has a first day");
+        let vault = self.vault();
+        let vault = &*vault;
+        let first_day = vault.config().week.first_day;
+        let (first, last) = Period::Month.range(date, first_day);
         imp.window_title.set_title(&format_date(first, "%B"));
         imp.window_title.set_subtitle(&format_date(first, "%Y"));
         self.set_title(&format_date(first, "%B %Y"));
@@ -142,9 +142,7 @@ impl CalendarView {
         while let Some(child) = grid.first_child() {
             grid.remove(&child);
         }
-        let vault = self.vault();
-        let vault = &*vault;
-        let week_start = week_start(first, vault.config().week.first_day);
+        let week_start = week_start(first, first_day);
         for column in 0..7 {
             let weekday = format_date(week_start + Days::new(column), "%a");
             let label = gtk::Label::builder()
@@ -154,7 +152,6 @@ impl CalendarView {
             grid.attach(&label, column as i32, 0, 1, 1);
         }
 
-        let last = first + Months::new(1) - Days::new(1);
         let today = Local::now().date_naive();
         let mut date = week_start;
         let mut index = 0;
@@ -170,8 +167,7 @@ impl CalendarView {
     fn show_week(&self, date: NaiveDate) {
         let imp = self.imp();
         let vault = self.vault();
-        let first = week_start(date, vault.config().week.first_day);
-        let last = first + Days::new(6);
+        let (first, last) = Period::Week.range(date, vault.config().week.first_day);
         // Translators: A range of dates, as in "September 21 – 27".
         let title = gettext("{first} – {last}")
             .replace("{first}", &format_date(first, "%B %-d"))
@@ -252,11 +248,6 @@ impl CalendarView {
             imp.legend.append(&label);
         }
     }
-}
-
-/// The first day of the week `date` lies in.
-pub fn week_start(date: NaiveDate, first_day: Weekday) -> NaiveDate {
-    date - Days::new(date.weekday().days_since(first_day).into())
 }
 
 fn hours(time: TimeDelta) -> f32 {

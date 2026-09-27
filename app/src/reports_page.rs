@@ -4,13 +4,12 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta};
+use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{ProjectSlug, Vault};
+use knotbook_core::{Period, ProjectSlug, Vault};
 use knotbook_index::export;
 
-use crate::calendar_view::week_start;
 use crate::format::{format_date, format_duration, format_share, format_short_date};
 use crate::heatmap::Heatmap;
 use crate::search_index::{ReportData, SearchIndex};
@@ -33,13 +32,6 @@ enum Export {
     Blocks,
     Week,
     Remote,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Period {
-    Week,
-    Month,
-    Year,
 }
 
 mod imp {
@@ -152,15 +144,7 @@ impl ReportsPage {
 
     /// Shows the period `steps` periods after the one shown.
     pub fn step(&self, steps: i32) {
-        let date = self.date();
-        let months = |count: i32| Months::new(count.unsigned_abs() * steps.unsigned_abs());
-        let moved = match (self.period(), steps.is_negative()) {
-            (Period::Week, _) => date.checked_add_signed(TimeDelta::weeks(steps.into())),
-            (Period::Month, false) => date.checked_add_months(months(1)),
-            (Period::Month, true) => date.checked_sub_months(months(1)),
-            (Period::Year, false) => date.checked_add_months(months(12)),
-            (Period::Year, true) => date.checked_sub_months(months(12)),
-        };
+        let moved = self.period().step(self.date(), steps);
         self.show(moved.expect("nobody steps this way to the end of the calendar"));
     }
 
@@ -173,10 +157,7 @@ impl ReportsPage {
         self.show_title(period);
         // A report covers one week.
         self.action_set_enabled("reports.export-week", self.period() == Period::Week);
-        let year = (
-            NaiveDate::from_ymd_opt(date.year(), 1, 1).expect("years have a first day"),
-            NaiveDate::from_ymd_opt(date.year(), 12, 31).expect("years have a last day"),
-        );
+        let year = Period::Year.range(date, vault.config().week.first_day);
         imp.year_group.set_title(&date.year().to_string());
         let lookup = imp.lookups.get() + 1;
         imp.lookups.set(lookup);
@@ -271,18 +252,8 @@ impl ReportsPage {
 
     /// The first and last day of the period shown.
     fn range(&self, vault: &Vault) -> (NaiveDate, NaiveDate) {
-        let date = self.date();
-        let first = match self.period() {
-            Period::Week => week_start(date, vault.config().week.first_day),
-            Period::Month => date.with_day(1).expect("every month has a first day"),
-            Period::Year => date.with_ordinal(1).expect("every year has a first day"),
-        };
-        let next = match self.period() {
-            Period::Week => first + Days::new(7),
-            Period::Month => first + Months::new(1),
-            Period::Year => first + Months::new(12),
-        };
-        (first, next.pred_opt().expect("the day before exists"))
+        self.period()
+            .range(self.date(), vault.config().week.first_day)
     }
 
     fn show_title(&self, (first, last): (NaiveDate, NaiveDate)) {

@@ -4,13 +4,12 @@ use std::path::PathBuf;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Datelike, Days, Local, Months, NaiveDate, TimeDelta};
+use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{Commit, NotePath, Project, ProjectSlug, Vault, git_log};
+use knotbook_core::{Commit, NotePath, Period, Project, ProjectSlug, Vault, git_log};
 use knotbook_index::{Found, ProjectBlock};
 
-use crate::calendar_view::week_start;
 use crate::format::{format_duration, format_full_date, format_share, format_time};
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
@@ -217,7 +216,7 @@ impl ProjectView {
         let lookup = imp.lookups.get() + 1;
         imp.lookups.set(lookup);
         let today = Local::now().date_naive();
-        let month = month_of(today);
+        let month = Period::Month.range(today, vault.config().week.first_day);
         let index = imp.index.borrow().clone();
         let (vault, project) = (vault.clone(), project.clone());
         glib::spawn_future_local(glib::clone!(
@@ -252,8 +251,9 @@ impl ProjectView {
                 .sum()
         };
         let total: TimeDelta = activity.iter().map(|(_, time)| *time).sum();
-        let week = week_start(today, vault.config().week.first_day);
-        let (month_first, month_last) = month_of(today);
+        let first_day = vault.config().week.first_day;
+        let (week_first, week_last) = Period::Week.range(today, first_day);
+        let (month_first, month_last) = Period::Month.range(today, first_day);
         let month = sum_between(month_first, month_last);
         let work: TimeDelta = data
             .month_times
@@ -266,7 +266,7 @@ impl ProjectView {
 
         imp.total_row.set_subtitle(&format_duration(total));
         imp.week_row
-            .set_subtitle(&format_duration(sum_between(week, week + Days::new(6))));
+            .set_subtitle(&format_duration(sum_between(week_first, week_last)));
         imp.month_row.set_subtitle(&format_duration(month));
         imp.share_row.set_subtitle(&if work.is_zero() {
             none()
@@ -305,7 +305,6 @@ impl ProjectView {
         }
         imp.activity.replace(activity.iter().copied().collect());
         let color = gdk::RGBA::parse(project.color.as_str()).expect("project colors are valid");
-        let first_day = vault.config().week.first_day;
         imp.heatmap.show(
             activity,
             color,
@@ -469,15 +468,6 @@ fn commit_row(commit: &Commit, date: NaiveDate) -> adw::ActionRow {
         .action_target(&date.to_string().to_variant())
         .action_name("win.show-day")
         .build()
-}
-
-/// The first and last day of the month `date` lies in.
-fn month_of(date: NaiveDate) -> (NaiveDate, NaiveDate) {
-    let first = date.with_day(1).expect("every month has a first day");
-    let last = (first + Months::new(1))
-        .pred_opt()
-        .expect("the day before exists");
-    (first, last)
 }
 
 /// The window action that shows `block`, with its target.
