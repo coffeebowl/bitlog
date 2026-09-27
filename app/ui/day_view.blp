@@ -16,7 +16,21 @@ template $KnotbookDayView: Adw.NavigationPage {
       }
     }
 
-    child: Adw.ToolbarView {
+    // The last matching breakpoint wins, so this one sets everything.
+    Adw.Breakpoint {
+      condition ("max-width: 520sp")
+
+      setters {
+        split_view.collapsed: true;
+        toolbar.reveal-bottom-bars: true;
+        new_block_button.visible: false;
+        standup_button.visible: false;
+      }
+    }
+
+    child: Adw.ToolbarView toolbar {
+      reveal-bottom-bars: false;
+
       [top]
       Adw.HeaderBar {
         title-widget: Adw.WindowTitle window_title {};
@@ -41,7 +55,7 @@ template $KnotbookDayView: Adw.NavigationPage {
         }
 
         [start]
-        Button {
+        Button new_block_button {
           icon-name: "list-add-symbolic";
           tooltip-text: _("New Block");
           action-name: "day.new-block";
@@ -55,10 +69,35 @@ template $KnotbookDayView: Adw.NavigationPage {
         }
 
         [end]
-        Button {
+        Button standup_button {
           icon-name: "system-users-symbolic";
           tooltip-text: _("Standup");
           action-name: "day.standup";
+        }
+      }
+
+      // Takes what does not fit into the header bar of a narrow page.
+
+      [bottom]
+      ActionBar {
+        [start]
+        Button {
+          action-name: "day.new-block";
+
+          child: Adw.ButtonContent {
+            icon-name: "list-add-symbolic";
+            label: _("New Block");
+          };
+        }
+
+        [end]
+        Button {
+          action-name: "day.standup";
+
+          child: Adw.ButtonContent {
+            icon-name: "system-users-symbolic";
+            label: _("Standup");
+          };
         }
       }
 

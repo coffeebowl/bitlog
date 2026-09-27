@@ -4,113 +4,149 @@ using Adw 1;
 template $KnotbookCalendarView: Adw.NavigationPage {
   title: _("Calendar");
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      title-widget: Adw.WindowTitle window_title {};
+  child: Adw.BreakpointBin {
+    width-request: 360;
+    height-request: 294;
 
-      [start]
-      Box {
-        styles [
-          "linked",
-        ]
+    Adw.Breakpoint {
+      condition ("max-width: 520sp")
 
-        Button {
-          icon-name: "go-previous-symbolic";
-          tooltip-text: _("Previous");
-          action-name: "win.previous";
-        }
-
-        Button {
-          icon-name: "go-next-symbolic";
-          tooltip-text: _("Next");
-          action-name: "win.next";
-        }
-      }
-
-      [end]
-      Button {
-        label: _("_Today");
-        use-underline: true;
-        action-name: "win.today";
-      }
-
-      [end]
-      Adw.ToggleGroup view_toggle {
-        active-name: "month";
-
-        Adw.Toggle {
-          name: "month";
-          label: _("Month");
-        }
-
-        Adw.Toggle {
-          name: "week";
-          label: _("Week");
-        }
+      setters {
+        toolbar.reveal-bottom-bars: true;
+        view_toggle.visible: false;
       }
     }
 
-    content: Stack view_stack {
-      StackPage {
-        name: "month";
+    child: Adw.ToolbarView toolbar {
+      reveal-bottom-bars: false;
 
-        child: ScrolledWindow {
-          hscrollbar-policy: never;
+      [top]
+      Adw.HeaderBar {
+        title-widget: Adw.WindowTitle window_title {};
 
-          child: Adw.Clamp {
-            maximum-size: 900;
-            margin-top: 12;
-            margin-bottom: 12;
-            margin-start: 12;
-            margin-end: 12;
+        [start]
+        Box {
+          styles [
+            "linked",
+          ]
 
-            child: Grid grid {
-              column-homogeneous: true;
-              row-spacing: 6;
-              column-spacing: 6;
-            };
-          };
-        };
+          Button {
+            icon-name: "go-previous-symbolic";
+            tooltip-text: _("Previous");
+            action-name: "win.previous";
+          }
+
+          Button {
+            icon-name: "go-next-symbolic";
+            tooltip-text: _("Next");
+            action-name: "win.next";
+          }
+        }
+
+        [end]
+        Button {
+          label: _("_Today");
+          use-underline: true;
+          action-name: "win.today";
+        }
+
+        [end]
+        Adw.ToggleGroup view_toggle {
+          active-name: "month";
+
+          Adw.Toggle {
+            name: "month";
+            label: _("Month");
+          }
+
+          Adw.Toggle {
+            name: "week";
+            label: _("Week");
+          }
+        }
       }
 
-      StackPage {
-        name: "week";
+      // Takes what does not fit into the header bar of a narrow page.
 
-        child: ScrolledWindow {
-          hscrollbar-policy: never;
+      [bottom]
+      ActionBar {
+        [center]
+        Adw.ToggleGroup {
+          active-name: bind view_toggle.active-name bidirectional;
 
-          child: Adw.Clamp {
-            maximum-size: 900;
-            margin-top: 24;
-            margin-bottom: 24;
-            margin-start: 12;
-            margin-end: 12;
+          Adw.Toggle {
+            name: "month";
+            label: _("Month");
+          }
 
-            child: Box {
-              orientation: vertical;
-              spacing: 18;
+          Adw.Toggle {
+            name: "week";
+            label: _("Week");
+          }
+        }
+      }
 
-              Label week_total {
-                xalign: 0;
-                wrap: true;
+      content: Stack view_stack {
+        StackPage {
+          name: "month";
 
-                styles [
-                  "title-3",
-                ]
-              }
+          child: ScrolledWindow {
+            hscrollbar-policy: never;
 
-              $KnotbookWeekChart week_chart {}
+            child: Adw.Clamp {
+              maximum-size: 900;
+              margin-top: 12;
+              margin-bottom: 12;
+              margin-start: 12;
+              margin-end: 12;
 
-              FlowBox legend {
-                selection-mode: none;
-                column-spacing: 18;
-                max-children-per-line: 4;
-              }
+              child: Grid grid {
+                column-homogeneous: true;
+                row-spacing: 6;
+                column-spacing: 6;
+              };
             };
           };
-        };
-      }
+        }
+
+        StackPage {
+          name: "week";
+
+          child: ScrolledWindow {
+            hscrollbar-policy: never;
+
+            child: Adw.Clamp {
+              maximum-size: 900;
+              margin-top: 24;
+              margin-bottom: 24;
+              margin-start: 12;
+              margin-end: 12;
+
+              child: Box {
+                orientation: vertical;
+                spacing: 18;
+
+                Label week_total {
+                  xalign: 0;
+                  wrap: true;
+
+                  styles [
+                    "title-3",
+                  ]
+                }
+
+                $KnotbookWeekChart week_chart {}
+
+                FlowBox legend {
+                  selection-mode: none;
+                  column-spacing: 18;
+                  max-children-per-line: 4;
+                }
+              };
+            };
+          };
+        }
+      };
     };
   };
 }

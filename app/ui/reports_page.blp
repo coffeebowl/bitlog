@@ -4,100 +4,149 @@ using Adw 1;
 template $KnotbookReportsPage: Adw.NavigationPage {
   title: _("Reports");
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      title-widget: Adw.WindowTitle window_title {};
+  child: Adw.BreakpointBin {
+    width-request: 360;
+    height-request: 294;
 
-      [start]
-      Box {
-        styles [
-          "linked",
-        ]
+    Adw.Breakpoint {
+      condition ("max-width: 520sp")
 
-        Button {
-          icon-name: "go-previous-symbolic";
-          tooltip-text: _("Previous");
-          action-name: "win.previous";
-        }
-
-        Button {
-          icon-name: "go-next-symbolic";
-          tooltip-text: _("Next");
-          action-name: "win.next";
-        }
-      }
-
-      [end]
-      Button {
-        label: _("_Today");
-        use-underline: true;
-        action-name: "win.today";
-      }
-
-      [end]
-      MenuButton {
-        icon-name: "document-save-symbolic";
-        tooltip-text: _("Export");
-        menu-model: export_menu;
-      }
-
-      [end]
-      Adw.ToggleGroup period_toggle {
-        active-name: "month";
-
-        Adw.Toggle {
-          name: "week";
-          label: _("Week");
-        }
-
-        Adw.Toggle {
-          name: "month";
-          label: _("Month");
-        }
-
-        Adw.Toggle {
-          name: "year";
-          label: _("Year");
-        }
+      setters {
+        toolbar.reveal-bottom-bars: true;
+        period_toggle.visible: false;
+        export_button.visible: false;
       }
     }
 
-    content: Adw.PreferencesPage {
-      Adw.PreferencesGroup projects_group {
-        title: _("Time per Project");
+    child: Adw.ToolbarView toolbar {
+      reveal-bottom-bars: false;
 
-        header-suffix: Label total_label {
-          valign: end;
+      [top]
+      Adw.HeaderBar {
+        title-widget: Adw.WindowTitle window_title {};
 
+        [start]
+        Box {
           styles [
-            "dim-label",
+            "linked",
           ]
-        };
-      }
 
-      Adw.PreferencesGroup categories_group {
-        title: _("Time per Category");
-        description: _("Project categories, breaks left out");
+          Button {
+            icon-name: "go-previous-symbolic";
+            tooltip-text: _("Previous");
+            action-name: "win.previous";
+          }
 
-        $KnotbookShareBar category_bar {
-          margin-top: 12;
+          Button {
+            icon-name: "go-next-symbolic";
+            tooltip-text: _("Next");
+            action-name: "win.next";
+          }
+        }
+
+        [end]
+        Button {
+          label: _("_Today");
+          use-underline: true;
+          action-name: "win.today";
+        }
+
+        [end]
+        MenuButton export_button {
+          icon-name: "document-save-symbolic";
+          tooltip-text: _("Export");
+          menu-model: export_menu;
+        }
+
+        [end]
+        Adw.ToggleGroup period_toggle {
+          active-name: "month";
+
+          Adw.Toggle {
+            name: "week";
+            label: _("Week");
+          }
+
+          Adw.Toggle {
+            name: "month";
+            label: _("Month");
+          }
+
+          Adw.Toggle {
+            name: "year";
+            label: _("Year");
+          }
         }
       }
 
-      Adw.PreferencesGroup year_group {
-        description: _("Working time per day, breaks left out");
+      // Takes what does not fit into the header bar of a narrow page.
 
-        ScrolledWindow {
-          vscrollbar-policy: never;
-          propagate-natural-height: true;
+      [bottom]
+      ActionBar {
+        [start]
+        Adw.ToggleGroup {
+          active-name: bind period_toggle.active-name bidirectional;
 
-          child: $KnotbookHeatmap heatmap {
-            halign: start;
-            margin-bottom: 6;
+          Adw.Toggle {
+            name: "week";
+            label: _("Week");
+          }
+
+          Adw.Toggle {
+            name: "month";
+            label: _("Month");
+          }
+
+          Adw.Toggle {
+            name: "year";
+            label: _("Year");
+          }
+        }
+
+        [end]
+        MenuButton {
+          icon-name: "document-save-symbolic";
+          tooltip-text: _("Export");
+          menu-model: export_menu;
+        }
+      }
+
+      content: Adw.PreferencesPage {
+        Adw.PreferencesGroup projects_group {
+          title: _("Time per Project");
+
+          header-suffix: Label total_label {
+            valign: end;
+
+            styles [
+              "dim-label",
+            ]
           };
         }
-      }
+
+        Adw.PreferencesGroup categories_group {
+          title: _("Time per Category");
+          description: _("Project categories, breaks left out");
+
+          $KnotbookShareBar category_bar {
+            margin-top: 12;
+          }
+        }
+
+        Adw.PreferencesGroup year_group {
+          description: _("Working time per day, breaks left out");
+
+          ScrolledWindow {
+            vscrollbar-policy: never;
+            propagate-natural-height: true;
+
+            child: $KnotbookHeatmap heatmap {
+              halign: start;
+              margin-bottom: 6;
+            };
+          }
+        }
+      };
     };
   };
 }
