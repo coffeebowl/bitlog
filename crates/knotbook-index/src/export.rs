@@ -45,7 +45,7 @@ impl Index {
                 clock(block.end_minute),
                 block.duration().num_minutes().to_string(),
                 slug.to_string(),
-                project.map_or(slug.to_string(), |project| project.name.clone()),
+                vault.project_name(&slug).to_owned(),
                 project.map_or(String::new(), |project| project.category.clone()),
                 block.title,
                 block.text,
@@ -87,11 +87,7 @@ pub fn week_report(vault: &Vault, first: NaiveDate) -> Result<String, ReadError>
     }
     let mut times: Vec<_> = times.into_iter().collect();
     times.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
-    let name = |slug: &knotbook_core::ProjectSlug| {
-        vault
-            .project(slug)
-            .map_or(slug.to_string(), |project| project.name.clone())
-    };
+    let name = |slug| vault.project_name(slug);
 
     let mut report = format!("# Week of {first}\n\n{first} – {last}\n\n");
     if times.is_empty() {
@@ -99,7 +95,7 @@ pub fn week_report(vault: &Vault, first: NaiveDate) -> Result<String, ReadError>
     } else {
         report.push_str("| Project | Time |\n| --- | ---: |\n");
         for (slug, time) in &times {
-            let _ = writeln!(report, "| {} | {} |", table_cell(&name(slug)), hours(*time));
+            let _ = writeln!(report, "| {} | {} |", table_cell(name(slug)), hours(*time));
         }
         let total = times.iter().map(|(_, time)| *time).sum();
         let _ = writeln!(report, "| **Total** | **{}** |", hours(total));

@@ -51,7 +51,7 @@ impl Vault {
                 continue;
             }
             if let Some(file) = self.load_day(date)?
-                && file.day.blocks.iter().any(|b| !b.is_break(self.projects()))
+                && file.day.blocks.iter().any(|b| !self.is_break(&b.project))
             {
                 return Ok(Some(file.day));
             }
@@ -64,7 +64,7 @@ impl Vault {
     /// review, Payment provider switch". Breaks are left out.
     fn project_lines(&self, day: &Day) -> Vec<String> {
         let mut projects: Vec<(&ProjectSlug, Vec<&str>)> = Vec::new();
-        for block in day.blocks.iter().filter(|b| !b.is_break(self.projects())) {
+        for block in day.blocks.iter().filter(|b| !self.is_break(&b.project)) {
             let found = projects
                 .iter()
                 .position(|(slug, _)| **slug == block.project);
@@ -80,9 +80,7 @@ impl Vault {
         projects
             .into_iter()
             .map(|(slug, titles)| {
-                let name = self
-                    .project(slug)
-                    .map_or(slug.as_str(), |project| &project.name);
+                let name = self.project_name(slug);
                 if titles.is_empty() {
                     name.to_owned()
                 } else {

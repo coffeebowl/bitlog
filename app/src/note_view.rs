@@ -142,13 +142,10 @@ impl NoteView {
         self.save_now();
         let file = self.vault().load_note(note)?;
         let imp = self.imp();
-        let project = self.vault().project(note.project()).map_or_else(
-            || note.project().to_string(),
-            |project| project.name.clone(),
-        );
         self.set_title(note.name());
         imp.window_title.set_title(note.name());
-        imp.window_title.set_subtitle(&project);
+        imp.window_title
+            .set_subtitle(self.vault().project_name(note.project()));
         imp.menu_button.set_menu_model(Some(&note_menu(note)));
         imp.editor
             .set_wiki_links(note.project().clone(), existing_notes(&self.vault()));
@@ -355,12 +352,10 @@ fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
 /// A row naming the note, block or day note of `backlink`.
 fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
     let (title, subtitle) = match &backlink.found {
-        Found::Note(note) => {
-            let project = vault
-                .project(note.project())
-                .map_or(note.project().as_str(), |project| &project.name);
-            (note.name().to_owned(), project.to_owned())
-        }
+        Found::Note(note) => (
+            note.name().to_owned(),
+            vault.project_name(note.project()).to_owned(),
+        ),
         Found::Block { date, .. } => (
             backlink.title.clone().unwrap_or_else(|| gettext("Block")),
             format_full_date(*date),

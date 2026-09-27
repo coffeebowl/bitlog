@@ -18,8 +18,7 @@ pub fn format_stats(
     remote: &[RemoteDays],
 ) -> String {
     let mut lines = vec![format!("{first} – {last}"), String::new()];
-    let is_break = |slug: &ProjectSlug| vault.project(slug).is_some_and(|p| p.is_break());
-    let (breaks, work): (Vec<_>, Vec<_>) = times.iter().partition(|(slug, _)| is_break(slug));
+    let (breaks, work): (Vec<_>, Vec<_>) = times.iter().partition(|(slug, _)| vault.is_break(slug));
     let total: TimeDelta = work.iter().map(|(_, time)| *time).sum();
     if work.is_empty() {
         lines.push("No blocks.".to_owned());
@@ -27,9 +26,7 @@ pub fn format_stats(
         let mut rows: Vec<[String; 3]> = work
             .iter()
             .map(|(slug, time)| {
-                let name = vault
-                    .project(slug)
-                    .map_or(slug.as_str(), |project| &project.name);
+                let name = vault.project_name(slug);
                 let total = total.num_minutes().max(1);
                 let share = (time.num_minutes() * 100 + total / 2) / total;
                 [

@@ -258,7 +258,7 @@ impl ProjectView {
         let work: TimeDelta = data
             .month_times
             .iter()
-            .filter(|(slug, _)| !vault.project(slug).is_some_and(Project::is_break))
+            .filter(|(slug, _)| !vault.is_break(slug))
             .map(|(_, time)| *time)
             .sum();
         let days = i32::try_from(activity.len()).unwrap_or(i32::MAX);

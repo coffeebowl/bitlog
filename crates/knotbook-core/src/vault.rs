@@ -110,6 +110,19 @@ impl Vault {
         self.projects.iter().find(|project| project.slug == *slug)
     }
 
+    /// The name of the project `slug`, or the slug itself if the vault
+    /// lacks it, as blocks of removed projects name it.
+    pub fn project_name<'a>(&'a self, slug: &'a ProjectSlug) -> &'a str {
+        self.project(slug)
+            .map_or(slug.as_str(), |project| &project.name)
+    }
+
+    /// Whether blocks of the project `slug` are breaks. Blocks of projects
+    /// the vault lacks are work.
+    pub fn is_break(&self, slug: &ProjectSlug) -> bool {
+        Project::is_break_in(&self.projects, slug)
+    }
+
     /// Where the file of the day `date` lives.
     pub fn day_path(&self, date: NaiveDate) -> PathBuf {
         self.root

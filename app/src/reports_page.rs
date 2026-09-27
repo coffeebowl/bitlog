@@ -7,7 +7,7 @@ use adw::subclass::prelude::*;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{Period, ProjectSlug, Vault};
+use knotbook_core::{Period, Vault};
 use knotbook_index::export;
 
 use crate::format::{format_date, format_duration, format_share, format_short_date};
@@ -286,9 +286,10 @@ impl ReportsPage {
         for (group, row) in imp.rows.take() {
             group.remove(&row);
         }
-        let is_break = |slug: &ProjectSlug| vault.project(slug).is_some_and(|p| p.is_break());
-        let (breaks, work): (Vec<_>, Vec<_>) =
-            data.times.iter().partition(|(slug, _)| is_break(slug));
+        let (breaks, work): (Vec<_>, Vec<_>) = data
+            .times
+            .iter()
+            .partition(|(slug, _)| vault.is_break(slug));
         let total: TimeDelta = work.iter().map(|(_, time)| *time).sum();
         let breaks: TimeDelta = breaks.iter().map(|(_, time)| *time).sum();
         let mut rows = Vec::new();
@@ -349,7 +350,7 @@ impl ReportsPage {
 
         let mut days = BTreeMap::<NaiveDate, TimeDelta>::new();
         for (date, slug, time) in &data.year {
-            if !is_break(slug) {
+            if !vault.is_break(slug) {
                 *days.entry(*date).or_default() += *time;
             }
         }

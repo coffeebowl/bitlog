@@ -341,9 +341,7 @@ fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
             format!("{} · {}", gettext("Day Note"), format_full_date(*date)),
         ),
         Found::Note(note) => {
-            let project = vault
-                .project(note.project())
-                .map_or(note.project().as_str(), |project| &project.name);
+            let project = vault.project_name(note.project());
             (
                 "text-x-generic-symbolic",
                 format!("{} · {project} / {}", gettext("Note"), note.name()),

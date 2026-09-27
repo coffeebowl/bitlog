@@ -3,10 +3,10 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Local, NaiveTime, Timelike};
+use chrono::Local;
 use glib::subclass::Signal;
 use gtk::{gdk, glib, graphene, gsk, pango};
-use knotbook_core::{Block, Day, Vault};
+use knotbook_core::{Block, Day, Vault, minute_of_day};
 
 /// Height of one minute. A 15 minute block is just high enough for one line.
 const MINUTE_HEIGHT: f32 = 1.6;
@@ -316,7 +316,10 @@ mod imp {
             let line = graphene::Rect::new(LINE_X - 1.0, 0.0, 2.0, y_of(first, last) + PADDING);
             snapshot.append_color(&with_alpha(&foreground, 0.3), &line);
 
-            let now = self.is_today.get().then(|| minutes(Local::now().time()));
+            let now = self
+                .is_today
+                .get()
+                .then(|| minute_of_day(Local::now().time()));
             let focus_visible = widget
                 .root()
                 .and_downcast::<gtk::Window>()
@@ -566,12 +569,12 @@ impl Timeline {
         let first = spans
             .clone()
             .map(|(start, _)| start)
-            .chain([minutes(grid.day_start)])
+            .chain([minute_of_day(grid.day_start)])
             .min()
             .expect("the grid start is always there");
         let last = spans
             .map(|(_, end)| end)
-            .chain([minutes(grid.day_end)])
+            .chain([minute_of_day(grid.day_end)])
             .max()
             .expect("the grid end is always there");
         imp.range.set((first / 60 * 60, last.div_ceil(60) * 60));
@@ -589,9 +592,7 @@ impl Timeline {
             .iter()
             .map(|block| {
                 let project = vault.project(&block.project);
-                let project_name =
-                    project.map_or_else(|| block.project.to_string(), |p| p.name.clone());
-                let child = block_content(block, &project_name);
+                let child = block_content(block, vault.project_name(&block.project));
                 child.set_parent(self);
                 child.connect_has_focus_notify(glib::clone!(
                     #[weak(rename_to = timeline)]
@@ -747,10 +748,6 @@ fn block_content(block: &Block, project_name: &str) -> gtk::Widget {
         content.append(&label(line, &["caption", "dim-label"]));
     }
     content.upcast()
-}
-
-fn minutes(time: NaiveTime) -> u32 {
-    time.hour() * 60 + time.minute()
 }
 
 /// Where `minute` lies below the top, for a grid that starts at `first`.

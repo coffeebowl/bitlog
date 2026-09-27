@@ -95,7 +95,7 @@ impl Block {
     /// Start and end in minutes after the start of its day. The end is past
     /// `24 * 60` if the block ends on the next day.
     pub fn span(&self) -> (u32, u32) {
-        let start = minutes(self.start);
+        let start = minute_of_day(self.start);
         (start, start + minutes_until(self.start, self.end))
     }
 
@@ -106,19 +106,18 @@ impl Block {
     /// Whether the block belongs to a `break` project. Blocks of projects
     /// missing from `projects` are work.
     pub(crate) fn is_break(&self, projects: &[Project]) -> bool {
-        projects
-            .iter()
-            .any(|project| project.slug == self.project && project.is_break())
+        Project::is_break_in(projects, &self.project)
     }
 }
 
-fn minutes(time: NaiveTime) -> u32 {
+/// Minutes from midnight to `time`, as block spans and the index count them.
+pub fn minute_of_day(time: NaiveTime) -> u32 {
     time.hour() * 60 + time.minute()
 }
 
 /// Minutes from `start` to `end`, where an `end` before `start` lies on the next day.
 fn minutes_until(start: NaiveTime, end: NaiveTime) -> u32 {
-    let (start, end) = (minutes(start), minutes(end));
+    let (start, end) = (minute_of_day(start), minute_of_day(end));
     if end < start {
         end + 24 * 60 - start
     } else {

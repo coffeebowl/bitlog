@@ -8,8 +8,8 @@ use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::glib;
 use knotbook_core::{
-    Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ProjectSlug, ReadError,
-    Task, TaskId, TaskList, TaskStatus, Vault, VaultChange,
+    Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError, Task, TaskId,
+    TaskList, TaskStatus, Vault, VaultChange,
 };
 
 use crate::conflict_dialog::ConflictDialog;
@@ -188,17 +188,11 @@ pub fn file_title(vault: &Vault, of: &VaultChange) -> String {
         VaultChange::Day(date) => format_full_date(*date),
         VaultChange::Tasks => gettext("Tasks"),
         VaultChange::Note(note) => {
-            format!("{} / {}", project_name(vault, note.project()), note.name())
+            format!("{} / {}", vault.project_name(note.project()), note.name())
         }
-        VaultChange::Project(slug) => project_name(vault, slug),
+        VaultChange::Project(slug) => vault.project_name(slug).to_owned(),
         VaultChange::Config => gettext("Vault Settings"),
     }
-}
-
-fn project_name(vault: &Vault, slug: &ProjectSlug) -> String {
-    vault
-        .project(slug)
-        .map_or(slug.to_string(), |project| project.name.clone())
 }
 
 fn describe(vault: &Vault, versions: &ConflictVersions, contradiction: &Contradiction) -> Row {
@@ -297,7 +291,7 @@ fn block<'a>(day: &'a Day, id: &BlockId) -> &'a Block {
 /// The title of `block`, or else the name of its project.
 fn block_name(vault: &Vault, block: &Block) -> String {
     if block.title.is_empty() {
-        project_name(vault, &block.project)
+        vault.project_name(&block.project).to_owned()
     } else {
         block.title.clone()
     }
@@ -307,7 +301,7 @@ fn block_name(vault: &Vault, block: &Block) -> String {
 fn block_summary(vault: &Vault, block: &Block) -> String {
     let mut parts = vec![
         format!("{}–{}", format_time(block.start), format_time(block.end)),
-        project_name(vault, &block.project),
+        vault.project_name(&block.project).to_owned(),
     ];
     if !block.title.is_empty() {
         parts.push(block.title.clone());

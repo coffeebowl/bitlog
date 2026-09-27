@@ -231,13 +231,11 @@ impl CalendarView {
         let mut per_project: Vec<_> = per_project.into_iter().collect();
         per_project.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
         for (slug, time) in per_project {
-            let name = vault
-                .project(&slug)
-                .map_or_else(|| slug.to_string(), |project| project.name.clone());
+            let name = vault.project_name(&slug);
             let markup = format!(
                 "<span foreground=\"{}\">●</span> {} · {}",
                 hex(&slug),
-                glib::markup_escape_text(&name),
+                glib::markup_escape_text(name),
                 glib::markup_escape_text(&format_duration(time)),
             );
             let label = gtk::Label::builder()

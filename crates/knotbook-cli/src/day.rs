@@ -28,9 +28,7 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
         .blocks
         .iter()
         .map(|block| {
-            let project = vault
-                .project(&block.project)
-                .map_or(block.project.as_str(), |project| &project.name);
+            let project = vault.project_name(&block.project);
             [
                 block.id.to_string(),
                 format_span(block.start, block.end),

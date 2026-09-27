@@ -23,7 +23,7 @@ mod watch;
 pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
 pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};
-pub use day::{Block, Day, DayWarning, RemovedText};
+pub use day::{Block, Day, DayWarning, RemovedText, minute_of_day};
 pub use device::check_repo_path;
 pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;

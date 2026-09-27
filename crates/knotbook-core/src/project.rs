@@ -141,6 +141,15 @@ impl Project {
         self.category == BREAK_CATEGORY
     }
 
+    /// Whether blocks of the project `slug` are breaks, looked up in
+    /// `projects`. Blocks of projects missing there are work, as hand-edited
+    /// days or removed projects leave them.
+    pub(crate) fn is_break_in(projects: &[Project], slug: &ProjectSlug) -> bool {
+        projects
+            .iter()
+            .any(|project| project.slug == *slug && project.is_break())
+    }
+
     /// Where the file of the project `slug` lives in `vault`.
     pub fn path(vault: &Path, slug: &ProjectSlug) -> PathBuf {
         vault

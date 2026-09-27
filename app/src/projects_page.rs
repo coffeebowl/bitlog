@@ -331,16 +331,13 @@ impl ProjectsPage {
             self.open_note(&note);
             return;
         }
-        let project = vault.project(note.project()).map_or_else(
-            || note.project().to_string(),
-            |project| project.name.clone(),
-        );
+        let project = vault.project_name(note.project());
         let dialog = adw::AlertDialog::builder()
             .heading(gettext("Create Note?"))
             .body(
                 gettext("There is no note “{name}” in {project} yet.")
                     .replace("{name}", note.name())
-                    .replace("{project}", &project),
+                    .replace("{project}", project),
             )
             .close_response("cancel")
             .default_response("create")

@@ -2,8 +2,7 @@
 
 use std::collections::HashSet;
 
-use chrono::{NaiveTime, Timelike};
-use knotbook_core::{Day, NotePath, ProjectSlug, TaskList, Vault, wiki_links};
+use knotbook_core::{Day, NotePath, ProjectSlug, TaskList, Vault, minute_of_day, wiki_links};
 use rusqlite::{Transaction, params};
 
 use crate::{Found, IndexError, IndexFile};
@@ -91,8 +90,8 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
         day.date,
         day.kind,
         day.location.as_ref().map(|key| key.as_str()),
-        day.work_start.map(minutes),
-        day.work_end.map(minutes),
+        day.work_start.map(minute_of_day),
+        day.work_end.map(minute_of_day),
         day.note,
     ])?;
     let mut insert_block = tx.prepare_cached(
@@ -177,8 +176,4 @@ fn insert_tasks(tx: &Transaction, tasks: &TaskList) -> rusqlite::Result<()> {
         ])?;
     }
     Ok(())
-}
-
-fn minutes(time: NaiveTime) -> u32 {
-    time.num_seconds_from_midnight() / 60
 }
