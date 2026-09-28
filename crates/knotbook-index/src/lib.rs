@@ -666,6 +666,42 @@ mod tests {
         assert!(index.project_time(date(24), date(30)).unwrap().is_empty());
     }
 
+    #[test]
+    fn last_days_come_per_project() {
+        let vault = sample();
+        let mut index = in_memory();
+        index.refresh(&vault).unwrap();
+        let mut expected = std::collections::BTreeMap::<ProjectSlug, NaiveDate>::new();
+        for day in [21, 22, 23] {
+            for block in vault.load_day(date(day)).unwrap().unwrap().day.blocks {
+                expected.insert(block.project, date(day));
+            }
+        }
+        assert_eq!(
+            index.last_days().unwrap(),
+            expected.into_iter().collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn recent_notes_come_newest_first() {
+        let (_dir, vault, mut index) = sample_copy();
+        let payment = note_path("webshop", "payment-provider");
+        let later = SystemTime::now() + Duration::from_secs(60);
+        fs::File::options()
+            .write(true)
+            .open(vault.note_path(&payment))
+            .unwrap()
+            .set_modified(later)
+            .unwrap();
+        index.refresh(&vault).unwrap();
+        let notes = index.recent_notes(2).unwrap();
+        assert_eq!(notes.len(), 2);
+        assert_eq!(notes[0], (payment, later));
+        assert!(notes[1].1 <= later);
+        assert_eq!(index.recent_notes(10).unwrap().len(), 3);
+    }
+
     fn note_path(project: &str, name: &str) -> NotePath {
         NotePath::new(project.parse().unwrap(), name).unwrap()
     }

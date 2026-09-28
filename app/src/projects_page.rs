@@ -1,24 +1,31 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
+use std::time::SystemTime;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::Local;
+use chrono::{DateTime, Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
 use gtk::glib;
-use knotbook_core::{NotePath, Project, ProjectSlug, SaveError, Vault};
+use knotbook_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
 use knotbook_index::Found;
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
-use crate::format::{PROJECT_STATUSES, status_name};
+use crate::format::{
+    PROJECT_STATUSES, format_duration, format_full_date, format_short_date, format_time,
+    status_name,
+};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
-use crate::search_index::SearchIndex;
+use crate::search_index::{ProjectsData, SearchIndex};
+
+/// The notes changed last that the list shows.
+const RECENT_NOTES: usize = 5;
 
 mod imp {
     use super::*;
@@ -27,8 +34,13 @@ mod imp {
     #[template(resource = "/dev/knotbook/Knotbook/projects_page.ui")]
     pub struct ProjectsPage {
         pub vault: RefCell<Option<Rc<Vault>>>,
-        /// One group per status that has projects.
+        /// The recent notes, then one group per status that has projects.
         pub groups: RefCell<Vec<adw::PreferencesGroup>>,
+        /// What the list shows beside the projects, as last looked up.
+        pub data: RefCell<ProjectsData>,
+        /// Counts the lookups, so that one finishing after a newer one is
+        /// dropped.
+        pub lookups: Cell<u32>,
         /// Pushed on top of the list, owned here because they are only in
         /// the navigation view while shown.
         pub project_view: ProjectView,
@@ -37,6 +49,8 @@ mod imp {
         pub index: RefCell<SearchIndex>,
         #[template_child]
         pub nav: TemplateChild<adw::NavigationView>,
+        #[template_child]
+        pub overview: TemplateChild<adw::NavigationPage>,
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -48,10 +62,13 @@ mod imp {
             Self {
                 vault: RefCell::default(),
                 groups: RefCell::default(),
+                data: RefCell::default(),
+                lookups: Cell::default(),
                 project_view: glib::Object::new(),
                 note_view: glib::Object::new(),
                 index: RefCell::default(),
                 nav: TemplateChild::default(),
+                overview: TemplateChild::default(),
                 stack: TemplateChild::default(),
                 list: TemplateChild::default(),
             }
@@ -127,6 +144,17 @@ mod imp {
                     project_view.update_previews();
                 }
             ));
+            // Back on the list, it shows the time and notes as they are now.
+            self.overview.connect_showing(glib::clone!(
+                #[weak(rename_to = page)]
+                self.obj(),
+                move |_| page.look_up()
+            ));
+            self.nav.connect_visible_page_notify(glib::clone!(
+                #[weak(rename_to = page)]
+                self.obj(),
+                move |_| page.emit_by_name::<()>("shown-project-changed", &[])
+            ));
         }
 
         fn signals() -> &'static [Signal] {
@@ -139,6 +167,9 @@ mod imp {
                     // Emitted after links in day files were changed, which
                     // watching the vault leaves out as own writes.
                     Signal::builder("days-changed").build(),
+                    // Emitted when another project, or none, may be shown,
+                    // see `shown_project()`.
+                    Signal::builder("shown-project-changed").build(),
                 ]
             })
         }
@@ -208,6 +239,25 @@ impl ProjectsPage {
         );
     }
 
+    pub fn connect_shown_project_changed(&self, callback: impl Fn(&Self) + 'static) {
+        self.connect_closure(
+            "shown-project-changed",
+            false,
+            glib::closure_local!(move |page: &Self| callback(page)),
+        );
+    }
+
+    /// The project open, alone or below one of its notes, if any.
+    pub fn shown_project(&self) -> Option<ProjectSlug> {
+        let imp = self.imp();
+        // Unlike `find_page()`, the stack leaves out a page while it is
+        // popped with an animation.
+        let project_view: &glib::Object = imp.project_view.upcast_ref();
+        let stack = imp.nav.navigation_stack();
+        let shown = (0..stack.n_items()).any(|i| stack.item(i).as_ref() == Some(project_view));
+        if shown { imp.project_view.slug() } else { None }
+    }
+
     /// Saves the note being typed, if there are unsaved changes.
     pub fn save_now(&self) {
         self.imp().note_view.save_now();
@@ -217,11 +267,63 @@ impl ProjectsPage {
     /// and note open as they are now.
     pub fn reload(&self) {
         let imp = self.imp();
+        self.show_list();
+        self.look_up();
+        if self.shows("project") && !self.show_project_again() {
+            imp.nav.pop_to_tag("projects");
+        }
+        if self.shows("note") && !imp.note_view.reload() {
+            self.close_note();
+        }
+    }
+
+    /// Goes back to the list of projects.
+    pub fn show_overview(&self) {
+        let imp = self.imp();
+        imp.note_view.save_now();
+        imp.nav.pop_to_tag("projects");
+    }
+
+    /// Shows the notes changed last and the projects of the vault, grouped
+    /// by status, with what was last looked up about them.
+    fn show_list(&self) {
+        let imp = self.imp();
         for group in imp.groups.take() {
             imp.list.remove(&group);
         }
         let vault = self.vault();
+        let data = imp.data.borrow();
+        let today = Local::now().date_naive();
         let mut groups = Vec::new();
+        // Notes of projects removed since the lookup are gone as well.
+        let notes: Vec<_> = data
+            .recent_notes
+            .iter()
+            .filter_map(|(note, modified)| Some((vault.project(note.project())?, note, modified)))
+            .collect();
+        if !notes.is_empty() {
+            let group = adw::PreferencesGroup::builder()
+                .title(gettext("Recent Notes"))
+                .build();
+            for (project, note, modified) in notes {
+                group.add(&recent_note_row(project, note, *modified, today));
+            }
+            imp.list.add(&group);
+            groups.push(group);
+        }
+        let find = |slug: &ProjectSlug, times: &[(ProjectSlug, TimeDelta)]| {
+            times
+                .iter()
+                .find(|(other, _)| other == slug)
+                .map(|(_, time)| *time)
+        };
+        let last_day = |slug: &ProjectSlug| {
+            data.last_days
+                .iter()
+                .find(|(other, _)| other == slug)
+                .map(|(_, date)| *date)
+        };
+        let mut has_projects = false;
         for status in PROJECT_STATUSES {
             let mut projects: Vec<&Project> = vault
                 .projects()
@@ -235,22 +337,57 @@ impl ProjectsPage {
             let group = adw::PreferencesGroup::builder()
                 .title(status_name(status))
                 .build();
+            let mut worked_this_week = false;
             for project in projects {
-                group.add(&project_row(project));
+                let week = find(&project.slug, &data.week_times);
+                worked_this_week |= week.is_some();
+                group.add(&project_row(project, week, last_day(&project.slug), today));
+            }
+            if worked_this_week {
+                group.set_header_suffix(Some(
+                    &gtk::Label::builder()
+                        .label(gettext("This Week"))
+                        .valign(gtk::Align::End)
+                        .css_classes(["dim-label"])
+                        .build(),
+                ));
             }
             imp.list.add(&group);
             groups.push(group);
+            has_projects = true;
         }
         imp.stack
-            .set_visible_child_name(if groups.is_empty() { "empty" } else { "list" });
+            .set_visible_child_name(if has_projects { "list" } else { "empty" });
         imp.groups.replace(groups);
+    }
 
-        if self.shows("project") && !self.show_project_again() {
-            imp.nav.pop_to_tag("projects");
-        }
-        if self.shows("note") && !imp.note_view.reload() {
-            self.close_note();
-        }
+    /// Looks up the time spent this week, the last days worked and the notes
+    /// changed last in the background, then shows them.
+    fn look_up(&self) {
+        let imp = self.imp();
+        let lookup = imp.lookups.get() + 1;
+        imp.lookups.set(lookup);
+        let vault = self.vault();
+        let week = Period::Week.range(Local::now().date_naive(), vault.config().week.first_day);
+        let index = imp.index.borrow().clone();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = page)]
+            self,
+            async move {
+                let data = index.projects(&vault, week, RECENT_NOTES).await;
+                let imp = page.imp();
+                if imp.lookups.get() != lookup {
+                    return;
+                }
+                match data {
+                    Ok(data) => {
+                        imp.data.replace(data);
+                        page.show_list();
+                    }
+                    Err(err) => glib::g_warning!("knotbook", "{err}"),
+                }
+            }
+        ));
     }
 
     /// Shows the notes `changed`, which were changed elsewhere, as they are
@@ -304,15 +441,21 @@ impl ProjectsPage {
         self.open_note(note);
     }
 
-    fn open_project(&self, slug: &ProjectSlug) {
+    /// Shows the project `slug` with its notes, from where going back leads
+    /// to the list.
+    pub fn open_project(&self, slug: &ProjectSlug) {
         let imp = self.imp();
         let vault = self.vault();
         let Some(project) = vault.project(slug) else {
             return;
         };
+        imp.note_view.save_now();
         imp.project_view.show(&vault, project);
-        imp.nav.pop_to_tag("projects");
-        imp.nav.push(&imp.project_view);
+        let shown = imp.nav.visible_page();
+        if shown.as_ref() != Some(imp.project_view.upcast_ref()) {
+            imp.nav.pop_to_tag("projects");
+            imp.nav.push(&imp.project_view);
+        }
     }
 
     fn open_note(&self, note: &NotePath) {
@@ -324,6 +467,7 @@ impl ProjectsPage {
             if let Some(project) = vault.project(note.project()) {
                 imp.project_view.show(&vault, project);
             }
+            self.emit_by_name::<()>("shown-project-changed", &[]);
         }
         match imp.note_view.show_note(note) {
             Ok(()) if !self.shows("note") => imp.nav.push(&imp.note_view),
@@ -609,10 +753,25 @@ impl ProjectsPage {
     }
 }
 
-fn project_row(project: &Project) -> adw::ActionRow {
+/// A project in the list, with the time spent on it this week, `week`, and
+/// the last day it was worked on, `last_day`, if any, as seen `today`.
+fn project_row(
+    project: &Project,
+    week: Option<TimeDelta>,
+    last_day: Option<NaiveDate>,
+    today: NaiveDate,
+) -> adw::ActionRow {
+    let mut subtitle = vec![project.category.clone()];
+    match last_day {
+        Some(date) if date == today => subtitle.push(gettext("last worked today")),
+        Some(date) => subtitle
+            .push(gettext("last worked on {date}").replace("{date}", &format_day(date, today))),
+        None => {}
+    }
+    subtitle.retain(|part| !part.is_empty());
     let row = adw::ActionRow::builder()
         .title(&project.name)
-        .subtitle(&project.category)
+        .subtitle(subtitle.join(" · "))
         .use_markup(false)
         .activatable(true)
         .action_name("projects.open")
@@ -630,5 +789,52 @@ fn project_row(project: &Project) -> adw::ActionRow {
             .build();
         row.add_suffix(&pin);
     }
+    if let Some(week) = week {
+        let time = gtk::Label::builder()
+            .label(format_duration(week))
+            .tooltip_text(gettext("Time spent this week"))
+            .css_classes(["dim-label", "numeric"])
+            .build();
+        row.add_suffix(&time);
+    }
     row
+}
+
+/// A note changed last, at `modified`, which opens it when activated.
+fn recent_note_row(
+    project: &Project,
+    note: &NotePath,
+    modified: SystemTime,
+    today: NaiveDate,
+) -> adw::ActionRow {
+    let modified = DateTime::<Local>::from(modified).naive_local();
+    let when = if modified.date() == today {
+        format_time(modified.time())
+    } else {
+        format_day(modified.date(), today)
+    };
+    let row = adw::ActionRow::builder()
+        .title(note.name())
+        .subtitle(format!("{} · {when}", project.name))
+        .use_markup(false)
+        .activatable(true)
+        .action_name("notes.open")
+        .action_target(&note.to_string().to_variant())
+        .build();
+    let dot = gtk::Label::builder()
+        .label(color_dot(&project.color))
+        .use_markup(true)
+        .build();
+    row.add_prefix(&dot);
+    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+    row
+}
+
+/// `date` without the year if it is the year of `today`.
+fn format_day(date: NaiveDate, today: NaiveDate) -> String {
+    if date.year() == today.year() {
+        format_short_date(date)
+    } else {
+        format_full_date(date)
+    }
 }

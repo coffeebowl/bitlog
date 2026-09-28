@@ -8,13 +8,14 @@ use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use gtk::{gio, glib};
 use knotbook_core::{
-    BlockId, ConflictCopy, NotePath, ReadError, TaskId, Vault, VaultChange, VaultWatcher,
-    WatchError,
+    BlockId, ConflictCopy, NotePath, ProjectSlug, ProjectStatus, ReadError, TaskId, Vault,
+    VaultChange, VaultWatcher, WatchError,
 };
 use knotbook_index::Found;
 
 use crate::alert::show_error;
 use crate::calendar_view::CalendarView;
+use crate::colors::color_dot;
 use crate::config;
 use crate::day_view::DayView;
 use crate::preferences_dialog::PreferencesDialog;
@@ -27,7 +28,7 @@ use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 17] = [
+const VAULT_ACTIONS: [&str; 18] = [
     "win.preferences",
     "win.previous",
     "win.next",
@@ -36,6 +37,7 @@ const VAULT_ACTIONS: [&str; 17] = [
     "win.show-calendar",
     "win.show-tasks",
     "win.show-projects",
+    "win.show-project",
     "win.show-reports",
     "win.show-day",
     "win.show-block",
@@ -94,6 +96,8 @@ mod imp {
         pub projects_row: TemplateChild<gtk::ListBoxRow>,
         #[template_child]
         pub reports_row: TemplateChild<gtk::ListBoxRow>,
+        /// The active projects below the pages, each with its row.
+        pub project_rows: RefCell<Vec<(ProjectSlug, gtk::ListBoxRow)>>,
         /// The pages of the content, owned here because only one of them is
         /// in the split view at a time.
         pub day_view: DayView,
@@ -128,6 +132,7 @@ mod imp {
                 tasks_row: TemplateChild::default(),
                 projects_row: TemplateChild::default(),
                 reports_row: TemplateChild::default(),
+                project_rows: RefCell::default(),
                 day_view: glib::Object::new(),
                 calendar_view: glib::Object::new(),
                 tasks_page: glib::Object::new(),
@@ -196,7 +201,21 @@ mod imp {
             });
             klass.install_action("win.show-projects", None, |window, _, _| {
                 window.show_projects();
+                window.imp().projects_page.show_overview();
+                window.select_project_row();
             });
+            klass.install_action(
+                "win.show-project",
+                Some(glib::VariantTy::STRING),
+                |window, _, slug| {
+                    let slug: ProjectSlug = slug
+                        .and_then(|slug| slug.str()?.parse().ok())
+                        .expect("projects are passed as their slug");
+                    window.show_projects();
+                    window.imp().projects_page.open_project(&slug);
+                    window.select_project_row();
+                },
+            );
             klass.install_action("win.new-project", None, |window, _, _| {
                 window.show_projects();
                 WidgetExt::activate_action(&window.imp().projects_page, "projects.add", None)
@@ -228,6 +247,7 @@ mod imp {
                         .expect("notes are passed as their path");
                     window.show_projects();
                     window.imp().projects_page.show_note(&note);
+                    window.select_project_row();
                 },
             );
             klass.install_action(
@@ -268,6 +288,30 @@ mod imp {
                 #[weak(rename_to = window)]
                 self.obj(),
                 move |page| window.projects_changed(page.vault())
+            ));
+            self.projects_page
+                .connect_shown_project_changed(glib::clone!(
+                    #[weak(rename_to = window)]
+                    self.obj(),
+                    move |_| window.select_project_row()
+                ));
+            // The projects follow the pages, apart.
+            self.sidebar_list.set_header_func(glib::clone!(
+                #[weak(rename_to = projects_row)]
+                self.projects_row,
+                move |row, before| {
+                    let first_project = before.is_some_and(|before| *before == projects_row);
+                    row.set_header(
+                        first_project
+                            .then(|| {
+                                gtk::Separator::builder()
+                                    .margin_top(6)
+                                    .margin_bottom(6)
+                                    .build()
+                            })
+                            .as_ref(),
+                    );
+                }
             ));
             // Renaming a note may change links in the day shown.
             self.projects_page.connect_days_changed(glib::clone!(
@@ -466,6 +510,51 @@ impl Window {
         imp.tasks_page.set_vault(vault.clone());
         imp.projects_page.set_vault(vault.clone());
         imp.reports_page.set_vault(vault.clone());
+        self.show_sidebar_projects(vault);
+    }
+
+    /// Lists the active projects of `vault` in the sidebar, apart from
+    /// breaks. The others are on the project page.
+    fn show_sidebar_projects(&self, vault: &Vault) {
+        let imp = self.imp();
+        for (_, row) in imp.project_rows.take() {
+            imp.sidebar_list.remove(&row);
+        }
+        let mut projects: Vec<_> = vault
+            .projects()
+            .iter()
+            .filter(|project| project.status == ProjectStatus::Active && !project.is_break())
+            .collect();
+        projects.sort_by_key(|project| project.name.to_lowercase());
+        let rows = projects
+            .into_iter()
+            .map(|project| {
+                let row = sidebar_project_row(&project.name, &project.color);
+                row.set_action_name(Some("win.show-project"));
+                row.set_action_target_value(Some(&project.slug.to_string().to_variant()));
+                imp.sidebar_list.append(&row);
+                (project.slug.clone(), row)
+            })
+            .collect();
+        imp.project_rows.replace(rows);
+        self.select_project_row();
+    }
+
+    /// Selects the row of the project shown in the sidebar, or that of the
+    /// project page if the project has none, while the project page is
+    /// shown.
+    fn select_project_row(&self) {
+        let imp = self.imp();
+        if !self.shows(&imp.projects_page) {
+            return;
+        }
+        let shown = imp.projects_page.shown_project();
+        let rows = imp.project_rows.borrow();
+        let row = rows
+            .iter()
+            .find(|(slug, _)| Some(slug) == shown.as_ref())
+            .map_or(&*imp.projects_row, |(_, row)| row);
+        imp.sidebar_list.select_row(Some(row));
     }
 
     /// Hands `vault`, with projects changed on the project page, to the
@@ -766,4 +855,27 @@ impl Window {
         imp.day_view.save_texts_now();
         imp.projects_page.save_now();
     }
+}
+
+/// A project in the sidebar, marked by its colour as the pages above are by
+/// their icons.
+fn sidebar_project_row(name: &str, color: &str) -> gtk::ListBoxRow {
+    let content = gtk::Box::builder().spacing(12).build();
+    content.append(
+        &gtk::Label::builder()
+            .label(color_dot(color))
+            .use_markup(true)
+            // As wide as the icons above.
+            .width_request(16)
+            .build(),
+    );
+    content.append(
+        &gtk::Label::builder()
+            .label(name)
+            .tooltip_text(name)
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build(),
+    );
+    gtk::ListBoxRow::builder().child(&content).build()
 }
