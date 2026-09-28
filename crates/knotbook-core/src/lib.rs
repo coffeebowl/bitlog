@@ -30,7 +30,11 @@ pub use file::content_hash;
 pub use git_log::{Commit, GitLogError, git_log};
 pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;
-pub use markdown::{MarkdownMode, MarkdownStyle, escape_headings, markdown_styles};
+pub use markdown::{
+    Callout, CalloutKind, CodeBlock, Continuation, Formatting, InlineMarkup, ListIndent,
+    MarkdownMode, MarkdownStyle, TableLine, TaskItem, WebLink, continue_list, continue_quote,
+    escape_headings, markdown_formatting, nest_list_item,
+};
 pub use notes::{NoteFile, SavedNote, WikiLink, wiki_links};
 pub use period::{Period, week_start};
 pub use project::{Project, ProjectStatus};

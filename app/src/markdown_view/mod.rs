@@ -1,30 +1,56 @@
+mod callouts;
+mod check_boxes;
+mod code_blocks;
+mod code_highlight;
+mod decorations;
+mod lists;
+mod styling;
+mod tables;
+mod tags;
+
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ops::Range;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use glib::SignalHandlerId;
 use glib::subclass::Signal;
-use glib::translate::IntoGlib;
-use gtk::{gdk, glib, pango};
+use gtk::{gdk, gio, glib};
 use knotbook_core::{
-    MarkdownMode, MarkdownStyle, NotePath, ProjectSlug, escape_headings, markdown_styles,
-    wiki_links,
+    MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, wiki_links,
 };
 use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 
+use self::check_boxes::CheckBox;
+use self::code_highlight::CodeHighlighter;
+use self::decorations::Decorations;
+use self::styling::Styling;
 use crate::colors::with_alpha;
 
 /// How much Markdown syntax is dimmed, as the alpha of the text colour.
 const MARKUP_ALPHA: f32 = 0.45;
-const HEADING_SCALES: [f64; 6] = [1.6, 1.4, 1.25, 1.1, 1.0, 1.0];
+/// The background of code and table headers, as the alpha of the text
+/// colour.
+const CODE_ALPHA: f32 = 0.07;
+/// The lines of tables and rules, as the alpha of the text colour.
+const GRID_ALPHA: f32 = 0.2;
+/// Of code blocks and tables.
+const CORNER_RADIUS: f32 = 6.0;
 /// The actions that change the text, only enabled while it is editable.
 const EDIT_ACTIONS: [&str; 3] = ["markdown.bold", "markdown.italic", "markdown.code"];
-/// Dims wiki links to notes that do not exist.
-const BROKEN_LINK_TAG: &str = "broken-link";
+
+/// Where a link leads.
+#[derive(Debug, Clone)]
+enum Target {
+    /// A note of the vault, or none if the wiki link points nowhere.
+    Note(Option<NotePath>),
+    /// A web page or mail address, which another app opens.
+    Web(String),
+}
 
 /// Tells the wiki links of a project note apart, see
 /// `MarkdownView::set_wiki_links`.
@@ -52,11 +78,18 @@ mod imp {
         pub loading: Cell<bool>,
         /// Set for project notes, whose wiki links can be followed.
         pub wiki_links: RefCell<Option<WikiLinks>>,
-        /// The wiki links in the text as last styled, as character ranges
-        /// with the note each points to, if any.
-        pub links: RefCell<Vec<(Range<i32>, Option<NotePath>)>>,
+        /// The links in the text as last styled, as character ranges with
+        /// where they lead.
+        pub(super) links: RefCell<Vec<(Range<i32>, Target)>>,
         /// Connected to the style manager, which outlives the view.
         pub style_handlers: RefCell<Vec<SignalHandlerId>>,
+        /// What is drawn beside the text as last styled.
+        pub(super) decorations: RefCell<Decorations>,
+        /// The starts of what shows its Markdown, as the cursor is at it.
+        pub revealed: RefCell<Vec<i32>>,
+        /// Whether `MarkdownView::queue_reveal` is waiting to run.
+        pub reveal_queued: Cell<bool>,
+        pub highlighter: CodeHighlighter,
     }
 
     #[glib::object_subclass]
@@ -120,10 +153,22 @@ mod imp {
                 for action in EDIT_ACTIONS {
                     view.action_set_enabled(action, view.is_editable());
                 }
+                view.queue_reveal();
             });
+            view.connect_has_focus_notify(|view| view.queue_reveal());
+            view.buffer().connect_cursor_position_notify(glib::clone!(
+                #[weak]
+                view,
+                move |_| view.queue_reveal()
+            ));
             view.set_wrap_mode(gtk::WrapMode::WordChar);
+            // Tab indents by two spaces, as in nested lists and most code.
+            view.set_insert_spaces_instead_of_tabs(true);
+            view.set_tab_width(2);
+            view.set_indent_width(2);
             view.add_css_class("markdown-view");
-            create_tags(&view.buffer());
+            tags::create(&view.buffer());
+            code_highlight::preload();
             view.buffer().connect_changed(glib::clone!(
                 #[weak]
                 view,
@@ -136,6 +181,8 @@ mod imp {
             ));
             view.connect_full_notify(|view| view.restyle());
             view.follow_links_on_click();
+            view.toggle_check_boxes_on_click();
+            view.edit_lists_by_keys();
 
             let style_manager = adw::StyleManager::default();
             set_style_scheme(&view, &style_manager);
@@ -149,7 +196,7 @@ mod imp {
                     glib::idle_add_local_once(glib::clone!(
                         #[weak]
                         view,
-                        move || view.imp().update_markup_color()
+                        move || tags::update(view.upcast_ref())
                     ));
                 }
             );
@@ -170,7 +217,7 @@ mod imp {
     impl WidgetImpl for MarkdownView {
         fn map(&self) {
             self.parent_map();
-            self.update_markup_color();
+            tags::update(self.obj().upcast_ref());
         }
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
@@ -199,35 +246,36 @@ mod imp {
             self.placeholder.replace(placeholder);
             self.obj().queue_draw();
         }
-
-        /// Dims Markdown syntax relative to the text colour of the theme.
-        fn update_markup_color(&self) {
-            let view = self.obj();
-            let color = view.color();
-            let markup = view
-                .buffer()
-                .tag_table()
-                .lookup("markup")
-                .expect("the tags are created on construction");
-            let dimmed = with_alpha(&color, MARKUP_ALPHA);
-            markup.set_foreground_rgba(Some(&dimmed));
-            view.buffer()
-                .tag_table()
-                .lookup(BROKEN_LINK_TAG)
-                .expect("the tags are created on construction")
-                .set_foreground_rgba(Some(&dimmed));
-        }
     }
 
-    impl TextViewImpl for MarkdownView {}
+    impl TextViewImpl for MarkdownView {
+        fn snapshot_layer(&self, layer: gtk::TextViewLayer, snapshot: gtk::Snapshot) {
+            self.parent_snapshot_layer(layer, snapshot.clone());
+            let view = self.obj();
+            let decorations = self.decorations.borrow();
+            match layer {
+                gtk::TextViewLayer::BelowText => {
+                    decorations.snapshot_below(view.upcast_ref(), &snapshot);
+                }
+                gtk::TextViewLayer::AboveText => {
+                    decorations.snapshot_above(view.upcast_ref(), &snapshot);
+                }
+                _ => {}
+            }
+        }
+    }
     impl ViewImpl for MarkdownView {}
 }
 
 glib::wrapper! {
-    /// Markdown with live formatting: the syntax stays visible, but dimmed.
+    /// Markdown with live formatting: the syntax stays visible, but dimmed,
+    /// except for the markers of bullets and quotes, which are drawn as
+    /// bullets and bars. Code blocks are cards, highlighted when they name
+    /// a language. Tables are grids and rules are lines, but show their
+    /// Markdown while the cursor is in them, with the columns lined up.
     ///
     /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
-    /// Ctrl+E make the selection bold, italic or code, or undo that.
+    /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces.
     pub struct MarkdownView(ObjectSubclass<imp::MarkdownView>)
         @extends sourceview5::View, gtk::TextView, gtk::Widget,
         @implements gtk::Accessible, gtk::AccessibleText, gtk::Buildable,
@@ -295,6 +343,14 @@ impl MarkdownView {
         buffer.text(&start, &end, true).into()
     }
 
+    fn mode(&self) -> MarkdownMode {
+        if self.full() {
+            MarkdownMode::Full
+        } else {
+            MarkdownMode::Block
+        }
+    }
+
     /// Formats the whole text again, after every change, and after notes
     /// that wiki links point to were added or removed.
     fn restyle(&self) {
@@ -302,57 +358,115 @@ impl MarkdownView {
         let (start, end) = buffer.bounds();
         // The buffer has no other tags: it has no language and no search.
         buffer.remove_all_tags(&start, &end);
+        buffer.apply_tag_by_name(tags::BODY, &start, &end);
         let text = self.text();
         let offsets = char_offsets(&text);
-        let tag = |name: &str, range: &Range<usize>| {
-            let start = buffer.iter_at_offset(offsets[range.start]);
-            let end = buffer.iter_at_offset(offsets[range.end]);
-            buffer.apply_tag_by_name(name, &start, &end);
-        };
-        let mode = if self.full() {
-            MarkdownMode::Full
-        } else {
-            MarkdownMode::Block
-        };
-        for (range, style) in markdown_styles(&text, mode) {
-            tag(&tag_name(style), &range);
+        let styling = Styling::new(self.upcast_ref(), &text, &offsets, self.editing_cursor());
+        let formatting = markdown_formatting(&text, self.mode());
+        for (range, style) in &formatting.styles {
+            styling.tag(&tags::name(*style), range);
         }
+        // The modules after it take away what they draw otherwise, like the
+        // bullets of tasks.
+        let mut decorations = Decorations::collect(&styling, &formatting);
+        code_blocks::style(&styling, &formatting, &mut decorations);
+        callouts::style(&styling, &formatting, &mut decorations);
+        lists::style(&styling, &formatting, &mut decorations);
+        tables::style(&styling, &formatting, &mut decorations);
+        let imp = self.imp();
+        imp.highlighter.apply(&styling, &formatting.code_blocks);
+        imp.revealed.replace(decorations.revealed(styling.cursor));
+        imp.decorations.replace(decorations);
+
         let mut links = Vec::new();
-        if let Some(wiki) = &*self.imp().wiki_links.borrow() {
+        if let Some(wiki) = &*imp.wiki_links.borrow() {
             for link in wiki_links(&text, Some(&wiki.project)) {
                 if !link
                     .note
                     .as_ref()
                     .is_some_and(|note| wiki.existing.contains(note))
                 {
-                    tag(BROKEN_LINK_TAG, &link.span);
+                    styling.tag(tags::BROKEN_LINK, &link.span);
                 }
-                links.push((offsets[link.span.start]..offsets[link.span.end], link.note));
+                links.push((styling.chars(&link.span), Target::Note(link.note)));
             }
         }
-        self.imp().links.replace(links);
+        for link in &formatting.web_links {
+            links.push((styling.chars(&link.range), Target::Web(link.url.clone())));
+        }
+        imp.links.replace(links);
+        self.queue_draw();
     }
 
-    /// The wiki link at `iter`, if there is one: the note it points to, if
-    /// any.
-    fn wiki_link_at(&self, iter: &gtk::TextIter) -> Option<Option<NotePath>> {
+    /// Where the cursor is, while the user may be editing.
+    fn editing_cursor(&self) -> Option<i32> {
+        (self.is_editable() && self.has_focus()).then(|| {
+            let buffer = self.buffer();
+            buffer.iter_at_mark(&buffer.get_insert()).offset()
+        })
+    }
+
+    /// Formats the text again, when idle, if the cursor went to or away
+    /// from an element that shows its Markdown while the cursor is at it.
+    /// Not right away: the cursor also moves while the text changes, when
+    /// tags must not. Not while text is selected either, as the text would
+    /// move under the pointer.
+    fn queue_reveal(&self) {
+        if self.imp().reveal_queued.replace(true) {
+            return;
+        }
+        glib::idle_add_local_once(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move || {
+                let imp = view.imp();
+                imp.reveal_queued.set(false);
+                if view.buffer().has_selection() {
+                    return;
+                }
+                let cursor = view.editing_cursor();
+                let now = imp.decorations.borrow().revealed(cursor);
+                if now != *imp.revealed.borrow() {
+                    view.restyle();
+                }
+            }
+        ));
+    }
+
+    /// Where the link at `iter` leads, if there is one.
+    fn link_at(&self, iter: &gtk::TextIter) -> Option<Target> {
         self.imp()
             .links
             .borrow()
             .iter()
             .find(|(range, _)| range.contains(&iter.offset()))
-            .map(|(_, note)| note.clone())
+            .map(|(_, target)| target.clone())
     }
 
-    /// Follows the wiki link at `iter`, if there is one.
+    /// Follows the link at `iter`, if there is one.
     fn follow_link_at(&self, iter: &gtk::TextIter) {
-        match self.wiki_link_at(iter) {
-            Some(Some(note)) => {
+        if let Some(target) = self.link_at(iter) {
+            self.follow_link(target);
+        }
+    }
+
+    /// Opens a note of the vault, or another app for a web page or mail
+    /// address.
+    fn follow_link(&self, target: Target) {
+        match target {
+            Target::Note(Some(note)) => {
                 self.emit_by_name::<()>("wiki-link-activated", &[&note.to_string()]);
             }
             // Points nowhere, like `[[a/b/c]]`.
-            Some(None) => self.error_bell(),
-            None => {}
+            Target::Note(None) => self.error_bell(),
+            Target::Web(url) => {
+                let window = self.root().and_downcast::<gtk::Window>();
+                gtk::UriLauncher::new(&url).launch(
+                    window.as_ref(),
+                    None::<&gio::Cancellable>,
+                    |_| {},
+                );
+            }
         }
     }
 
@@ -362,22 +476,36 @@ impl MarkdownView {
         self.iter_at_location(x, y)
     }
 
-    /// A click on a wiki link follows it, as in the "Hypertext" demo of
-    /// GTK, and the pointer shows where that is possible.
+    /// A click on a link follows it, as in the "Hypertext" demo of GTK, and
+    /// the pointer shows where that is possible.
     fn follow_links_on_click(&self) {
         let click = gtk::GestureClick::builder()
             .button(gdk::BUTTON_PRIMARY)
             .build();
+        // The link under the pointer as the button goes down: the text may
+        // move before it goes up, as the cursor reveals the markup.
+        let pressed = Rc::new(RefCell::new(None));
+        click.connect_pressed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            #[strong]
+            pressed,
+            move |_, _, x, y| {
+                let link = view.iter_at(x, y).and_then(|iter| view.link_at(&iter));
+                pressed.replace(link);
+            }
+        ));
         click.connect_released(glib::clone!(
             #[weak(rename_to = view)]
             self,
-            move |_, presses, x, y| {
+            move |_, presses, _, _| {
+                let link = pressed.take();
                 // Selecting text is no click on a link.
                 if presses != 1 || view.buffer().has_selection() {
                     return;
                 }
-                if let Some(iter) = view.iter_at(x, y) {
-                    view.follow_link_at(&iter);
+                if let Some(target) = link {
+                    view.follow_link(target);
                 }
             }
         ));
@@ -389,11 +517,90 @@ impl MarkdownView {
             move |_, x, y| {
                 let on_link = view
                     .iter_at(x, y)
-                    .is_some_and(|iter| view.wiki_link_at(&iter).is_some());
-                view.set_cursor_from_name(Some(if on_link { "pointer" } else { "text" }));
+                    .is_some_and(|iter| view.link_at(&iter).is_some());
+                let on_check_box = view.is_editable() && view.check_box_at(x, y).is_some();
+                let pointer = on_link || on_check_box;
+                view.set_cursor_from_name(Some(if pointer { "pointer" } else { "text" }));
             }
         ));
         self.add_controller(motion);
+    }
+
+    /// What a click on the check box at `x`, `y` in widget coordinates
+    /// replaces, and with what, if there is one.
+    fn check_box_at(&self, x: f64, y: f64) -> Option<(Range<i32>, String)> {
+        let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        let decorations = self.imp().decorations.borrow();
+        decorations
+            .check_box_at(self.upcast_ref(), x, y)
+            .map(CheckBox::toggle)
+    }
+
+    /// A click on a check box checks or unchecks it, before the view would
+    /// move the cursor there.
+    fn toggle_check_boxes_on_click(&self) {
+        let click = gtk::GestureClick::builder()
+            .button(gdk::BUTTON_PRIMARY)
+            .propagation_phase(gtk::PropagationPhase::Capture)
+            .build();
+        click.connect_pressed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |click, _, x, y| {
+                if !view.is_editable() {
+                    return;
+                }
+                let Some((range, replacement)) = view.check_box_at(x, y) else {
+                    return;
+                };
+                click.set_state(gtk::EventSequenceState::Claimed);
+                let buffer = view.buffer();
+                let mut start = buffer.iter_at_offset(range.start);
+                let mut end = buffer.iter_at_offset(range.end);
+                buffer.begin_user_action();
+                buffer.delete(&mut start, &mut end);
+                buffer.insert(&mut start, &replacement);
+                buffer.end_user_action();
+            }
+        ));
+        self.add_controller(click);
+    }
+
+    /// In list items, Tab nests the item deeper, Shift+Tab less deep, and
+    /// Enter starts the next item, before the view would handle the keys.
+    /// Shift+Enter still only breaks the line.
+    fn edit_lists_by_keys(&self) {
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        keys.connect_key_pressed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |_, key, _, modifiers| {
+                let others = gdk::ModifierType::CONTROL_MASK
+                    | gdk::ModifierType::ALT_MASK
+                    | gdk::ModifierType::SUPER_MASK;
+                let shift = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
+                if !view.is_editable() || modifiers.intersects(others) {
+                    return glib::Propagation::Proceed;
+                }
+                let is_handled = match key {
+                    gdk::Key::Tab => lists::nest(view.upcast_ref(), view.mode(), !shift),
+                    gdk::Key::ISO_Left_Tab => lists::nest(view.upcast_ref(), view.mode(), false),
+                    gdk::Key::Return | gdk::Key::KP_Enter if !shift => {
+                        lists::continue_item(view.upcast_ref(), view.mode())
+                    }
+                    _ => false,
+                };
+                if is_handled {
+                    glib::Propagation::Stop
+                } else {
+                    glib::Propagation::Proceed
+                }
+            }
+        ));
+        self.add_controller(keys);
     }
 
     /// Puts `marker` around the selection, or at the cursor, and selects
@@ -463,59 +670,9 @@ fn set_style_scheme(view: &MarkdownView, style_manager: &adw::StyleManager) {
         .downcast::<sourceview5::Buffer>()
         .expect("a source view has a source buffer")
         .set_style_scheme(scheme.as_ref());
-}
-
-/// Creates a tag for every style. The markup tag comes last, so that it wins.
-fn create_tags(buffer: &gtk::TextBuffer) {
-    let monospace = || gtk::TextTag::builder().family("monospace");
-    let tags = [
-        gtk::TextTag::builder().weight(pango::Weight::Bold.into_glib()),
-        gtk::TextTag::builder().style(pango::Style::Italic),
-        gtk::TextTag::builder().strikethrough(true),
-        monospace(),
-        monospace(),
-        gtk::TextTag::builder().underline(pango::Underline::Single),
-        gtk::TextTag::builder()
-            .style(pango::Style::Italic)
-            .left_margin(12),
-    ];
-    let styles = [
-        MarkdownStyle::Strong,
-        MarkdownStyle::Emphasis,
-        MarkdownStyle::Strikethrough,
-        MarkdownStyle::Code,
-        MarkdownStyle::CodeBlock,
-        MarkdownStyle::Link,
-        MarkdownStyle::Quote,
-    ];
-    let table = buffer.tag_table();
-    for (builder, style) in tags.into_iter().zip(styles) {
-        table.add(&builder.name(tag_name(style)).build());
-    }
-    for (level, scale) in (1..).zip(HEADING_SCALES) {
-        let tag = gtk::TextTag::builder()
-            .name(tag_name(MarkdownStyle::Heading(level)))
-            .weight(pango::Weight::Bold.into_glib())
-            .scale(scale)
-            .build();
-        table.add(&tag);
-    }
-    table.add(&gtk::TextTag::new(Some(BROKEN_LINK_TAG)));
-    table.add(&gtk::TextTag::new(Some(&tag_name(MarkdownStyle::Markup))));
-}
-
-fn tag_name(style: MarkdownStyle) -> String {
-    match style {
-        MarkdownStyle::Strong => "strong".to_owned(),
-        MarkdownStyle::Emphasis => "emphasis".to_owned(),
-        MarkdownStyle::Strikethrough => "strikethrough".to_owned(),
-        MarkdownStyle::Code => "code".to_owned(),
-        MarkdownStyle::CodeBlock => "code-block".to_owned(),
-        MarkdownStyle::Link => "link".to_owned(),
-        MarkdownStyle::Quote => "quote".to_owned(),
-        MarkdownStyle::Heading(level) => format!("heading-{level}"),
-        MarkdownStyle::Markup => "markup".to_owned(),
-    }
+    // Code is highlighted in the colours of the scheme.
+    view.imp().highlighter.set_style_scheme(scheme.as_ref());
+    view.restyle();
 }
 
 /// The character offset of each byte offset in `text` that starts a
