@@ -7,9 +7,11 @@ use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use gtk::{gdk, gio, glib};
-use knotbook_core::{Commit, NotePath, Period, Project, ProjectSlug, Vault, git_log};
+use knotbook_core::{Commit, NotePath, Period, Project, ProjectSlug, Vault, git_commit, git_log};
 use knotbook_index::{Found, ProjectBlock};
 
+use crate::alert::show_error;
+use crate::commit_dialog::CommitDialog;
 use crate::format::{
     format_duration, format_full_date, format_share, format_time, format_weekday_date,
 };
@@ -362,7 +364,10 @@ impl ProjectView {
             first_day,
         );
 
-        imp.timeline_list.remove_all();
+        // Row by row, as removing all would take the placeholder as well.
+        while let Some(row) = imp.timeline_list.row_at_index(0) {
+            imp.timeline_list.remove(&row);
+        }
         imp.blocks_shown.set(0);
         self.add_blocks(data.blocks, today);
     }
@@ -464,7 +469,14 @@ impl ProjectView {
                     group
                 }
             };
-            group.add(&commit_row(commit, date));
+            let row = commit_row(commit);
+            let id = commit.id.clone();
+            row.connect_activated(glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |_| view.show_commit(id.clone())
+            ));
+            group.add(&row);
             imp.last_day.replace(Some((date, group)));
         }
         let shown = imp.commits_shown.get() + commits.len();
@@ -474,6 +486,29 @@ impl ProjectView {
             .set_visible(commits.len() == COMMITS_AT_ONCE);
         imp.commits_stack
             .set_visible_child_name(if shown == 0 { "empty" } else { "list" });
+    }
+
+    /// Reads the commit `id` with the files it changed in the background,
+    /// then shows it in a dialog.
+    fn show_commit(&self, id: String) {
+        let Some(repo) = self.imp().repo.borrow().clone() else {
+            return;
+        };
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            async move {
+                let details = gio::spawn_blocking(move || git_commit(&repo, &id))
+                    .await
+                    .expect("reading a commit does not panic");
+                match details {
+                    Ok(details) => CommitDialog::new(&details).present(Some(&view)),
+                    Err(err) => {
+                        show_error(&view, &gettext("Cannot Read Commit"), &err.to_string());
+                    }
+                }
+            }
+        ));
     }
 
     /// The group of the commits made on `date`. It tells the time spent
@@ -498,9 +533,9 @@ impl ProjectView {
     }
 }
 
-/// A commit in the log: its summary, then hash, author and time, opening
-/// its day when activated.
-fn commit_row(commit: &Commit, date: NaiveDate) -> adw::ActionRow {
+/// A commit in the log: its summary, then hash, author and time. The log
+/// shows it in detail when activated.
+fn commit_row(commit: &Commit) -> adw::ActionRow {
     let time = commit.time.with_timezone(&Local).time();
     adw::ActionRow::builder()
         .title(&commit.summary)
@@ -512,8 +547,6 @@ fn commit_row(commit: &Commit, date: NaiveDate) -> adw::ActionRow {
         ))
         .use_markup(false)
         .activatable(true)
-        .action_target(&date.to_string().to_variant())
-        .action_name("win.show-day")
         .build()
 }
 

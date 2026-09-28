@@ -2,6 +2,7 @@
 <gresources>
   <gresource prefix="/dev/knotbook/Knotbook">
     <file preprocess="xml-stripblanks">calendar_view.ui</file>
+    <file preprocess="xml-stripblanks">commit_dialog.ui</file>
     <file preprocess="xml-stripblanks">conflict_dialog.ui</file>
     <file preprocess="xml-stripblanks">day_view.ui</file>
     <file preprocess="xml-stripblanks">note_view.ui</file>

@@ -1,6 +1,7 @@
 mod alert;
 mod calendar_view;
 mod colors;
+mod commit_dialog;
 mod config;
 mod conflict_dialog;
 mod day_view;

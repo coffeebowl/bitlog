@@ -1,0 +1,111 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookCommitDialog: Adw.Dialog {
+  title: _("Commit");
+  content-width: 560;
+  content-height: 640;
+  // Not the message, which would open selected.
+  focus-widget: copy_button;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {}
+
+      content: Adw.PreferencesPage {
+        Adw.PreferencesGroup {
+          Box {
+            orientation: vertical;
+            spacing: 12;
+
+            Label summary_label {
+              xalign: 0;
+              wrap: true;
+              wrap-mode: word_char;
+              selectable: true;
+
+              styles [
+                "title-4",
+              ]
+            }
+
+            Label body_label {
+              xalign: 0;
+              wrap: true;
+              wrap-mode: word_char;
+              selectable: true;
+            }
+          }
+        }
+
+        Adw.PreferencesGroup {
+          Adw.ActionRow id_row {
+            title: _("Commit");
+            subtitle-selectable: true;
+
+            [suffix]
+            Button copy_button {
+              icon-name: "edit-copy-symbolic";
+              tooltip-text: _("Copy Hash");
+              valign: center;
+
+              styles [
+                "flat",
+              ]
+            }
+
+            styles [
+              "property",
+            ]
+          }
+
+          Adw.ActionRow author_row {
+            title: _("Author");
+            subtitle-selectable: true;
+            use-markup: false;
+
+            styles [
+              "property",
+            ]
+          }
+
+          Adw.ActionRow date_row {
+            title: _("Date");
+
+            styles [
+              "property",
+            ]
+          }
+
+          Adw.ActionRow committer_row {
+            title: _("Committed By");
+            use-markup: false;
+
+            styles [
+              "property",
+            ]
+          }
+
+          Adw.ActionRow parents_row {
+            subtitle-selectable: true;
+
+            styles [
+              "property",
+            ]
+          }
+
+          Adw.ButtonRow day_row {
+            title: _("Show _Day");
+            use-underline: true;
+            end-icon-name: "go-next-symbolic";
+          }
+        }
+
+        Adw.PreferencesGroup files_group {
+          title: _("Files");
+        }
+      };
+    };
+  };
+}
