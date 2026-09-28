@@ -14,6 +14,7 @@ app/src/projects_page.rs
 app/src/reports_page.rs
 app/src/search_dialog.rs
 app/src/standup_dialog.rs
+app/src/style_switcher.rs
 app/src/sync_conflict_dialog.rs
 app/src/task_list_view.rs
 app/src/week_chart.rs

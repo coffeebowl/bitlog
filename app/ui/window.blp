@@ -23,7 +23,7 @@ template $KnotbookWindow: Adw.ApplicationWindow {
           [top]
           Adw.HeaderBar {
             [end]
-            MenuButton {
+            MenuButton welcome_menu_button {
               icon-name: "open-menu-symbolic";
               menu-model: primary_menu;
               primary: true;
@@ -82,7 +82,7 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                 }
 
                 [end]
-                MenuButton {
+                MenuButton vault_menu_button {
                   icon-name: "open-menu-symbolic";
                   menu-model: primary_menu;
                   primary: true;
@@ -199,6 +199,12 @@ template $KnotbookWindow: Adw.ApplicationWindow {
 }
 
 menu primary_menu {
+  section {
+    item {
+      custom: "style-switcher";
+    }
+  }
+
   section {
     item {
       label: _("_Open Vault…");

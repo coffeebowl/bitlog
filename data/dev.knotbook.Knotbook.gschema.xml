@@ -18,5 +18,15 @@
       <summary>Vault opened last</summary>
       <description>URI of the vault folder to open on start, empty for none.</description>
     </key>
+    <key name="color-scheme" type="s">
+      <choices>
+        <choice value="default"/>
+        <choice value="light"/>
+        <choice value="dark"/>
+      </choices>
+      <default>"default"</default>
+      <summary>Color scheme</summary>
+      <description>Whether the app follows the system style or is always light or dark.</description>
+    </key>
   </schema>
 </schemalist>

@@ -22,6 +22,7 @@ use crate::projects_page::ProjectsPage;
 use crate::reports_page::ReportsPage;
 use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
+use crate::style_switcher;
 use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
 
@@ -68,6 +69,10 @@ mod imp {
     pub struct Window {
         pub settings: gio::Settings,
         #[template_child]
+        pub welcome_menu_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
+        pub vault_menu_button: TemplateChild<gtk::MenuButton>,
+        #[template_child]
         pub toast_overlay: TemplateChild<adw::ToastOverlay>,
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
@@ -110,6 +115,8 @@ mod imp {
         fn default() -> Self {
             Self {
                 settings: gio::Settings::new(config::app_id()),
+                welcome_menu_button: TemplateChild::default(),
+                vault_menu_button: TemplateChild::default(),
                 toast_overlay: TemplateChild::default(),
                 stack: TemplateChild::default(),
                 split_view: TemplateChild::default(),
@@ -254,6 +261,8 @@ mod imp {
     impl ObjectImpl for Window {
         fn constructed(&self) {
             self.parent_constructed();
+            style_switcher::add_to(&self.welcome_menu_button);
+            style_switcher::add_to(&self.vault_menu_button);
             self.split_view.set_content(Some(&self.day_view));
             self.projects_page.connect_vault_changed(glib::clone!(
                 #[weak(rename_to = window)]

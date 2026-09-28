@@ -19,6 +19,7 @@ mod search_dialog;
 mod search_index;
 mod share_bar;
 mod standup_dialog;
+mod style_switcher;
 mod sync_conflict_dialog;
 mod task_list_view;
 mod tasks_page;
@@ -46,7 +47,10 @@ fn main() -> glib::ExitCode {
     let app = adw::Application::builder()
         .application_id(config::app_id())
         .build();
-    app.connect_startup(|_| sourceview5::init());
+    app.connect_startup(|app| {
+        sourceview5::init();
+        style_switcher::follow_settings(app, &gio::Settings::new(config::app_id()));
+    });
     app.connect_activate(|app| Window::new(app).present());
 
     let quit = gio::ActionEntry::builder("quit")
