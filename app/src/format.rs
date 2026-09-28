@@ -91,6 +91,12 @@ pub fn format_duration(duration: TimeDelta) -> String {
         .replace("{minutes}", &minutes.to_string())
 }
 
+/// `duration` where there is little room, as in "7:45".
+pub fn format_short_duration(duration: TimeDelta) -> String {
+    let total = duration.num_minutes();
+    format!("{}:{:02}", total / 60, total % 60)
+}
+
 /// `part` as a share of `whole`, rounded to whole percent, as in "45 %".
 /// `whole` must not be zero.
 pub fn format_share(part: TimeDelta, whole: TimeDelta) -> String {

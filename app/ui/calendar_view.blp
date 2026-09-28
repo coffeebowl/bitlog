@@ -4,9 +4,27 @@ using Adw 1;
 template $KnotbookCalendarView: Adw.NavigationPage {
   title: _("Calendar");
 
-  child: Adw.BreakpointBin {
+  child: Adw.BreakpointBin breakpoint_bin {
     width-request: 360;
     height-request: 294;
+
+    // The breakpoints come from wide to narrow, the last that matches wins.
+    // Those without a name move the hours of the days of a month below
+    // their number and narrow the margins.
+
+    // Shortens the hours of the days of a month.
+    Adw.Breakpoint short_breakpoint {
+      condition ("max-width: 900sp")
+    }
+
+    Adw.Breakpoint {
+      condition ("max-width: 640sp")
+
+      setters {
+        month_clamp.margin-start: 6;
+        month_clamp.margin-end: 6;
+      }
+    }
 
     Adw.Breakpoint {
       condition ("max-width: 520sp")
@@ -14,6 +32,8 @@ template $KnotbookCalendarView: Adw.NavigationPage {
       setters {
         toolbar.reveal-bottom-bars: true;
         view_toggle.visible: false;
+        month_clamp.margin-start: 6;
+        month_clamp.margin-end: 6;
       }
     }
 
@@ -44,7 +64,7 @@ template $KnotbookCalendarView: Adw.NavigationPage {
         }
 
         [end]
-        Button {
+        Button today_button {
           label: _("_Today");
           use-underline: true;
           action-name: "win.today";
@@ -93,17 +113,16 @@ template $KnotbookCalendarView: Adw.NavigationPage {
           child: ScrolledWindow {
             hscrollbar-policy: never;
 
-            child: Adw.Clamp {
-              maximum-size: 900;
+            child: Adw.Clamp month_clamp {
+              maximum-size: 1400;
               margin-top: 12;
               margin-bottom: 12;
               margin-start: 12;
               margin-end: 12;
 
-              child: Grid grid {
-                column-homogeneous: true;
-                row-spacing: 6;
-                column-spacing: 6;
+              child: Box month {
+                orientation: vertical;
+                spacing: 6;
               };
             };
           };
