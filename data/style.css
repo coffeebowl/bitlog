@@ -3,3 +3,17 @@
 .markdown-view text {
   background: none;
 }
+
+/* Notes in a project show as miniatures of pages. */
+flowboxchild.note-card {
+  padding: 6px;
+  border-radius: 12px;
+}
+
+.note-page {
+  background-color: var(--card-bg-color);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px var(--card-shade-color),
+    0 2px 6px 0 var(--card-shade-color);
+}

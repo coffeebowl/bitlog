@@ -7,6 +7,7 @@ mod day_view;
 mod format;
 mod heatmap;
 mod markdown_view;
+mod miniature;
 mod note_view;
 mod preferences_dialog;
 mod project_dialog;

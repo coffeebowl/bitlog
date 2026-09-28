@@ -13,6 +13,7 @@ use knotbook_index::{Found, ProjectBlock};
 use crate::format::{format_duration, format_full_date, format_share, format_time};
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
+use crate::miniature::Miniature;
 use crate::search_index::{ProjectData, SearchIndex};
 use crate::window::show_action;
 
@@ -22,6 +23,9 @@ const BLOCKS_AT_ONCE: u32 = 50;
 /// Commits the log shows at first and adds with "Load More".
 const COMMITS_AT_ONCE: usize = 50;
 
+/// The lines of a note its miniature formats at most, more than fit.
+const PREVIEW_LINES: usize = 50;
+
 mod imp {
     use super::*;
 
@@ -30,7 +34,8 @@ mod imp {
     pub struct ProjectView {
         /// The project shown.
         pub slug: RefCell<Option<ProjectSlug>>,
-        pub rows: RefCell<Vec<adw::ActionRow>>,
+        /// The notes in the grid, in its order, with their previews.
+        pub notes: RefCell<Vec<(NotePath, MarkdownView)>>,
         pub vault: RefCell<Option<Vault>>,
         pub index: RefCell<SearchIndex>,
         /// Counts the lookups in the index, so that one finishing after a
@@ -56,7 +61,7 @@ mod imp {
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
-        pub notes_group: TemplateChild<adw::PreferencesGroup>,
+        pub notes_grid: TemplateChild<gtk::FlowBox>,
         #[template_child]
         pub empty_new_note_button: TemplateChild<gtk::Button>,
         #[template_child]
@@ -130,6 +135,15 @@ mod imp {
                 self.obj(),
                 move |_| view.show_more_commits()
             ));
+            self.notes_grid.connect_child_activated(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                move |_, card| {
+                    let index = usize::try_from(card.index()).expect("cards are in the grid");
+                    let target = view.imp().notes.borrow()[index].0.to_string().to_variant();
+                    let _ = WidgetExt::activate_action(&view, "notes.open", Some(&target));
+                }
+            ));
         }
     }
     impl WidgetImpl for ProjectView {}
@@ -187,9 +201,8 @@ impl ProjectView {
             button.set_action_target_value(Some(&target));
         }
 
-        for row in imp.rows.take() {
-            imp.notes_group.remove(&row);
-        }
+        imp.notes_grid.remove_all();
+        imp.notes.take();
         let notes = match vault.notes(&project.slug) {
             Ok(notes) => notes,
             Err(err) => {
@@ -198,13 +211,29 @@ impl ProjectView {
                 return;
             }
         };
-        let rows: Vec<adw::ActionRow> = notes.iter().map(note_row).collect();
-        for row in &rows {
-            imp.notes_group.add(row);
-        }
+        let notes: Vec<_> = notes
+            .into_iter()
+            .map(|note| {
+                let preview = note_preview();
+                show_preview(&preview, &note_text(vault, &note));
+                imp.notes_grid.append(&note_card(&note, &preview));
+                (note, preview)
+            })
+            .collect();
         imp.stack
-            .set_visible_child_name(if rows.is_empty() { "empty" } else { "list" });
-        imp.rows.replace(rows);
+            .set_visible_child_name(if notes.is_empty() { "empty" } else { "list" });
+        imp.notes.replace(notes);
+    }
+
+    /// Shows the notes in the grid as they are now, as after editing one.
+    pub fn update_previews(&self) {
+        let imp = self.imp();
+        let Some(vault) = imp.vault.borrow().clone() else {
+            return;
+        };
+        for (note, preview) in &*imp.notes.borrow() {
+            show_preview(preview, &note_text(&vault, note));
+        }
     }
 }
 
@@ -535,24 +564,106 @@ fn block_row(block: &ProjectBlock) -> gtk::ListBoxRow {
         .build()
 }
 
-fn note_row(note: &NotePath) -> adw::ActionRow {
-    let target = note.to_string().to_variant();
-    let row = adw::ActionRow::builder()
-        .title(note.name())
-        .use_markup(false)
-        .activatable(true)
-        .action_name("notes.open")
-        .action_target(&target)
+/// The text of `note`, or none if it cannot be read.
+fn note_text(vault: &Vault, note: &NotePath) -> String {
+    vault.load_note(note).map_or_else(
+        |err| {
+            glib::g_warning!("knotbook", "{err}");
+            String::new()
+        },
+        |file| file.text,
+    )
+}
+
+/// Shows the start of a note's text, its Markdown formatted, laid out as on
+/// a page.
+fn note_preview() -> MarkdownView {
+    let preview: MarkdownView = glib::Object::new();
+    preview.set_full(true);
+    preview.set_top_margin(48);
+    preview.set_bottom_margin(48);
+    preview.set_left_margin(56);
+    preview.set_right_margin(56);
+    // Clicks go to the card, which opens the note.
+    preview.set_can_target(false);
+    preview.set_focusable(false);
+    preview
+}
+
+/// Shows the start of `text` in `preview`, unless it shows it already.
+fn show_preview(preview: &MarkdownView, text: &str) {
+    let text = preview_text(without_front_matter(text));
+    if !preview.shows(text) {
+        preview.set_markdown(text);
+    }
+}
+
+/// A note in the grid: `preview` as the miniature of a page, above its
+/// name and menu. The grid opens it when activated.
+fn note_card(note: &NotePath, preview: &MarkdownView) -> gtk::FlowBoxChild {
+    let page = Miniature::new(preview);
+    page.add_css_class("note-page");
+    // Takes up rounding, so that the names line up.
+    page.set_vexpand(true);
+
+    let footer = gtk::Box::builder().spacing(3).build();
+    footer.append(
+        &gtk::Label::builder()
+            .label(note.name())
+            .tooltip_text(note.name())
+            .xalign(0.0)
+            .hexpand(true)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            // Leaves the width of the card to the page.
+            .max_width_chars(1)
+            .margin_start(3)
+            .build(),
+    );
+    footer.append(
+        &gtk::MenuButton::builder()
+            .icon_name("view-more-symbolic")
+            .tooltip_text(gettext("Note Menu"))
+            .menu_model(&note_menu(note))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat", "circular"])
+            .build(),
+    );
+
+    let content = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .spacing(6)
         .build();
-    let menu_button = gtk::MenuButton::builder()
-        .icon_name("view-more-symbolic")
-        .tooltip_text(gettext("Note Menu"))
-        .menu_model(&note_menu(note))
-        .valign(gtk::Align::Center)
-        .css_classes(["flat"])
-        .build();
-    row.add_suffix(&menu_button);
-    row
+    content.append(&page);
+    content.append(&footer);
+    gtk::FlowBoxChild::builder()
+        .child(&content)
+        .width_request(120)
+        .css_classes(["note-card"])
+        .build()
+}
+
+/// `text` without its front matter, if it starts with one.
+fn without_front_matter(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix("---\n") else {
+        return text;
+    };
+    let mut end = 0;
+    for line in rest.split_inclusive('\n') {
+        end += line.len();
+        if line.trim_end() == "---" {
+            return rest[end..].trim_start();
+        }
+    }
+    text
+}
+
+/// The start of `text`, as much as a preview formats.
+fn preview_text(text: &str) -> &str {
+    let end = text
+        .match_indices('\n')
+        .nth(PREVIEW_LINES)
+        .map_or(text.len(), |(end, _)| end);
+    &text[..end]
 }
 
 /// Renaming and deleting the note `note`.

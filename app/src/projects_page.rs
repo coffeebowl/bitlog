@@ -116,6 +116,19 @@ mod imp {
     }
 
     impl ObjectImpl for ProjectsPage {
+        fn constructed(&self) {
+            self.parent_constructed();
+            // Back from a note, the previews show it as just typed.
+            self.project_view.connect_showing(glib::clone!(
+                #[weak(rename_to = note_view)]
+                self.note_view,
+                move |project_view| {
+                    note_view.save_now();
+                    project_view.update_previews();
+                }
+            ));
+        }
+
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {

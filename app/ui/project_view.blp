@@ -143,8 +143,25 @@ template $KnotbookProjectView: Adw.NavigationPage {
           StackPage {
             name: "list";
 
-            child: Adw.PreferencesPage {
-              Adw.PreferencesGroup notes_group {}
+            child: ScrolledWindow {
+              hscrollbar-policy: never;
+
+              child: Adw.Clamp {
+                maximum-size: 1200;
+                margin-top: 24;
+                margin-bottom: 24;
+                margin-start: 12;
+                margin-end: 12;
+
+                child: FlowBox notes_grid {
+                  valign: start;
+                  homogeneous: true;
+                  selection-mode: none;
+                  max-children-per-line: 8;
+                  column-spacing: 12;
+                  row-spacing: 18;
+                };
+              };
             };
           }
 
