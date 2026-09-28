@@ -9,10 +9,10 @@ use knotbook_core::{
     Commit, EditError, Project, ProjectSlug, ProjectStatus, Vault, check_repo_path, git_log,
 };
 
-/// A table of all projects: slug, name, category, status, color, whether
-/// they are pinned and the path of their repository on this device.
+/// A table of all projects in their order: slug, name, category, status,
+/// color and the path of their repository on this device.
 pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) -> String {
-    let rows: Vec<[String; 7]> = vault
+    let rows: Vec<[String; 6]> = vault
         .projects()
         .iter()
         .map(|project| {
@@ -22,7 +22,6 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
                 project.category.clone(),
                 project.status.as_str().to_owned(),
                 project.color.clone(),
-                if project.pinned { "pinned" } else { "" }.to_owned(),
                 repos
                     .get(&project.slug)
                     .map(|repo| repo.display().to_string())
@@ -30,7 +29,7 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
             ]
         })
         .collect();
-    let widths: Vec<usize> = (0..6)
+    let widths: Vec<usize> = (0..5)
         .map(|column| {
             rows.iter()
                 .map(|row| row[column].chars().count())
@@ -45,7 +44,7 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
                 .zip(&widths)
                 .map(|(value, width)| format!("{value:<width$}  "))
                 .collect();
-            line.push_str(&row[6]);
+            line.push_str(&row[5]);
             format!("{}\n", line.trim_end())
         })
         .collect()
@@ -95,7 +94,6 @@ pub struct ProjectChanges {
     pub color: Option<String>,
     pub category: Option<String>,
     pub status: Option<ProjectStatus>,
-    pub pinned: Option<bool>,
     /// `Some(None)` removes the repository.
     pub repo: Option<Option<PathBuf>>,
 }
@@ -155,9 +153,6 @@ fn apply(project: &mut Project, changes: ProjectChanges) -> Result<(), EditError
     if let Some(status) = changes.status {
         project.status = status;
     }
-    if let Some(pinned) = changes.pinned {
-        project.pinned = pinned;
-    }
     Ok(())
 }
 
@@ -177,11 +172,11 @@ mod tests {
                 &vault,
                 &BTreeMap::from([("infra".parse().unwrap(), "/code/infra".into())])
             ),
-            "filler    Filler          overhead  active  #c061cb  pinned\n\
-             infra     Infrastructure  work      active  #2ec27e          /code/infra\n\
-             meetings  Meetings        overhead  active  #f6d32d  pinned\n\
-             pause     Break           break     active  #9a9996  pinned\n\
-             webshop   Webshop         work      active  #3584e4  pinned\n"
+            "webshop   Webshop         work      active  #3584e4\n\
+             infra     Infrastructure  work      active  #2ec27e  /code/infra\n\
+             meetings  Meetings        overhead  active  #f6d32d\n\
+             filler    Filler          overhead  active  #c061cb\n\
+             pause     Break           break     active  #9a9996\n"
         );
     }
 }

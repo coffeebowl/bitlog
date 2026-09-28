@@ -3,5 +3,4 @@ name = "Filler"
 color = "#c061cb"
 status = "active"
 category = "overhead"
-pinned = true
 created = 2026-03-01

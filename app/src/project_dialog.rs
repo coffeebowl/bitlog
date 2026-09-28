@@ -44,8 +44,6 @@ mod imp {
         #[template_child]
         pub status_row: TemplateChild<adw::ComboRow>,
         #[template_child]
-        pub pinned_row: TemplateChild<adw::SwitchRow>,
-        #[template_child]
         pub repo_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub repo_row: TemplateChild<adw::ActionRow>,
@@ -152,7 +150,6 @@ impl ProjectDialog {
             .expect("every status is listed");
         imp.status_row
             .set_selected(u32::try_from(status).expect("few statuses"));
-        imp.pinned_row.set_active(shown.pinned);
         if project.is_some() {
             dialog.set_title(&gettext("Edit Project"));
             imp.save_button.set_label(&gettext("_Save"));
@@ -206,11 +203,6 @@ impl ProjectDialog {
         changed(&mut project.category, &shown.category, category);
         let status = PROJECT_STATUSES[imp.status_row.selected() as usize];
         changed(&mut project.status, &shown.status, status);
-        changed(
-            &mut project.pinned,
-            &shown.pinned,
-            imp.pinned_row.is_active(),
-        );
         Ok(())
     }
 

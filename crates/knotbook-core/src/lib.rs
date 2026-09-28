@@ -21,7 +21,7 @@ mod vault;
 mod watch;
 
 pub use check::Problem;
-pub use config::{DefaultsConfig, GridConfig, VaultConfig, WeekConfig};
+pub use config::{DefaultsConfig, GridConfig, ProjectsConfig, VaultConfig, WeekConfig};
 pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};
 pub use day::{Block, Day, DayWarning, RemovedText, minute_of_day};
 pub use device::check_repo_path;

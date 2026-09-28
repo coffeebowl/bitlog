@@ -28,8 +28,6 @@ pub struct Project {
     pub status: ProjectStatus,
     /// Free text, only `break` has a meaning.
     pub category: String,
-    /// Listed first when picking a project for a block.
-    pub pinned: bool,
     pub created: Option<NaiveDate>,
     /// The file as read, so that writing keeps comments, formatting and
     /// fields this version does not know.
@@ -74,8 +72,6 @@ struct ProjectFile {
     color: Option<String>,
     status: Option<ProjectStatus>,
     category: Option<String>,
-    #[serde(default)]
-    pinned: bool,
     #[serde(default, deserialize_with = "local_date")]
     created: Option<NaiveDate>,
 }
@@ -95,7 +91,6 @@ impl Project {
             color: DEFAULT_COLOR.to_owned(),
             status: ProjectStatus::Active,
             category: DEFAULT_CATEGORY.to_owned(),
-            pinned: false,
             created: Some(created),
             document: DocumentMut::new(),
             hash: None,
@@ -115,7 +110,6 @@ impl Project {
             Self {
                 color: color.to_owned(),
                 category: category.to_owned(),
-                pinned: true,
                 ..Self::new(slug, name, created)
             }
         })
@@ -210,7 +204,6 @@ impl Project {
             color,
             status: file.status.unwrap_or(ProjectStatus::Active),
             category: file.category.unwrap_or_else(|| DEFAULT_CATEGORY.to_owned()),
-            pinned: file.pinned,
             created: file.created,
             document,
             hash: Some(content_hash(text)),
@@ -228,7 +221,6 @@ impl Project {
         set(table, "color", self.color.as_str().into());
         set(table, "status", self.status.as_str().into());
         set(table, "category", self.category.as_str().into());
-        set(table, "pinned", self.pinned.into());
         set_date(table, "created", self.created);
         document.to_string()
     }
@@ -263,7 +255,6 @@ mod tests {
         assert_eq!(infra.color, "#2ec27e");
         assert_eq!(infra.status, ProjectStatus::Active);
         assert_eq!(infra.category, "work");
-        assert!(!infra.pinned);
         assert_eq!(infra.created, Some(date(2026, 4, 15)));
 
         let breaks: Vec<&str> = projects
@@ -291,10 +282,9 @@ mod tests {
         .unwrap();
         project.name = "Infrastructure".to_owned();
         project.category = "ops".to_owned();
-        project.pinned = true;
         assert_eq!(
             project.to_toml(),
-            "format = 1\nname = \"Infrastructure\" # short\n# Billed separately.\ncategory = \"ops\"\nhomepage = \"x\"\ncolor = \"#3584e4\"\nstatus = \"active\"\npinned = true\n"
+            "format = 1\nname = \"Infrastructure\" # short\n# Billed separately.\ncategory = \"ops\"\nhomepage = \"x\"\ncolor = \"#3584e4\"\nstatus = \"active\"\n"
         );
     }
 
@@ -304,7 +294,7 @@ mod tests {
         let text = project.to_toml();
         assert_eq!(
             text,
-            "format = 1\nname = \"Webshop\"\ncolor = \"#3584e4\"\nstatus = \"active\"\ncategory = \"work\"\npinned = false\ncreated = 2026-03-01\n"
+            "format = 1\nname = \"Webshop\"\ncolor = \"#3584e4\"\nstatus = \"active\"\ncategory = \"work\"\ncreated = 2026-03-01\n"
         );
         let read = Project::parse(slug("webshop"), &text).unwrap();
         assert_eq!(read.to_toml(), text);
@@ -335,7 +325,6 @@ mod tests {
         assert_eq!(project.color, DEFAULT_COLOR);
         assert_eq!(project.status, ProjectStatus::Active);
         assert_eq!(project.category, "work");
-        assert!(!project.pinned);
         assert_eq!(project.created, None);
         assert!(!project.to_toml().contains("created"));
     }
@@ -348,7 +337,6 @@ mod tests {
             "format = 1\ncolor = \"blue\"",
             "format = 1\ncolor = \"#12345\"",
             "format = 1\nstatus = \"done\"",
-            "format = 1\npinned = \"yes\"",
             "format = 1\ncreated = \"2026-03-01\"",
             "format = 1\ncreated = 2026-03-01T10:00:00",
         ] {

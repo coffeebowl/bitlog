@@ -7,10 +7,10 @@ use chrono::{NaiveTime, Weekday};
 use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table, Value};
 
-use crate::LocationKey;
 use crate::error::ReadError;
 use crate::file::{FORMAT, check_format, content_hash, parse_text, read_file};
 use crate::toml_values::{local_time, set, toml_time};
+use crate::{LocationKey, ProjectSlug};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct VaultConfig {
@@ -26,6 +26,8 @@ pub struct VaultConfig {
     pub locations: BTreeMap<LocationKey, String>,
     #[serde(default)]
     pub defaults: DefaultsConfig,
+    #[serde(default)]
+    pub projects: ProjectsConfig,
     /// The file as read, keeping comments and formatting for writing.
     #[serde(skip)]
     document: DocumentMut,
@@ -61,6 +63,15 @@ pub struct DefaultsConfig {
     pub location: Option<LocationKey>,
     /// Path relative to the vault.
     pub note_template: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
+pub struct ProjectsConfig {
+    /// The order in which projects are listed. Projects missing here come
+    /// after the others, by name; slugs of projects the vault lacks are
+    /// ignored.
+    pub order: Vec<ProjectSlug>,
 }
 
 fn default_name() -> String {
@@ -188,6 +199,19 @@ impl VaultConfig {
             None => None,
         };
         set_optional(doc, "defaults", "note_template", template);
+        let order: toml_edit::Array = self
+            .projects
+            .order
+            .iter()
+            .map(ProjectSlug::as_str)
+            .collect();
+        set_key(
+            doc,
+            Some("projects"),
+            "order",
+            order.into(),
+            self.projects.order.is_empty(),
+        );
         Ok(document.to_string())
     }
 
@@ -327,6 +351,8 @@ mod tests {
             config.defaults.note_template,
             Some(PathBuf::from("templates/note.md"))
         );
+        let order: Vec<&str> = config.projects.order.iter().map(|s| s.as_str()).collect();
+        assert_eq!(order, ["webshop", "infra", "meetings", "filler"]);
     }
 
     #[test]
@@ -337,6 +363,7 @@ mod tests {
         assert_eq!(config.grid, GridConfig::default());
         assert!(config.locations.is_empty());
         assert_eq!(config.defaults, DefaultsConfig::default());
+        assert!(config.projects.order.is_empty());
     }
 
     #[test]
@@ -373,6 +400,7 @@ mod tests {
             "format = 1\n[defaults]\nnote_template = \"../note.md\"",
             "format = 1\n[defaults]\nnote_template = \"templates/../../note.md\"",
             "format = 1\n[defaults]\nnote_template = \"\"",
+            "format = 1\n[projects]\norder = [\"Web Shop\"]",
         ] {
             assert!(VaultConfig::parse(text).is_err(), "{text:?}");
         }
@@ -424,6 +452,15 @@ mod tests {
         assert_eq!(read.week, config.week);
         assert_eq!(read.grid, config.grid);
         assert_eq!(read.defaults, config.defaults);
+    }
+
+    #[test]
+    fn writing_the_project_order() {
+        let mut config = VaultConfig::parse("format = 1\n").unwrap();
+        config.projects.order = vec!["b".parse().unwrap(), "a".parse().unwrap()];
+        let text = config.to_toml().unwrap();
+        assert_eq!(text, "format = 1\n\n[projects]\norder = [\"b\", \"a\"]\n");
+        assert_eq!(VaultConfig::parse(&text).unwrap().projects, config.projects);
     }
 
     #[test]

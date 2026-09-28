@@ -14,7 +14,7 @@ use crate::{Day, DayWarning, EditError, Project, ProjectSlug, TaskList, VaultCon
 pub struct Vault {
     root: PathBuf,
     config: VaultConfig,
-    /// Sorted by slug.
+    /// In the order of the settings, see [`Vault::projects`].
     projects: Vec<Project>,
     /// Shared by all clones, so that watching knows about every write.
     own_writes: OwnWrites,
@@ -54,12 +54,14 @@ impl Vault {
     /// Opens the vault in the folder `root`, reading its configuration and
     /// projects. Days are read on demand.
     pub fn open(root: &Path) -> Result<Self, ReadError> {
-        Ok(Self {
+        let mut vault = Self {
             root: root.to_owned(),
             config: VaultConfig::load(&Self::config_path(root))?,
             projects: Project::load_all(root)?,
             own_writes: OwnWrites::default(),
-        })
+        };
+        vault.sort_projects();
+        Ok(vault)
     }
 
     pub fn root(&self) -> &Path {
@@ -97,11 +99,63 @@ impl Vault {
             self.write(&path, &text)?;
         }
         self.config = saved;
+        self.sort_projects();
         Ok(&self.config)
     }
 
+    /// The projects in the order the user gave them, see
+    /// [`ProjectsConfig::order`](crate::ProjectsConfig::order).
     pub fn projects(&self) -> &[Project] {
         &self.projects
+    }
+
+    /// Sorts the projects in the order of the settings, those missing there
+    /// after the others by name.
+    fn sort_projects(&mut self) {
+        let order = &self.config.projects.order;
+        self.projects.sort_by_cached_key(|project| {
+            let position = order.iter().position(|slug| *slug == project.slug);
+            (
+                position.unwrap_or(usize::MAX),
+                project.name.to_lowercase(),
+                project.slug.clone(),
+            )
+        });
+    }
+
+    /// Moves the project `slug` right before the project `target`, or right
+    /// after it if `after`, and saves the order of all projects.
+    pub fn move_project(
+        &mut self,
+        slug: &ProjectSlug,
+        target: &ProjectSlug,
+        after: bool,
+    ) -> Result<(), SaveError> {
+        for project in [slug, target] {
+            if self.project(project).is_none() {
+                return Err(EditError::UnknownProject(project.clone()).into());
+            }
+        }
+        if slug == target {
+            return Ok(());
+        }
+        let mut order: Vec<ProjectSlug> = self
+            .projects
+            .iter()
+            .map(|project| project.slug.clone())
+            .filter(|other| other != slug)
+            .collect();
+        let index = order
+            .iter()
+            .position(|other| other == target)
+            .expect("the target is not the project moved")
+            + usize::from(after);
+        order.insert(index, slug.clone());
+        self.update_config(|config| {
+            config.projects.order = order;
+            Ok(())
+        })?;
+        Ok(())
     }
 
     pub fn project(&self, slug: &ProjectSlug) -> Option<&Project> {
@@ -184,11 +238,11 @@ impl Vault {
         let saved =
             Project::read(&self.root, project.slug.clone(), &text).expect("new projects are valid");
         self.write(&path, &text)?;
-        let index = self
-            .projects
-            .partition_point(|other| other.slug < saved.slug);
-        self.projects.insert(index, saved);
-        Ok(&self.projects[index])
+        self.projects.push(saved);
+        self.sort_projects();
+        Ok(self
+            .project(&project.slug)
+            .expect("the project was just added"))
     }
 
     /// Applies `change` to the project `slug` of this vault and saves it.
@@ -221,7 +275,9 @@ impl Vault {
             self.write(&path, &text)?;
         }
         self.projects[index] = saved;
-        Ok(&self.projects[index])
+        // The name may place it elsewhere.
+        self.sort_projects();
+        Ok(self.project(slug).expect("the project was just saved"))
     }
 
     /// Where exports go. Knotbook may overwrite anything in there.
@@ -639,7 +695,7 @@ mod tests {
         let path = Project::path(vault.root(), &slug);
         let external = fs::read_to_string(&path)
             .unwrap()
-            .replace("pinned = false", "pinned = true");
+            .replace("category = \"work\"", "category = \"ops\"");
         fs::write(&path, &external).unwrap();
 
         let project = vault
@@ -649,10 +705,54 @@ mod tests {
             })
             .unwrap();
         assert_eq!(project.name, "Infra");
-        assert!(project.pinned);
+        assert_eq!(project.category, "ops");
         let written = fs::read_to_string(&path).unwrap();
         assert_eq!(written, external.replace("\"Infrastructure\"", "\"Infra\""));
         assert_eq!(vault.project(&slug).unwrap().name, "Infra");
+    }
+
+    fn slugs(vault: &Vault) -> Vec<&str> {
+        vault.projects().iter().map(|p| p.slug.as_str()).collect()
+    }
+
+    #[test]
+    fn projects_come_in_the_order_of_the_settings() {
+        let (_dir, vault) = sample_copy();
+        // Break is missing from the order.
+        assert_eq!(
+            slugs(&vault),
+            ["webshop", "infra", "meetings", "filler", "pause"]
+        );
+    }
+
+    #[test]
+    fn move_project() {
+        let (_dir, mut vault) = sample_copy();
+        let slug = |value: &str| -> ProjectSlug { value.parse().unwrap() };
+        vault
+            .move_project(&slug("pause"), &slug("infra"), false)
+            .unwrap();
+        assert_eq!(
+            slugs(&vault),
+            ["webshop", "pause", "infra", "meetings", "filler"]
+        );
+        vault
+            .move_project(&slug("webshop"), &slug("filler"), true)
+            .unwrap();
+        let expected = ["pause", "infra", "meetings", "filler", "webshop"];
+        assert_eq!(slugs(&vault), expected);
+        // Saved for the next start.
+        assert_eq!(slugs(&Vault::open(vault.root()).unwrap()), expected);
+        let text = fs::read_to_string(vault.root().join("knotbook.toml")).unwrap();
+        assert!(
+            text.contains("order = [\"pause\", \"infra\", \"meetings\", \"filler\", \"webshop\"]"),
+            "{text}"
+        );
+        assert!(
+            vault
+                .move_project(&slug("nope"), &slug("infra"), false)
+                .is_err()
+        );
     }
 
     #[test]
@@ -882,10 +982,10 @@ mod tests {
             fs::read_to_string(Project::path(vault.root(), &slug)).unwrap(),
             text
         );
-        let slugs: Vec<&str> = vault.projects().iter().map(|p| p.slug.as_str()).collect();
+        // After the ordered projects, by name: Break, then Documentation.
         assert_eq!(
-            slugs,
-            ["docs", "filler", "infra", "meetings", "pause", "webshop"]
+            slugs(&vault),
+            ["webshop", "infra", "meetings", "filler", "pause", "docs"]
         );
 
         let again = Project::new(slug.clone(), "Again", date(2026, 10, 1));

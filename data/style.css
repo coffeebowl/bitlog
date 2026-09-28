@@ -64,3 +64,25 @@ flowboxchild.note-card {
   background-color: var(--accent-bg-color);
   color: var(--accent-fg-color);
 }
+
+/* Projects are moved in their list by dragging them: the row taken away is
+   dimmed, a line shows where it goes, and it moves as a card. */
+row.dragging {
+  opacity: 0.4;
+}
+
+row.drop-before {
+  box-shadow: inset 0 2px var(--accent-bg-color);
+}
+
+row.drop-after {
+  box-shadow: inset 0 -2px var(--accent-bg-color);
+}
+
+.dragged-project {
+  background-color: var(--card-bg-color);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px var(--card-shade-color),
+    0 2px 6px 0 var(--card-shade-color);
+}

@@ -85,6 +85,9 @@ hybrid = "Hybrid"                # partly remote, partly in the office
 [defaults]
 location = "remote"
 note_template = "templates/note.md"
+
+[projects]
+order = ["project-a", "meetings", "filler"]
 ```
 
 Only `format` is required. Missing fields take these defaults:
@@ -101,6 +104,11 @@ Only `format` is required. Missing fields take these defaults:
 | `locations` | none | keys are location keys, values display names |
 | `defaults.location` | none | a key from `[locations]`; the location of new days |
 | `defaults.note_template` | none | path of a file in the vault, relative to it, without `..` |
+| `projects.order` | none | project slugs, the order projects are listed in |
+
+Projects missing from `projects.order` are listed after the others, by name.
+Slugs of projects the vault lacks are ignored. When a project is moved, the
+app writes the order of all projects.
 
 A new vault is created with the locations `remote`, `office` and `hybrid`
 as in the example; `hybrid` is meant for days spent partly in each place.
@@ -289,7 +297,6 @@ name = "Project A"
 color = "#3584e4"
 status = "active"                # active | paused | archived
 category = "work"                # free text; `break` is the only special category
-pinned = false                   # listed first when picking a project for a block
 created = 2026-03-01
 ```
 
@@ -305,11 +312,12 @@ Only `format` is required. Missing fields take these defaults:
 | `color` | `"#3584e4"` | `#` and six hex digits |
 | `status` | `"active"` | `active`, `paused` or `archived` |
 | `category` | `"work"` | free text; blocks of `break` projects are breaks |
-| `pinned` | `false` | |
 | `created` | none | TOML local date |
 
 Knotbook writes all fields except a missing `created`. Comments, formatting,
-unchanged values and unknown fields are kept as they are.
+unchanged values and unknown fields are kept as they are. `pinned` of earlier
+versions is such an unknown field now; the order of projects is set in
+`knotbook.toml`.
 
 The path to a project's local Git repository differs on every machine, so it
 is stored per device in `.knotbook/device.toml`:
@@ -327,11 +335,11 @@ Knotbook writes the file. Knotbook only sets paths of folders that hold
 
 **Default projects of a new vault:**
 
-| Slug | Category | Counts as working time | Pinned |
-| --- | --- | --- | --- |
-| `pause` | `break` | no | yes |
-| `meetings` | `overhead` | yes | yes |
-| `filler` | `overhead` | yes | yes |
+| Slug | Category | Counts as working time |
+| --- | --- | --- |
+| `pause` | `break` | no |
+| `meetings` | `overhead` | yes |
+| `filler` | `overhead` | yes |
 
 `filler` stands for loose time: research, e-mails, longer chats, short
 digressions.

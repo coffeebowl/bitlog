@@ -6,15 +6,14 @@ use knotbook_core::{Project, ProjectSlug, ProjectStatus, Vault};
 
 use crate::colors::color_dot;
 
-/// A popover with the projects of `vault` that are not archived, pinned ones
-/// first. Choosing one closes it and calls `on_chosen`.
+/// A popover with the projects of `vault` that are not archived, in their
+/// order. Choosing one closes it and calls `on_chosen`.
 pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static) -> gtk::Popover {
-    let mut projects: Vec<&Project> = vault
+    let projects: Vec<&Project> = vault
         .projects()
         .iter()
         .filter(|project| project.status != ProjectStatus::Archived)
         .collect();
-    projects.sort_by_key(|project| !project.pinned);
 
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::None)

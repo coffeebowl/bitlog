@@ -119,8 +119,8 @@ knotbook block rm k7f3 --move-text
 knotbook set --location office --work 08:30-16:45
 
 knotbook project list
-knotbook project add client-portal --name "Client portal" --color ff7800 --pin
-knotbook project edit client-portal --status archived --unpin
+knotbook project add client-portal --name "Client portal" --color ff7800
+knotbook project edit client-portal --status archived
 knotbook project edit client-portal --repo ~/code/client-portal   # only on this device
 knotbook log client-portal --limit 5   # latest commits of that repository
 

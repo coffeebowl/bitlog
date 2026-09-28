@@ -513,21 +513,17 @@ impl Window {
         self.show_sidebar_projects(vault);
     }
 
-    /// Lists the active projects of `vault` in the sidebar, apart from
-    /// breaks. The others are on the project page.
+    /// Lists the active projects of `vault` in the sidebar in their order,
+    /// apart from breaks. The others are on the project page.
     fn show_sidebar_projects(&self, vault: &Vault) {
         let imp = self.imp();
         for (_, row) in imp.project_rows.take() {
             imp.sidebar_list.remove(&row);
         }
-        let mut projects: Vec<_> = vault
+        let rows = vault
             .projects()
             .iter()
             .filter(|project| project.status == ProjectStatus::Active && !project.is_break())
-            .collect();
-        projects.sort_by_key(|project| project.name.to_lowercase());
-        let rows = projects
-            .into_iter()
             .map(|project| {
                 let row = sidebar_project_row(&project.name, &project.color);
                 row.set_action_name(Some("win.show-project"));

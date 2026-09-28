@@ -9,7 +9,7 @@ use adw::subclass::prelude::*;
 use chrono::{DateTime, Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
-use gtk::glib;
+use gtk::{gdk, glib};
 use knotbook_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
 use knotbook_index::Found;
 
@@ -325,7 +325,7 @@ impl ProjectsPage {
         };
         let mut has_projects = false;
         for status in PROJECT_STATUSES {
-            let mut projects: Vec<&Project> = vault
+            let projects: Vec<&Project> = vault
                 .projects()
                 .iter()
                 .filter(|project| project.status == status)
@@ -333,7 +333,6 @@ impl ProjectsPage {
             if projects.is_empty() {
                 continue;
             }
-            projects.sort_by_key(|project| project.name.to_lowercase());
             let group = adw::PreferencesGroup::builder()
                 .title(status_name(status))
                 .build();
@@ -341,7 +340,9 @@ impl ProjectsPage {
             for project in projects {
                 let week = find(&project.slug, &data.week_times);
                 worked_this_week |= week.is_some();
-                group.add(&project_row(project, week, last_day(&project.slug), today));
+                let row = project_row(project, week, last_day(&project.slug), today);
+                self.make_movable(&row, project);
+                group.add(&row);
             }
             if worked_this_week {
                 group.set_header_suffix(Some(
@@ -359,6 +360,199 @@ impl ProjectsPage {
         imp.stack
             .set_visible_child_name(if has_projects { "list" } else { "empty" });
         imp.groups.replace(groups);
+    }
+
+    /// Lets `row` of `project` be dragged onto another project of the same
+    /// status to move it there, marked by a handle at its end. On touch
+    /// screens dragging starts at the handle or with a long press, so that
+    /// swiping still scrolls and tapping still opens the project.
+    fn make_movable(&self, row: &adw::ActionRow, project: &Project) {
+        let slug = project.slug.clone();
+        let status = project.status;
+        let handle = gtk::Image::builder()
+            .icon_name("list-drag-handle-symbolic")
+            .css_classes(["dim-label"])
+            .build();
+        handle.set_cursor_from_name(Some("grab"));
+        row.add_suffix(&handle);
+        // Where the row was grabbed, and whether a finger holds it so that
+        // it may be dragged.
+        let grab = Rc::new(Cell::new((0.0, 0.0)));
+        let held = Rc::new(Cell::new(false));
+
+        let source = gtk::DragSource::new();
+        source.set_actions(gdk::DragAction::MOVE);
+        // Held, the row neither scrolls nor opens when let go.
+        let hold = |gesture: &gtk::Gesture, held: &Cell<bool>| {
+            held.set(true);
+            gesture.set_state(gtk::EventSequenceState::Claimed);
+        };
+        let touch = gtk::GestureClick::builder().touch_only(true).build();
+        touch.group_with(&source);
+        touch.connect_pressed(glib::clone!(
+            #[weak]
+            row,
+            #[weak]
+            handle,
+            #[strong]
+            held,
+            move |gesture, _, x, _| {
+                // The handle is small, so a finger may touch next to it.
+                let on_handle = handle
+                    .compute_bounds(&row)
+                    .is_some_and(|bounds| x >= f64::from(bounds.x()) - 12.0);
+                held.set(false);
+                if on_handle {
+                    hold(gesture.upcast_ref(), &held);
+                }
+            }
+        ));
+        let long_press = gtk::GestureLongPress::builder().touch_only(true).build();
+        long_press.group_with(&source);
+        long_press.connect_pressed(glib::clone!(
+            #[strong]
+            held,
+            move |gesture, _, _| hold(gesture.upcast_ref(), &held)
+        ));
+        source.connect_prepare(glib::clone!(
+            #[strong]
+            held,
+            #[strong]
+            grab,
+            #[strong]
+            slug,
+            move |source, x, y| {
+                let touch = source
+                    .current_event_device()
+                    .is_some_and(|device| device.source() == gdk::InputSource::Touchscreen);
+                if touch && !held.get() {
+                    return None;
+                }
+                grab.set((x, y));
+                Some(gdk::ContentProvider::for_value(
+                    &slug.to_string().to_value(),
+                ))
+            }
+        ));
+        source.connect_drag_begin(glib::clone!(
+            #[weak]
+            row,
+            #[strong]
+            grab,
+            move |_, drag| {
+                // A copy of the row as it looks now, before it is dimmed.
+                let picture = gtk::Picture::for_paintable(
+                    &gtk::WidgetPaintable::new(Some(&row)).current_image(),
+                );
+                picture.set_size_request(row.width(), row.height());
+                picture.add_css_class("dragged-project");
+                gtk::DragIcon::for_drag(drag).set_child(Some(&picture));
+                let (x, y) = grab.get();
+                drag.set_hotspot(x as i32, y as i32);
+                row.add_css_class("dragging");
+            }
+        ));
+        source.connect_drag_end(glib::clone!(
+            #[weak]
+            row,
+            #[strong]
+            held,
+            move |_, _, _| {
+                held.set(false);
+                row.remove_css_class("dragging");
+            }
+        ));
+        row.add_controller(touch);
+        row.add_controller(long_press);
+        row.add_controller(source);
+
+        let target = gtk::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
+        target.set_preload(true);
+        // The project dragged, and whether it goes after this one, if it
+        // may go here at all.
+        let place = glib::clone!(
+            #[weak(rename_to = page)]
+            self,
+            #[weak]
+            row,
+            #[strong]
+            slug,
+            #[upgrade_or]
+            None,
+            move |target: &gtk::DropTarget, y: f64| -> Option<(ProjectSlug, bool)> {
+                let dragged: ProjectSlug = target.value()?.get::<String>().ok()?.parse().ok()?;
+                let vault = page.vault();
+                let same_group = vault.project(&dragged)?.status == status;
+                (same_group && dragged != slug)
+                    .then(|| (dragged, y > f64::from(row.height()) / 2.0))
+            }
+        );
+        let place = Rc::new(place);
+        target.connect_motion(glib::clone!(
+            #[weak]
+            row,
+            #[strong]
+            place,
+            #[upgrade_or]
+            gdk::DragAction::empty(),
+            move |target, _, y| {
+                let after = place(target, y).map(|(_, after)| after);
+                set_class(&row, "drop-before", after == Some(false));
+                set_class(&row, "drop-after", after == Some(true));
+                if after.is_some() {
+                    gdk::DragAction::MOVE
+                } else {
+                    gdk::DragAction::empty()
+                }
+            }
+        ));
+        target.connect_leave(glib::clone!(
+            #[weak]
+            row,
+            move |_| {
+                row.remove_css_class("drop-before");
+                row.remove_css_class("drop-after");
+            }
+        ));
+        target.connect_drop(glib::clone!(
+            #[weak(rename_to = page)]
+            self,
+            #[weak]
+            row,
+            #[strong]
+            slug,
+            #[upgrade_or]
+            false,
+            move |target, _, _, y| {
+                row.remove_css_class("drop-before");
+                row.remove_css_class("drop-after");
+                let Some((dragged, after)) = place(target, y) else {
+                    return false;
+                };
+                // Moving rebuilds the list with this row, so it waits
+                // until the drop is done.
+                let slug = slug.clone();
+                glib::idle_add_local_once(move || page.move_project(&dragged, &slug, after));
+                true
+            }
+        ));
+        row.add_controller(target);
+    }
+
+    /// Moves the project `slug` right before the project `target`, or right
+    /// after it if `after`, and shows the new order.
+    fn move_project(&self, slug: &ProjectSlug, target: &ProjectSlug, after: bool) {
+        // A copy shares the record of own writes, so watching the vault
+        // goes on as before.
+        let mut vault = Vault::clone(&self.vault());
+        match vault.move_project(slug, target, after) {
+            Ok(()) => {
+                self.set_vault(Rc::new(vault));
+                self.show_list();
+                self.emit_by_name::<()>("vault-changed", &[]);
+            }
+            Err(err) => show_error(self, &gettext("Cannot Move Project"), &err.to_string()),
+        }
     }
 
     /// Looks up the time spent this week, the last days worked and the notes
@@ -782,13 +976,6 @@ fn project_row(
         .use_markup(true)
         .build();
     row.add_prefix(&dot);
-    if project.pinned {
-        let pin = gtk::Image::builder()
-            .icon_name("view-pin-symbolic")
-            .tooltip_text(gettext("Pinned"))
-            .build();
-        row.add_suffix(&pin);
-    }
     if let Some(week) = week {
         let time = gtk::Label::builder()
             .label(format_duration(week))
@@ -798,6 +985,15 @@ fn project_row(
         row.add_suffix(&time);
     }
     row
+}
+
+/// Adds the style class `class` to `widget`, or removes it.
+fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
+    if on {
+        widget.add_css_class(class);
+    } else {
+        widget.remove_css_class(class);
+    }
 }
 
 /// A note changed last, at `modified`, which opens it when activated.

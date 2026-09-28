@@ -205,9 +205,6 @@ enum ProjectCommand {
         /// active, paused or archived
         #[arg(long, group = "change")]
         status: Option<ProjectStatus>,
-        /// Stop listing the project first
-        #[arg(long, group = "change", conflicts_with = "pin")]
-        unpin: bool,
         /// Forget the project's repository on this device
         #[arg(long, group = "change", conflicts_with = "repo")]
         no_repo: bool,
@@ -286,9 +283,6 @@ struct ProjectArgs {
     /// projects: work]
     #[arg(long, group = "change")]
     category: Option<String>,
-    /// List the project first when picking one for a block
-    #[arg(long, group = "change")]
-    pin: bool,
     /// The folder of the project's Git repository on this device
     #[arg(long, group = "change", value_name = "FOLDER")]
     repo: Option<PathBuf>,
@@ -533,7 +527,7 @@ fn doctor(vault: &Vault, fix: bool) -> Result<()> {
 }
 
 fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Result<()> {
-    let changes = |values: ProjectArgs, status, pinned, no_repo: bool| -> Result<ProjectChanges> {
+    let changes = |values: ProjectArgs, status, no_repo: bool| -> Result<ProjectChanges> {
         let repo = match values.repo {
             Some(repo) => {
                 Some(Some(path::absolute(&repo).with_context(|| {
@@ -547,7 +541,6 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
             color: values.color,
             category: values.category,
             status,
-            pinned,
             repo,
         })
     };
@@ -561,23 +554,16 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
             Ok(())
         }
         ProjectCommand::Add { slug, values } => {
-            let pinned = Some(values.pin);
-            let changes = changes(values, None, pinned, false)?;
+            let changes = changes(values, None, false)?;
             project::add_project(&mut vault, slug, changes, today)
         }
         ProjectCommand::Edit {
             slug,
             values,
             status,
-            unpin,
             no_repo,
         } => {
-            let pinned = if values.pin {
-                Some(true)
-            } else {
-                unpin.then_some(false)
-            };
-            let changes = changes(values, status, pinned, no_repo)?;
+            let changes = changes(values, status, no_repo)?;
             project::edit_project(&mut vault, &slug, changes)
         }
     }
@@ -730,11 +716,10 @@ mod tests {
     #[test]
     fn options_combine() {
         let parse = |args: &str| Cli::try_parse_from(args.split(' ')).map(|_| ());
-        parse("knotbook project add docs --name Docs --color ff7800 --pin").unwrap();
+        parse("knotbook project add docs --name Docs --color ff7800").unwrap();
         parse("knotbook project add docs").unwrap();
-        parse("knotbook project edit docs --status paused --unpin").unwrap();
+        parse("knotbook project edit docs --status paused").unwrap();
         assert!(parse("knotbook project edit docs").is_err());
-        assert!(parse("knotbook project edit docs --pin --unpin").is_err());
         parse("knotbook project add docs --repo ../docs").unwrap();
         parse("knotbook project edit docs --no-repo").unwrap();
         assert!(parse("knotbook project edit docs --repo ../docs --no-repo").is_err());

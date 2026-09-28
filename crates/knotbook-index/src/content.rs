@@ -13,11 +13,11 @@ pub(crate) fn sync_projects(tx: &Transaction, vault: &Vault) -> rusqlite::Result
     // An upsert rather than `INSERT OR REPLACE`, which would delete the row
     // first and with it the project's notes.
     let mut upsert = tx.prepare_cached(
-        "INSERT INTO projects (slug, name, color, category, status, pinned, created)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        "INSERT INTO projects (slug, name, color, category, status, created)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (slug) DO UPDATE SET name = excluded.name, color = excluded.color,
              category = excluded.category, status = excluded.status,
-             pinned = excluded.pinned, created = excluded.created",
+             created = excluded.created",
     )?;
     for project in vault.projects() {
         upsert.execute(params![
@@ -26,7 +26,6 @@ pub(crate) fn sync_projects(tx: &Transaction, vault: &Vault) -> rusqlite::Result
             project.color,
             project.category,
             project.status.as_str(),
-            project.pinned,
             project.created,
         ])?;
     }
