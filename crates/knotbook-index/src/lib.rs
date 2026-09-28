@@ -684,25 +684,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn recent_notes_come_newest_first() {
-        let (_dir, vault, mut index) = sample_copy();
-        let payment = note_path("webshop", "payment-provider");
-        let later = SystemTime::now() + Duration::from_secs(60);
-        fs::File::options()
-            .write(true)
-            .open(vault.note_path(&payment))
-            .unwrap()
-            .set_modified(later)
-            .unwrap();
-        index.refresh(&vault).unwrap();
-        let notes = index.recent_notes(2).unwrap();
-        assert_eq!(notes.len(), 2);
-        assert_eq!(notes[0], (payment, later));
-        assert!(notes[1].1 <= later);
-        assert_eq!(index.recent_notes(10).unwrap().len(), 3);
-    }
-
     fn note_path(project: &str, name: &str) -> NotePath {
         NotePath::new(project.parse().unwrap(), name).unwrap()
     }

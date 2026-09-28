@@ -2,11 +2,10 @@ use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
-use std::time::SystemTime;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{DateTime, Datelike, Local, NaiveDate, TimeDelta};
+use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
 use gtk::{gdk, glib};
@@ -16,16 +15,12 @@ use knotbook_index::Found;
 use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::format::{
-    PROJECT_STATUSES, format_duration, format_full_date, format_short_date, format_time,
-    status_name,
+    PROJECT_STATUSES, format_duration, format_full_date, format_short_date, status_name,
 };
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
 use crate::search_index::{ProjectsData, SearchIndex};
-
-/// The notes changed last that the list shows.
-const RECENT_NOTES: usize = 5;
 
 mod imp {
     use super::*;
@@ -34,7 +29,7 @@ mod imp {
     #[template(resource = "/dev/knotbook/Knotbook/projects_page.ui")]
     pub struct ProjectsPage {
         pub vault: RefCell<Option<Rc<Vault>>>,
-        /// The recent notes, then one group per status that has projects.
+        /// One group per status that has projects.
         pub groups: RefCell<Vec<adw::PreferencesGroup>>,
         /// What the list shows beside the projects, as last looked up.
         pub data: RefCell<ProjectsData>,
@@ -284,8 +279,8 @@ impl ProjectsPage {
         imp.nav.pop_to_tag("projects");
     }
 
-    /// Shows the notes changed last and the projects of the vault, grouped
-    /// by status, with what was last looked up about them.
+    /// Shows the projects of the vault, grouped by status, with what was
+    /// last looked up about them.
     fn show_list(&self) {
         let imp = self.imp();
         for group in imp.groups.take() {
@@ -295,22 +290,6 @@ impl ProjectsPage {
         let data = imp.data.borrow();
         let today = Local::now().date_naive();
         let mut groups = Vec::new();
-        // Notes of projects removed since the lookup are gone as well.
-        let notes: Vec<_> = data
-            .recent_notes
-            .iter()
-            .filter_map(|(note, modified)| Some((vault.project(note.project())?, note, modified)))
-            .collect();
-        if !notes.is_empty() {
-            let group = adw::PreferencesGroup::builder()
-                .title(gettext("Recent Notes"))
-                .build();
-            for (project, note, modified) in notes {
-                group.add(&recent_note_row(project, note, *modified, today));
-            }
-            imp.list.add(&group);
-            groups.push(group);
-        }
         let find = |slug: &ProjectSlug, times: &[(ProjectSlug, TimeDelta)]| {
             times
                 .iter()
@@ -555,8 +534,8 @@ impl ProjectsPage {
         }
     }
 
-    /// Looks up the time spent this week, the last days worked and the notes
-    /// changed last in the background, then shows them.
+    /// Looks up the time spent this week and the last days worked in the
+    /// background, then shows them.
     fn look_up(&self) {
         let imp = self.imp();
         let lookup = imp.lookups.get() + 1;
@@ -568,7 +547,7 @@ impl ProjectsPage {
             #[weak(rename_to = page)]
             self,
             async move {
-                let data = index.projects(&vault, week, RECENT_NOTES).await;
+                let data = index.projects(&vault, week).await;
                 let imp = page.imp();
                 if imp.lookups.get() != lookup {
                     return;
@@ -994,36 +973,6 @@ fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
     } else {
         widget.remove_css_class(class);
     }
-}
-
-/// A note changed last, at `modified`, which opens it when activated.
-fn recent_note_row(
-    project: &Project,
-    note: &NotePath,
-    modified: SystemTime,
-    today: NaiveDate,
-) -> adw::ActionRow {
-    let modified = DateTime::<Local>::from(modified).naive_local();
-    let when = if modified.date() == today {
-        format_time(modified.time())
-    } else {
-        format_day(modified.date(), today)
-    };
-    let row = adw::ActionRow::builder()
-        .title(note.name())
-        .subtitle(format!("{} · {when}", project.name))
-        .use_markup(false)
-        .activatable(true)
-        .action_name("notes.open")
-        .action_target(&note.to_string().to_variant())
-        .build();
-    let dot = gtk::Label::builder()
-        .label(color_dot(&project.color))
-        .use_markup(true)
-        .build();
-    row.add_prefix(&dot);
-    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
-    row
 }
 
 /// `date` without the year if it is the year of `today`.

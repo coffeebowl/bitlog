@@ -5,12 +5,14 @@ use std::path::PathBuf;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
-use gettextrs::gettext;
+use gettextrs::{gettext, ngettext};
 use gtk::{gdk, gio, glib};
 use knotbook_core::{Commit, NotePath, Period, Project, ProjectSlug, Vault, git_log};
 use knotbook_index::{Found, ProjectBlock};
 
-use crate::format::{format_duration, format_full_date, format_share, format_time};
+use crate::format::{
+    format_duration, format_full_date, format_share, format_time, format_weekday_date,
+};
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::miniature::Miniature;
@@ -19,6 +21,9 @@ use crate::window::show_action;
 
 /// Blocks the timeline shows at first and adds with "Load More".
 const BLOCKS_AT_ONCE: u32 = 50;
+
+/// The days the activity shows, up to today.
+const ACTIVITY_DAYS: u64 = 30;
 
 /// Commits the log shows at first and adds with "Load More".
 const COMMITS_AT_ONCE: usize = 50;
@@ -59,37 +64,29 @@ mod imp {
         #[template_child]
         pub edit_button: TemplateChild<gtk::Button>,
         #[template_child]
-        pub stack: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub notes_grid: TemplateChild<gtk::FlowBox>,
-        #[template_child]
-        pub empty_new_note_button: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub error_page: TemplateChild<adw::StatusPage>,
+        pub switcher: TemplateChild<adw::InlineViewSwitcher>,
         #[template_child]
         pub view_stack: TemplateChild<adw::ViewStack>,
         #[template_child]
+        pub scrolled: TemplateChild<gtk::ScrolledWindow>,
+        #[template_child]
         pub total_row: TemplateChild<adw::ActionRow>,
         #[template_child]
-        pub week_row: TemplateChild<adw::ActionRow>,
+        pub recent_row: TemplateChild<adw::ActionRow>,
         #[template_child]
-        pub month_row: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub share_row: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub days_row: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub average_row: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub first_row: TemplateChild<adw::ActionRow>,
-        #[template_child]
-        pub last_row: TemplateChild<adw::ActionRow>,
+        pub span_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub longest_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub heatmap: TemplateChild<Heatmap>,
         #[template_child]
-        pub timeline_stack: TemplateChild<gtk::Stack>,
+        pub notes_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub notes_grid: TemplateChild<gtk::FlowBox>,
+        #[template_child]
+        pub empty_new_note_button: TemplateChild<adw::ButtonRow>,
+        #[template_child]
+        pub notes_error_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub timeline_list: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -180,11 +177,17 @@ impl ProjectView {
                 None
             });
         let git = imp.view_stack.visible_child_name().as_deref() == Some("git");
-        if imp.slug.borrow().as_ref() != Some(&project.slug) || (git && repo.is_none()) {
-            imp.view_stack.set_visible_child_name("overview");
+        let other = imp.slug.borrow().as_ref() != Some(&project.slug);
+        if other || (git && repo.is_none()) {
+            imp.view_stack.set_visible_child_name("project");
         }
-        // Projects without code have no repository, and then no Git page.
+        if other {
+            imp.scrolled.vadjustment().set_value(0.0);
+        }
+        // Projects without code have no repository, and then no Git page
+        // to switch to.
         imp.git_page.set_visible(repo.is_some());
+        imp.switcher.set_visible(repo.is_some());
         imp.repo.replace(repo);
         imp.slug.replace(Some(project.slug.clone()));
         imp.vault.replace(Some(vault.clone()));
@@ -193,21 +196,18 @@ impl ProjectView {
         imp.window_title.set_title(&project.name);
         imp.window_title.set_subtitle(&project.category);
         let target = project.slug.to_string().to_variant();
-        for button in [
-            &*imp.new_note_button,
-            &*imp.edit_button,
-            &*imp.empty_new_note_button,
-        ] {
-            button.set_action_target_value(Some(&target));
-        }
+        imp.new_note_button.set_action_target_value(Some(&target));
+        imp.edit_button.set_action_target_value(Some(&target));
+        imp.empty_new_note_button
+            .set_action_target_value(Some(&target));
 
         imp.notes_grid.remove_all();
         imp.notes.take();
         let notes = match vault.notes(&project.slug) {
             Ok(notes) => notes,
             Err(err) => {
-                imp.error_page.set_description(Some(&err.to_string()));
-                imp.stack.set_visible_child_name("error");
+                imp.notes_error_row.set_subtitle(&err.to_string());
+                imp.notes_stack.set_visible_child_name("error");
                 return;
             }
         };
@@ -220,7 +220,7 @@ impl ProjectView {
                 (note, preview)
             })
             .collect();
-        imp.stack
+        imp.notes_stack
             .set_visible_child_name(if notes.is_empty() { "empty" } else { "list" });
         imp.notes.replace(notes);
     }
@@ -293,26 +293,47 @@ impl ProjectView {
         let days = i32::try_from(activity.len()).unwrap_or(i32::MAX);
         let none = || "–".to_owned();
 
-        imp.total_row.set_subtitle(&format_duration(total));
-        imp.week_row
-            .set_subtitle(&format_duration(sum_between(week_first, week_last)));
-        imp.month_row.set_subtitle(&format_duration(month));
-        imp.share_row.set_subtitle(&if work.is_zero() {
+        imp.total_row.set_subtitle(&if days == 0 {
             none()
         } else {
-            format_share(month, work)
+            // Translators: The time spent on a project, the days it was
+            // worked on and the average per day, as in
+            // "42 h on 17 days · 2 h 28 min per day".
+            ngettext(
+                "{total} on {days} day · {average} per day",
+                "{total} on {days} days · {average} per day",
+                days.unsigned_abs(),
+            )
+            .replace("{total}", &format_duration(total))
+            .replace("{days}", &days.to_string())
+            .replace("{average}", &format_duration(total / days))
         });
-        imp.days_row.set_subtitle(&days.to_string());
-        imp.average_row.set_subtitle(&if days == 0 {
-            none()
+        let share = if work.is_zero() {
+            String::new()
         } else {
-            format_duration(total / days)
-        });
-        let date = |day: Option<&(NaiveDate, TimeDelta)>| {
-            day.map_or_else(none, |(date, _)| format_full_date(*date))
+            // Translators: The share of a project in the time spent on
+            // all projects this month, as in " (35 % of all work)".
+            gettext(" ({share} of all work)").replace("{share}", &format_share(month, work))
         };
-        imp.first_row.set_subtitle(&date(activity.first()));
-        imp.last_row.set_subtitle(&date(activity.last()));
+        // Translators: The time spent on a project this week and month, as
+        // in "3 h this week · 12 h this month (35 % of all work)".
+        imp.recent_row.set_subtitle(
+            &gettext("{week} this week · {month} this month{share}")
+                .replace(
+                    "{week}",
+                    &format_duration(sum_between(week_first, week_last)),
+                )
+                .replace("{month}", &format_duration(month))
+                .replace("{share}", &share),
+        );
+        imp.span_row
+            .set_subtitle(&match (activity.first(), activity.last()) {
+                (Some((first, _)), Some((last, _))) if first != last => {
+                    format!("{} – {}", format_full_date(*first), format_full_date(*last))
+                }
+                (Some((first, _)), _) => format_full_date(*first),
+                _ => none(),
+            });
         match &data.longest {
             Some(block) => {
                 imp.longest_row.set_subtitle(&format!(
@@ -337,28 +358,25 @@ impl ProjectView {
         imp.heatmap.show(
             activity,
             color,
-            Heatmap::last_12_months(today, first_day),
+            Heatmap::last_days(today, ACTIVITY_DAYS),
             first_day,
         );
 
         imp.timeline_list.remove_all();
         imp.blocks_shown.set(0);
-        self.add_blocks(data.blocks);
+        self.add_blocks(data.blocks, today);
     }
 
     /// Adds `blocks` to the end of the timeline.
-    fn add_blocks(&self, blocks: Vec<ProjectBlock>) {
+    fn add_blocks(&self, blocks: Vec<ProjectBlock>, today: NaiveDate) {
         let imp = self.imp();
         let added = u32::try_from(blocks.len()).expect("at most BLOCKS_AT_ONCE blocks come");
         for block in &blocks {
-            imp.timeline_list.append(&block_row(block));
+            imp.timeline_list.append(&block_row(block, today));
         }
         imp.blocks_shown.set(imp.blocks_shown.get() + added);
         // A full batch may have more behind it.
         imp.more_button.set_visible(added == BLOCKS_AT_ONCE);
-        let empty = imp.blocks_shown.get() == 0;
-        imp.timeline_stack
-            .set_visible_child_name(if empty { "empty" } else { "list" });
     }
 
     fn show_more_blocks(&self) {
@@ -380,7 +398,7 @@ impl ProjectView {
                     return;
                 }
                 match blocks {
-                    Ok(blocks) => view.add_blocks(blocks),
+                    Ok(blocks) => view.add_blocks(blocks, Local::now().date_naive()),
                     Err(err) => glib::g_warning!("knotbook", "{err}"),
                 }
             }
@@ -507,61 +525,37 @@ fn block_action(block: &ProjectBlock) -> (&'static str, glib::Variant) {
     })
 }
 
-/// A block in the timeline: its title, when it was and its text, opening
-/// its day when activated.
-fn block_row(block: &ProjectBlock) -> gtk::ListBoxRow {
+/// A block in the timeline: its title, its day and time and how long it
+/// took, opening it when activated.
+fn block_row(block: &ProjectBlock, today: NaiveDate) -> adw::ActionRow {
     let title = if block.title.is_empty() {
         gettext("Untitled Block")
     } else {
         block.title.clone()
     };
     let minute = |minute: u32| format!("{:02}:{:02}", minute / 60 % 24, minute % 60);
-    let when = format!(
-        "{} · {}–{} · {}",
-        format_full_date(block.date),
-        minute(block.start_minute),
-        minute(block.end_minute),
-        format_duration(block.duration())
-    );
-    let content = gtk::Box::builder()
-        .orientation(gtk::Orientation::Vertical)
-        .spacing(3)
-        .margin_top(12)
-        .margin_bottom(12)
-        .margin_start(12)
-        .margin_end(12)
-        .build();
-    content.append(
-        &gtk::Label::builder()
-            .label(&title)
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(["heading"])
-            .build(),
-    );
-    content.append(
-        &gtk::Label::builder()
-            .label(&when)
-            .xalign(0.0)
-            .wrap(true)
-            .css_classes(["caption", "dim-label"])
-            .build(),
-    );
-    if !block.text.is_empty() {
-        let text: MarkdownView = glib::Object::new();
-        text.set_markdown(&block.text);
-        // Clicks go to the row, which opens the block.
-        text.set_can_target(false);
-        text.set_margin_top(6);
-        content.append(&text);
-    }
-    let (action, target) = block_action(block);
-    gtk::ListBoxRow::builder()
-        .child(&content)
+    let row = adw::ActionRow::builder()
+        .title(&title)
+        .subtitle(format!(
+            "{} · {}–{}",
+            format_weekday_date(block.date, today),
+            minute(block.start_minute),
+            minute(block.end_minute)
+        ))
+        .use_markup(false)
         .activatable(true)
-        .action_target(&target)
-        .action_name(action)
-        .build()
+        .build();
+    row.add_suffix(
+        &gtk::Label::builder()
+            .label(format_duration(block.duration()))
+            .css_classes(["dim-label", "numeric"])
+            .build(),
+    );
+    let (action, target) = block_action(block);
+    // The target first, which the action needs.
+    row.set_action_target_value(Some(&target));
+    row.set_action_name(Some(action));
+    row
 }
 
 /// The text of `note`, or none if it cannot be read.

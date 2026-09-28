@@ -25,202 +25,171 @@ template $KnotbookProjectView: Adw.NavigationPage {
     }
 
     [top]
-    Adw.InlineViewSwitcher {
+    Adw.InlineViewSwitcher switcher {
       stack: view_stack;
       halign: center;
       margin-bottom: 6;
+      visible: false;
     }
 
     content: Adw.ViewStack view_stack {
       Adw.ViewStackPage {
-        name: "overview";
-        title: _("Overview");
+        name: "project";
+        title: _("Project");
 
-        child: Adw.PreferencesPage {
-          Adw.PreferencesGroup {
-            title: _("Time");
+        child: ScrolledWindow scrolled {
+          hscrollbar-policy: never;
 
-            Adw.ActionRow total_row {
-              title: _("Total");
+          child: Adw.Clamp {
+            maximum-size: 900;
+            margin-top: 24;
+            margin-bottom: 24;
+            margin-start: 12;
+            margin-end: 12;
 
-              styles [
-                "property",
-              ]
-            }
+            child: Box {
+              orientation: vertical;
+              spacing: 24;
 
-            Adw.ActionRow week_row {
-              title: _("This Week");
+              Adw.PreferencesGroup {
+                title: _("Time");
 
-              styles [
-                "property",
-              ]
-            }
+                Adw.ActionRow total_row {
+                  title: _("Total");
 
-            Adw.ActionRow month_row {
-              title: _("This Month");
+                  styles [
+                    "property",
+                  ]
+                }
 
-              styles [
-                "property",
-              ]
-            }
+                Adw.ActionRow recent_row {
+                  title: _("Recently");
 
-            Adw.ActionRow share_row {
-              title: _("Share of All Work This Month");
+                  styles [
+                    "property",
+                  ]
+                }
 
-              styles [
-                "property",
-              ]
-            }
+                Adw.ActionRow span_row {
+                  title: _("First and Last Day");
 
-            Adw.ActionRow days_row {
-              title: _("Days Worked On");
+                  styles [
+                    "property",
+                  ]
+                }
 
-              styles [
-                "property",
-              ]
-            }
+                Adw.ActionRow longest_row {
+                  title: _("Longest Block");
 
-            Adw.ActionRow average_row {
-              title: _("Average per Day Worked On");
+                  [suffix]
+                  Image {
+                    icon-name: "go-next-symbolic";
+                  }
 
-              styles [
-                "property",
-              ]
-            }
-
-            Adw.ActionRow first_row {
-              title: _("First Day");
-
-              styles [
-                "property",
-              ]
-            }
-
-            Adw.ActionRow last_row {
-              title: _("Last Day");
-
-              styles [
-                "property",
-              ]
-            }
-
-            Adw.ActionRow longest_row {
-              title: _("Longest Block");
-
-              [suffix]
-              Image {
-                icon-name: "go-next-symbolic";
+                  styles [
+                    "property",
+                  ]
+                }
               }
 
-              styles [
-                "property",
-              ]
-            }
-          }
+              Adw.PreferencesGroup {
+                title: _("Activity");
+                description: _("Time spent per day in the last 30 days");
 
-          Adw.PreferencesGroup {
-            title: _("Activity");
-            description: _("Time spent per day in the last 12 months");
+                $KnotbookHeatmap heatmap {
+                  cell-size: 18;
+                  single-row: true;
+                  halign: start;
+                }
+              }
 
-            ScrolledWindow {
-              vscrollbar-policy: never;
-              propagate-natural-height: true;
+              Adw.PreferencesGroup {
+                title: _("Notes");
 
-              child: $KnotbookHeatmap heatmap {
-                halign: start;
-                margin-bottom: 6;
-              };
-            }
-          }
-        };
-      }
+                Stack notes_stack {
+                  vhomogeneous: false;
 
-      Adw.ViewStackPage {
-        name: "notes";
-        title: _("Notes");
+                  StackPage {
+                    name: "list";
 
-        child: Stack stack {
-          StackPage {
-            name: "list";
+                    child: FlowBox notes_grid {
+                      valign: start;
+                      homogeneous: true;
+                      selection-mode: none;
+                      max-children-per-line: 8;
+                      column-spacing: 12;
+                      row-spacing: 18;
+                    };
+                  }
 
-            child: ScrolledWindow {
-              hscrollbar-policy: never;
+                  StackPage {
+                    name: "empty";
 
-              child: Adw.Clamp {
-                maximum-size: 1200;
-                margin-top: 24;
-                margin-bottom: 24;
-                margin-start: 12;
-                margin-end: 12;
+                    child: ListBox {
+                      valign: start;
+                      selection-mode: none;
 
-                child: FlowBox notes_grid {
-                  valign: start;
-                  homogeneous: true;
-                  selection-mode: none;
-                  max-children-per-line: 8;
-                  column-spacing: 12;
-                  row-spacing: 18;
-                };
-              };
-            };
-          }
+                      Adw.ButtonRow empty_new_note_button {
+                        title: _("_New Note");
+                        use-underline: true;
+                        start-icon-name: "list-add-symbolic";
+                        action-name: "notes.new";
+                      }
 
-          StackPage {
-            name: "empty";
+                      styles [
+                        "boxed-list",
+                      ]
+                    };
+                  }
 
-            child: Adw.StatusPage {
-              icon-name: "text-x-generic-symbolic";
-              title: _("No Notes");
-              description: _("Notes keep what you know about a project, in Markdown");
+                  StackPage {
+                    name: "error";
 
-              child: Button empty_new_note_button {
-                label: _("_New Note");
-                use-underline: true;
-                halign: center;
-                action-name: "notes.new";
+                    child: ListBox {
+                      valign: start;
+                      selection-mode: none;
 
-                styles [
-                  "pill",
-                  "suggested-action",
-                ]
-              };
-            };
-          }
+                      Adw.ActionRow notes_error_row {
+                        title: _("Cannot Read Notes");
 
-          StackPage {
-            name: "error";
+                        [prefix]
+                        Image {
+                          icon-name: "dialog-error-symbolic";
+                        }
+                      }
 
-            child: Adw.StatusPage error_page {
-              icon-name: "dialog-error-symbolic";
-              title: _("Cannot Read Notes");
-            };
-          }
-        };
-      }
+                      styles [
+                        "boxed-list",
+                      ]
+                    };
+                  }
+                }
+              }
 
-      Adw.ViewStackPage {
-        name: "timeline";
-        title: _("Timeline");
+              Adw.PreferencesGroup {
+                title: _("Timeline");
 
-        child: Stack timeline_stack {
-          StackPage {
-            name: "list";
-
-            child: ScrolledWindow {
-              hscrollbar-policy: never;
-
-              child: Adw.Clamp {
-                margin-top: 24;
-                margin-bottom: 24;
-                margin-start: 12;
-                margin-end: 12;
-
-                child: Box {
+                Box {
                   orientation: vertical;
                   spacing: 18;
 
                   ListBox timeline_list {
                     selection-mode: none;
+
+                    [placeholder]
+                    Label {
+                      label: _("Blocks of this project in the day view show up here");
+                      wrap: true;
+                      justify: center;
+                      margin-top: 18;
+                      margin-bottom: 18;
+                      margin-start: 12;
+                      margin-end: 12;
+
+                      styles [
+                        "dim-label",
+                      ]
+                    }
 
                     styles [
                       "boxed-list",
@@ -237,20 +206,10 @@ template $KnotbookProjectView: Adw.NavigationPage {
                       "pill",
                     ]
                   }
-                };
-              };
+                }
+              }
             };
-          }
-
-          StackPage {
-            name: "empty";
-
-            child: Adw.StatusPage {
-              icon-name: "x-office-calendar-symbolic";
-              title: _("No Blocks");
-              description: _("Blocks of this project in the day view show up here");
-            };
-          }
+          };
         };
       }
 

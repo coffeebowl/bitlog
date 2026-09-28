@@ -51,6 +51,22 @@ pub fn format_full_date(date: NaiveDate) -> String {
     format_date(date, &gettext("%B %-d, %Y"))
 }
 
+/// A date with the weekday, as in "Tue, Sep 22", and the year unless it is
+/// the year of `today`.
+pub fn format_weekday_date(date: NaiveDate, today: NaiveDate) -> String {
+    let format = if date.year() == today.year() {
+        // Translators: A date with the weekday, as in "Tue, Sep 22". See the
+        // GLib documentation of g_date_time_format() for the codes.
+        gettext("%a, %b %-d")
+    } else {
+        // Translators: A date with the weekday and year, as in
+        // "Tue, Sep 22, 2026". See the GLib documentation of
+        // g_date_time_format() for the codes.
+        gettext("%a, %b %-d, %Y")
+    };
+    format_date(date, &format)
+}
+
 pub fn format_time(time: NaiveTime) -> String {
     time.format("%H:%M").to_string()
 }

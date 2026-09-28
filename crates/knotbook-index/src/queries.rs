@@ -1,13 +1,11 @@
 //! Sums and lookups over the whole vault.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
 use chrono::{NaiveDate, TimeDelta};
 use knotbook_core::{BlockId, NotePath, ProjectSlug};
 
 use rusqlite::OptionalExtension;
 
-use crate::{Found, Index, IndexError, IndexFile, note_path, parsed};
+use crate::{Found, Index, IndexError, note_path, parsed};
 
 /// How many work days of a year were spent remote or hybrid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -182,27 +180,6 @@ impl Index {
             .query_map([], |row| Ok((parsed(row, 0)?, row.get(1)?)))?
             .collect::<Result<_, _>>()?;
         Ok(days)
-    }
-
-    /// The `limit` notes changed last, with when that was, newest first, as
-    /// the index last read them.
-    pub fn recent_notes(&self, limit: usize) -> Result<Vec<(NotePath, SystemTime)>, IndexError> {
-        let mut statement = self
-            .connection
-            .prepare_cached("SELECT path, modified FROM files ORDER BY modified DESC, path")?;
-        let mut rows = statement.query([])?;
-        let mut notes = Vec::new();
-        while notes.len() < limit
-            && let Some(row) = rows.next()?
-        {
-            let path: String = row.get(0)?;
-            if let Some(IndexFile::Note(note)) = IndexFile::from_key(&path) {
-                let nanos: i64 = row.get(1)?;
-                let since = Duration::from_nanos(u64::try_from(nanos).unwrap_or(0));
-                notes.push((note, UNIX_EPOCH + since));
-            }
-        }
-        Ok(notes)
     }
 
     /// Where the wiki links to the note `target` lie: notes by project and

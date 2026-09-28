@@ -2,7 +2,6 @@
 //! never waits for it.
 
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
 
 use chrono::{NaiveDate, TimeDelta};
 use gtk::{gio, glib};
@@ -28,8 +27,6 @@ pub struct ProjectsData {
     pub week_times: Vec<(ProjectSlug, TimeDelta)>,
     /// The last day each project was worked on.
     pub last_days: Vec<(ProjectSlug, NaiveDate)>,
-    /// The notes changed last, with when, newest first.
-    pub recent_notes: Vec<(NotePath, SystemTime)>,
 }
 
 /// What the reports page shows.
@@ -103,21 +100,18 @@ impl SearchIndex {
         .await
     }
 
-    /// The time spent on each project from `week.0` to `week.1`, the last
-    /// day each was worked on and the `notes` notes changed last, after
-    /// bringing the index up to date.
+    /// The time spent on each project from `week.0` to `week.1` and the
+    /// last day each was worked on, after bringing the index up to date.
     pub async fn projects(
         &self,
         vault: &Vault,
         week: (NaiveDate, NaiveDate),
-        notes: usize,
     ) -> Result<ProjectsData, IndexError> {
         self.run(vault, move |index, vault| {
             refresh(index, vault)?;
             Ok(ProjectsData {
                 week_times: index.project_time(week.0, week.1)?,
                 last_days: index.last_days()?,
-                recent_notes: index.recent_notes(notes)?,
             })
         })
         .await
