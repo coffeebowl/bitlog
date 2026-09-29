@@ -522,6 +522,19 @@ impl MarkdownView {
     /// The text at `x`, `y` in widget coordinates, if there is any.
     fn iter_at(&self, x: f64, y: f64) -> Option<gtk::TextIter> {
         let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        // Below the text of a line, GTK takes the pointer for the end of the
+        // line, counting its hidden text as shown, and aborts if it has any.
+        // Lines are higher than their text by the space below them, and for
+        // a moment after their text shrank, until they are laid out again.
+        let (line, _) = self.line_at_y(y);
+        let mut end = line;
+        if !end.ends_line() {
+            end.forward_to_line_end();
+        }
+        let (last_row, _) = self.cursor_locations(Some(&end));
+        if y >= last_row.y() + last_row.height() {
+            return None;
+        }
         self.iter_at_location(x, y)
     }
 

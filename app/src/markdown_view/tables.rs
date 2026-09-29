@@ -13,10 +13,15 @@ use super::styling::Styling;
 use super::{CODE_ALPHA, CORNER_RADIUS, GRID_ALPHA, tags};
 use crate::colors::with_alpha;
 
+const HEADER_ROW_TAG: &str = "table-header-row";
 const ROW_TAG: &str = "table-row";
+/// Makes room below the last row of a table, on the line after it.
+const AFTER_TAG: &str = "table-after";
 /// Hides the delimiter row of tables drawn as grids.
 const DELIMITER_ROW_TAG: &str = "table-delimiter-row";
-/// Space above and below each row.
+/// Space above and below each row. Rows only have space above them, the
+/// one below a row is above the next: below lines with hidden markup, GTK
+/// takes the pointer for a place off the end of the line and aborts.
 const ROW_SPACING: i32 = 4;
 /// Shrinks the delimiter row to a thin line.
 const DELIMITER_ROW_SCALE: f64 = 0.1;
@@ -26,13 +31,17 @@ const CELL_PADDING: f32 = 6.0;
 /// Styles the tables of `formatting`, and adds the grids of those the
 /// cursor is not in to `decorations`.
 pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mut Decorations) {
-    let row = tags::get_or_add(&styling.buffer, ROW_TAG, || {
-        gtk::TextTag::builder()
-            .name(ROW_TAG)
-            .pixels_above_lines(ROW_SPACING)
-            .pixels_below_lines(ROW_SPACING)
-            .build()
-    });
+    let spacing_tag = |name: &str, pixels: i32| {
+        tags::get_or_add(&styling.buffer, name, || {
+            gtk::TextTag::builder()
+                .name(name)
+                .pixels_above_lines(pixels)
+                .build()
+        })
+    };
+    let header_row = spacing_tag(HEADER_ROW_TAG, ROW_SPACING);
+    let row = spacing_tag(ROW_TAG, 2 * ROW_SPACING);
+    spacing_tag(AFTER_TAG, ROW_SPACING);
     for lines in &formatting.tables {
         let (Some(first), Some(last)) = (lines.first(), lines.last()) else {
             continue;
@@ -41,12 +50,21 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
         decorations.revealable.push(styling.chars(&range));
         align_columns(styling, lines, &formatting.styles, &decorations.hidden);
         for (index, line) in lines.iter().enumerate() {
-            if index != 1 {
-                let chars = styling.chars(&line.range);
-                let start = styling.buffer.iter_at_offset(chars.start);
-                let end = styling.buffer.iter_at_offset(chars.end);
-                styling.buffer.apply_tag(&row, &start, &end);
-            }
+            let tag = match index {
+                0 => &header_row,
+                1 => continue,
+                _ => &row,
+            };
+            let chars = styling.chars(&line.range);
+            let start = styling.buffer.iter_at_offset(chars.start);
+            let end = styling.buffer.iter_at_offset(chars.end);
+            styling.buffer.apply_tag(tag, &start, &end);
+        }
+        let mut after = styling
+            .buffer
+            .iter_at_offset(styling.offset(last.range.end));
+        if after.forward_line() {
+            tags::apply_to_lines(&styling.buffer, AFTER_TAG, after.offset()..after.offset());
         }
         if !styling.is_at(&range) {
             decorations.grids.push(Grid::conceal(styling, lines));
@@ -234,6 +252,8 @@ impl Grid {
         else {
             return;
         };
+        // The space below the last row is on the line after it.
+        let bottom = bottom + ROW_SPACING as f32;
         let buffer = view.buffer();
         let location = |offset: i32| char_location(view, offset);
         let center = |offset: i32| {
@@ -259,10 +279,17 @@ impl Grid {
                 _ => location(line.range.end).x() as f32 + CELL_PADDING,
             });
         }
+        // The rows below the header start halfway into the space above
+        // them, the rest is below the row before.
         let tops: Vec<f32> = self
             .lines
             .iter()
-            .map(|line| view.line_yrange(&buffer.iter_at_offset(line.range.start)).0 as f32)
+            .enumerate()
+            .map(|(index, line)| {
+                let (y, _) = view.line_yrange(&buffer.iter_at_offset(line.range.start));
+                let space = if index == 0 { 0 } else { ROW_SPACING };
+                (y + space) as f32
+            })
             .collect();
         // Each row reaches down to the next, over the delimiter row.
         let row_bottom = |index: usize| {
