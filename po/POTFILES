@@ -7,7 +7,9 @@ app/src/format.rs
 app/src/heatmap.rs
 app/src/main.rs
 app/src/markdown_view/callouts.rs
+app/src/note_dialogs.rs
 app/src/note_view.rs
+app/src/notes_page.rs
 app/src/preferences_dialog.rs
 app/src/project_dialog.rs
 app/src/project_view.rs
@@ -25,6 +27,7 @@ app/ui/commit_dialog.blp
 app/ui/conflict_dialog.blp
 app/ui/day_view.blp
 app/ui/note_view.blp
+app/ui/notes_page.blp
 app/ui/preferences_dialog.blp
 app/ui/project_dialog.blp
 app/ui/project_view.blp

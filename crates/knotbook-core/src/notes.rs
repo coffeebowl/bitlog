@@ -5,6 +5,7 @@ use std::fs;
 use std::io;
 use std::ops::Range;
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use chrono::NaiveDate;
 use chrono::format::StrftimeItems;
@@ -212,6 +213,14 @@ impl Vault {
         Ok(notes)
     }
 
+    /// When the note `note` was last changed, here or elsewhere.
+    pub fn note_modified(&self, note: &NotePath) -> Result<SystemTime, ReadError> {
+        let path = self.note_path(note);
+        fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .map_err(|source| ReadError::Io { path, source })
+    }
+
     pub fn load_note(&self, note: &NotePath) -> Result<NoteFile, ReadError> {
         let text = read_text(&self.note_path(note))?;
         Ok(NoteFile::new(note.clone(), text))
@@ -368,6 +377,25 @@ mod tests {
             ]
         );
         assert!(vault.notes(&slug("pause")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn note_modified() {
+        let (_dir, vault) = sample_copy();
+        let deployment = note("projects/infra/notes/deployment.md");
+        let time = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_790_000_000);
+        fs::File::options()
+            .write(true)
+            .open(vault.note_path(&deployment))
+            .unwrap()
+            .set_modified(time)
+            .unwrap();
+        assert_eq!(vault.note_modified(&deployment).unwrap(), time);
+        let missing = note("projects/infra/notes/missing.md");
+        assert!(matches!(
+            vault.note_modified(&missing),
+            Err(ReadError::Io { .. })
+        ));
     }
 
     #[test]

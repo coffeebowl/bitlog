@@ -1,0 +1,115 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $KnotbookNotesPage: Adw.NavigationPage {
+  title: _("Notes");
+
+  // A note is pushed on top of the list.
+  child: Adw.NavigationView nav {
+    Adw.NavigationPage overview {
+      title: _("Notes");
+      tag: "notes";
+
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          [end]
+          MenuButton {
+            icon-name: "view-sort-descending-symbolic";
+            tooltip-text: _("Sort");
+            menu-model: sort_menu;
+          }
+        }
+
+        [top]
+        Adw.Clamp {
+          maximum-size: 900;
+          margin-bottom: 6;
+          margin-start: 12;
+          margin-end: 12;
+
+          child: Box {
+            spacing: 6;
+
+            SearchEntry search_entry {
+              hexpand: true;
+              placeholder-text: _("Search notes");
+            }
+
+            DropDown project_dropdown {
+              tooltip-text: _("Project");
+            }
+          };
+        }
+
+        content: Stack stack {
+          StackPage {
+            name: "list";
+
+            child: ScrolledWindow scrolled {
+              hscrollbar-policy: never;
+
+              child: Adw.Clamp {
+                maximum-size: 900;
+                margin-top: 18;
+                margin-bottom: 24;
+                margin-start: 12;
+                margin-end: 12;
+
+                child: Box notes_box {
+                  orientation: vertical;
+                  valign: start;
+                  spacing: 24;
+                };
+              };
+            };
+          }
+
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "text-x-generic-symbolic";
+              title: _("No Notes");
+              description: _("Notes added to projects show up here");
+            };
+          }
+
+          StackPage {
+            name: "no-results";
+
+            child: Adw.StatusPage {
+              icon-name: "edit-find-symbolic";
+              title: _("No Matching Notes");
+              description: _("Try another search or project");
+            };
+          }
+        };
+      };
+    }
+  };
+}
+
+menu sort_menu {
+  section {
+    label: _("Sort By");
+
+    item {
+      label: _("_Recently Edited");
+      action: "notes.sort";
+      target: "recent";
+    }
+
+    item {
+      label: _("_Name");
+      action: "notes.sort";
+      target: "name";
+    }
+
+    item {
+      label: _("_Project");
+      action: "notes.sort";
+      target: "project";
+    }
+  }
+}

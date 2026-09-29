@@ -18,6 +18,7 @@ use crate::calendar_view::CalendarView;
 use crate::colors::color_dot;
 use crate::config;
 use crate::day_view::DayView;
+use crate::notes_page::NotesPage;
 use crate::preferences_dialog::PreferencesDialog;
 use crate::projects_page::ProjectsPage;
 use crate::reports_page::ReportsPage;
@@ -28,7 +29,7 @@ use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 18] = [
+const VAULT_ACTIONS: [&str; 19] = [
     "win.preferences",
     "win.previous",
     "win.next",
@@ -36,6 +37,7 @@ const VAULT_ACTIONS: [&str; 18] = [
     "win.show-today",
     "win.show-calendar",
     "win.show-tasks",
+    "win.show-notes",
     "win.show-projects",
     "win.show-project",
     "win.show-reports",
@@ -93,6 +95,8 @@ mod imp {
         #[template_child]
         pub tasks_row: TemplateChild<gtk::ListBoxRow>,
         #[template_child]
+        pub notes_row: TemplateChild<gtk::ListBoxRow>,
+        #[template_child]
         pub projects_row: TemplateChild<gtk::ListBoxRow>,
         #[template_child]
         pub reports_row: TemplateChild<gtk::ListBoxRow>,
@@ -103,6 +107,7 @@ mod imp {
         pub day_view: DayView,
         pub calendar_view: CalendarView,
         pub tasks_page: TasksPage,
+        pub notes_page: NotesPage,
         pub projects_page: ProjectsPage,
         pub reports_page: ReportsPage,
         /// The folder of the open vault.
@@ -130,12 +135,14 @@ mod imp {
                 today_row: TemplateChild::default(),
                 calendar_row: TemplateChild::default(),
                 tasks_row: TemplateChild::default(),
+                notes_row: TemplateChild::default(),
                 projects_row: TemplateChild::default(),
                 reports_row: TemplateChild::default(),
                 project_rows: RefCell::default(),
                 day_view: glib::Object::new(),
                 calendar_view: glib::Object::new(),
                 tasks_page: glib::Object::new(),
+                notes_page: glib::Object::new(),
                 projects_page: glib::Object::new(),
                 reports_page: glib::Object::new(),
                 vault_path: RefCell::default(),
@@ -199,6 +206,10 @@ mod imp {
             klass.install_action("win.show-tasks", None, |window, _, _| {
                 window.show_tasks();
             });
+            klass.install_action("win.show-notes", None, |window, _, _| {
+                window.show_notes();
+                window.imp().notes_page.show_overview();
+            });
             klass.install_action("win.show-projects", None, |window, _, _| {
                 window.show_projects();
                 window.imp().projects_page.show_overview();
@@ -245,8 +256,14 @@ mod imp {
                     let note: NotePath = note
                         .and_then(|note| note.str()?.parse().ok())
                         .expect("notes are passed as their path");
+                    let imp = window.imp();
+                    // The notes page shows them itself.
+                    if window.shows(&imp.notes_page) {
+                        imp.notes_page.open_note(&note);
+                        return;
+                    }
                     window.show_projects();
-                    window.imp().projects_page.show_note(&note);
+                    imp.projects_page.show_note(&note);
                     window.select_project_row();
                 },
             );
@@ -315,6 +332,11 @@ mod imp {
             ));
             // Renaming a note may change links in the day shown.
             self.projects_page.connect_days_changed(glib::clone!(
+                #[weak(rename_to = window)]
+                self.obj(),
+                move |_| window.imp().day_view.reload()
+            ));
+            self.notes_page.connect_days_changed(glib::clone!(
                 #[weak(rename_to = window)]
                 self.obj(),
                 move |_| window.imp().day_view.reload()
@@ -467,6 +489,7 @@ impl Window {
         let index = SearchIndex::default();
         imp.index.replace(index.clone());
         imp.projects_page.set_index(index.clone());
+        imp.notes_page.set_index(index.clone());
         imp.reports_page.set_index(index.clone());
         let indexed = vault.clone();
         glib::spawn_future_local(async move {
@@ -508,6 +531,7 @@ impl Window {
         imp.calendar_view.set_vault(vault.clone());
         imp.day_view.set_vault(vault.clone());
         imp.tasks_page.set_vault(vault.clone());
+        imp.notes_page.set_vault(vault.clone());
         imp.projects_page.set_vault(vault.clone());
         imp.reports_page.set_vault(vault.clone());
         self.show_sidebar_projects(vault);
@@ -674,6 +698,9 @@ impl Window {
             .collect();
         if !notes.is_empty() {
             imp.projects_page.notes_changed(&notes);
+            if self.shows(&imp.notes_page) {
+                imp.notes_page.reload();
+            }
         }
         let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
         if self.shows(&imp.calendar_view) && changes.iter().any(changes_day) {
@@ -699,6 +726,9 @@ impl Window {
                 imp.calendar_view.reload();
                 imp.tasks_page.reload();
                 imp.projects_page.reload();
+                if self.shows(&imp.notes_page) {
+                    imp.notes_page.reload();
+                }
                 if self.shows(&imp.reports_page) {
                     imp.reports_page.reload();
                 }
@@ -739,6 +769,7 @@ impl Window {
     fn show_day(&self, date: NaiveDate) {
         let imp = self.imp();
         imp.projects_page.save_now();
+        imp.notes_page.save_now();
         imp.day_view.show_date(date);
         self.show_page(&imp.day_view, &imp.today_row);
     }
@@ -755,6 +786,13 @@ impl Window {
         self.save_texts_now();
         imp.tasks_page.reload();
         self.show_page(&imp.tasks_page, &imp.tasks_row);
+    }
+
+    fn show_notes(&self) {
+        let imp = self.imp();
+        self.save_texts_now();
+        imp.notes_page.reload();
+        self.show_page(&imp.notes_page, &imp.notes_row);
     }
 
     fn show_projects(&self) {
@@ -816,6 +854,9 @@ impl Window {
         imp.day_view.show_date(imp.day_view.date());
         imp.calendar_view.reload();
         imp.projects_page.reload();
+        if self.shows(&imp.notes_page) {
+            imp.notes_page.reload();
+        }
         if self.shows(&imp.reports_page) {
             imp.reports_page.reload();
         }
@@ -850,6 +891,7 @@ impl Window {
         let imp = self.imp();
         imp.day_view.save_texts_now();
         imp.projects_page.save_now();
+        imp.notes_page.save_now();
     }
 }
 

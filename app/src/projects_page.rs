@@ -6,17 +6,17 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
-use gettextrs::{gettext, ngettext};
+use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gdk, glib};
 use knotbook_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
-use knotbook_index::Found;
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::format::{
     PROJECT_STATUSES, format_duration, format_full_date, format_short_date, status_name,
 };
+use crate::note_dialogs::{self, ask_note_name, confirm_create, confirm_delete};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
@@ -657,9 +657,14 @@ impl ProjectsPage {
     }
 
     async fn new_note(&self, project: ProjectSlug) {
-        let Some(name) = self
-            .ask_note_name(&gettext("New Note"), &gettext("_Create"), &project, "")
-            .await
+        let Some(name) = ask_note_name(
+            self,
+            &gettext("New Note"),
+            &gettext("_Create"),
+            &project,
+            "",
+        )
+        .await
         else {
             return;
         };
@@ -682,23 +687,7 @@ impl ProjectsPage {
             self.open_note(&note);
             return;
         }
-        let project = vault.project_name(note.project());
-        let dialog = adw::AlertDialog::builder()
-            .heading(gettext("Create Note?"))
-            .body(
-                gettext("There is no note “{name}” in {project} yet.")
-                    .replace("{name}", note.name())
-                    .replace("{project}", project),
-            )
-            .close_response("cancel")
-            .default_response("create")
-            .build();
-        dialog.add_responses(&[
-            ("cancel", &gettext("_Cancel")),
-            ("create", &gettext("_Create")),
-        ]);
-        dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
-        if dialog.choose_future(Some(self)).await != "create" {
+        if !confirm_create(self, &vault, &note).await {
             return;
         }
         match vault.create_note(note.project(), note.name(), Local::now().date_naive()) {
@@ -712,71 +701,30 @@ impl ProjectsPage {
 
     async fn rename_note(&self, note: NotePath) {
         let imp = self.imp();
-        let Some(name) = self
-            .ask_note_name(
-                &gettext("Rename Note"),
-                &gettext("_Rename"),
-                note.project(),
-                note.name(),
-            )
-            .await
-        else {
-            return;
-        };
         // Renaming may change the links in the note shown, and the index
         // has to find what was just typed.
         imp.note_view.save_now();
-        let vault = self.vault();
         let index = imp.index.borrow().clone();
-        let linking = match index.backlinks(&vault, note.clone()).await {
-            Ok(linking) => linking,
-            Err(err) => {
-                show_error(self, &gettext("Cannot Rename Note"), &err.to_string());
-                return;
-            }
+        let Some((renamed, updated_links)) =
+            note_dialogs::rename_note(self, &self.vault(), &index, &note).await
+        else {
+            return;
         };
-        let itself = Found::Note(note.clone());
-        let others = linking.iter().filter(|link| link.found != itself).count();
-        let update_links = if others == 0 {
-            // Only the note itself links to it, if at all.
-            true
+        if updated_links {
+            self.emit_by_name::<()>("days-changed", &[]);
+        }
+        self.show_project_again();
+        if imp.note_view.note() == Some(note) {
+            imp.note_view.forget();
+            self.open_note(&renamed);
         } else {
-            match self.ask_update_links(&note, others).await {
-                Some(update) => update,
-                None => return,
-            }
-        };
-        match vault.rename_note(&note, &name, update_links) {
-            Ok(renamed) => {
-                if update_links {
-                    self.emit_by_name::<()>("days-changed", &[]);
-                }
-                self.show_project_again();
-                if imp.note_view.note() == Some(note) {
-                    imp.note_view.forget();
-                    self.open_note(&renamed);
-                } else {
-                    imp.note_view.reload();
-                }
-            }
-            Err(err) => show_error(self, &gettext("Cannot Rename Note"), &err.to_string()),
+            imp.note_view.reload();
         }
     }
 
     async fn delete_note(&self, note: NotePath) {
         let imp = self.imp();
-        let dialog = adw::AlertDialog::builder()
-            .heading(gettext("Delete Note?"))
-            .body(gettext("“{name}” will be deleted for good.").replace("{name}", note.name()))
-            .close_response("cancel")
-            .default_response("cancel")
-            .build();
-        dialog.add_responses(&[
-            ("cancel", &gettext("_Cancel")),
-            ("delete", &gettext("_Delete")),
-        ]);
-        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-        if dialog.choose_future(Some(self)).await != "delete" {
+        if !confirm_delete(self, &note).await {
             return;
         }
         let shown = imp.note_view.note() == Some(note.clone());
@@ -787,76 +735,6 @@ impl ProjectsPage {
             show_error(self, &gettext("Cannot Delete Note"), &err.to_string());
         }
         self.show_project_again();
-    }
-
-    /// Asks for the name of a note in `project`, starting with `name`.
-    /// Returns `None` if the user cancels.
-    async fn ask_note_name(
-        &self,
-        heading: &str,
-        accept: &str,
-        project: &ProjectSlug,
-        name: &str,
-    ) -> Option<String> {
-        let entry = gtk::Entry::builder()
-            .text(name)
-            .activates_default(true)
-            .build();
-        let dialog = adw::AlertDialog::builder()
-            .heading(heading)
-            .extra_child(&entry)
-            .close_response("cancel")
-            .default_response("accept")
-            .focus_widget(&entry)
-            .build();
-        dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("accept", accept)]);
-        dialog.set_response_appearance("accept", adw::ResponseAppearance::Suggested);
-        let is_new_name = {
-            let (project, name) = (project.clone(), name.to_owned());
-            move |text: &str| {
-                let text = text.trim();
-                text != name && NotePath::new(project.clone(), text).is_ok()
-            }
-        };
-        dialog.set_response_enabled("accept", false);
-        entry.connect_changed(glib::clone!(
-            #[weak]
-            dialog,
-            move |entry| dialog.set_response_enabled("accept", is_new_name(&entry.text()))
-        ));
-        let response = dialog.choose_future(Some(self)).await;
-        (response == "accept").then(|| entry.text().trim().to_owned())
-    }
-
-    /// Asks whether the links in `others` other notes, day notes and blocks
-    /// to `note` should point to its new name. Returns `None` if the user
-    /// cancels.
-    async fn ask_update_links(&self, note: &NotePath, others: usize) -> Option<bool> {
-        let count = u32::try_from(others).unwrap_or(u32::MAX);
-        let body = ngettext(
-            "{count} other place links to “{name}”. Should the link point to the new name?",
-            "{count} other places link to “{name}”. Should the links point to the new name?",
-            count,
-        )
-        .replace("{count}", &others.to_string())
-        .replace("{name}", note.name());
-        let dialog = adw::AlertDialog::builder()
-            .heading(gettext("Update Links?"))
-            .body(body)
-            .close_response("cancel")
-            .default_response("update")
-            .build();
-        dialog.add_responses(&[
-            ("cancel", &gettext("_Cancel")),
-            ("keep", &gettext("_Keep Links")),
-            ("update", &gettext("_Update Links")),
-        ]);
-        dialog.set_response_appearance("update", adw::ResponseAppearance::Suggested);
-        match dialog.choose_future(Some(self)).await.as_str() {
-            "update" => Some(true),
-            "keep" => Some(false),
-            _ => None,
-        }
     }
 
     /// Asks for the details of the project `slug`, or of a new project.

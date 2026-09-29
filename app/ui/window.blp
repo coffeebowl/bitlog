@@ -172,6 +172,23 @@ template $KnotbookWindow: Adw.ApplicationWindow {
                     };
                   }
 
+                  ListBoxRow notes_row {
+                    action-name: "win.show-notes";
+
+                    child: Box {
+                      spacing: 12;
+
+                      Image {
+                        icon-name: "text-x-generic-symbolic";
+                      }
+
+                      Label {
+                        label: _("Notes");
+                        xalign: 0;
+                      }
+                    };
+                  }
+
                   ListBoxRow projects_row {
                     action-name: "win.show-projects";
 

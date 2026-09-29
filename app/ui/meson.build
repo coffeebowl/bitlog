@@ -2,7 +2,7 @@
 # whenever a blueprint changes.
 blueprints = custom_target(
   'blueprints',
-  input: files('calendar_view.blp', 'commit_dialog.blp', 'conflict_dialog.blp', 'day_view.blp', 'note_view.blp', 'preferences_dialog.blp', 'project_dialog.blp', 'project_view.blp', 'projects_page.blp', 'reports_page.blp', 'search_dialog.blp', 'standup_dialog.blp', 'sync_conflict_dialog.blp', 'task_list_view.blp', 'tasks_page.blp', 'window.blp'),
-  output: ['calendar_view.ui', 'commit_dialog.ui', 'conflict_dialog.ui', 'day_view.ui', 'note_view.ui', 'preferences_dialog.ui', 'project_dialog.ui', 'project_view.ui', 'projects_page.ui', 'reports_page.ui', 'search_dialog.ui', 'standup_dialog.ui', 'sync_conflict_dialog.ui', 'task_list_view.ui', 'tasks_page.ui', 'window.ui'],
+  input: files('calendar_view.blp', 'commit_dialog.blp', 'conflict_dialog.blp', 'day_view.blp', 'note_view.blp', 'notes_page.blp', 'preferences_dialog.blp', 'project_dialog.blp', 'project_view.blp', 'projects_page.blp', 'reports_page.blp', 'search_dialog.blp', 'standup_dialog.blp', 'sync_conflict_dialog.blp', 'task_list_view.blp', 'tasks_page.blp', 'window.blp'),
+  output: ['calendar_view.ui', 'commit_dialog.ui', 'conflict_dialog.ui', 'day_view.ui', 'note_view.ui', 'notes_page.ui', 'preferences_dialog.ui', 'project_dialog.ui', 'project_view.ui', 'projects_page.ui', 'reports_page.ui', 'search_dialog.ui', 'standup_dialog.ui', 'sync_conflict_dialog.ui', 'task_list_view.ui', 'tasks_page.ui', 'window.ui'],
   command: [blueprint_compiler, 'batch-compile', '@OUTDIR@', '@CURRENT_SOURCE_DIR@', '@INPUT@'],
 )

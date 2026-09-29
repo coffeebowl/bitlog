@@ -28,5 +28,15 @@
       <summary>Color scheme</summary>
       <description>Whether the app follows the system style or is always light or dark.</description>
     </key>
+    <key name="notes-sort" type="s">
+      <choices>
+        <choice value="recent"/>
+        <choice value="name"/>
+        <choice value="project"/>
+      </choices>
+      <default>"recent"</default>
+      <summary>Order of the notes</summary>
+      <description>Whether the notes page lists the notes by when they were last edited, by name or by project.</description>
+    </key>
   </schema>
 </schemalist>

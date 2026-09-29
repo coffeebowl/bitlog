@@ -285,7 +285,7 @@ impl ProjectView {
             .map(|note| {
                 let preview = note_preview();
                 show_preview(&preview, &note_text(vault, &note));
-                imp.notes_grid.append(&note_card(&note, &preview));
+                imp.notes_grid.append(&note_card(&note, &preview, None));
                 (note, preview)
             })
             .collect();
@@ -918,7 +918,7 @@ fn block_row(block: &ProjectBlock, today: NaiveDate) -> adw::ActionRow {
 }
 
 /// The text of `note`, or none if it cannot be read.
-fn note_text(vault: &Vault, note: &NotePath) -> String {
+pub fn note_text(vault: &Vault, note: &NotePath) -> String {
     vault.load_note(note).map_or_else(
         |err| {
             glib::g_warning!("knotbook", "{err}");
@@ -930,7 +930,7 @@ fn note_text(vault: &Vault, note: &NotePath) -> String {
 
 /// Shows the start of a note's text, its Markdown formatted, laid out as on
 /// a page.
-fn note_preview() -> MarkdownView {
+pub fn note_preview() -> MarkdownView {
     let preview: MarkdownView = glib::Object::new();
     preview.set_full(true);
     preview.set_top_margin(48);
@@ -944,7 +944,7 @@ fn note_preview() -> MarkdownView {
 }
 
 /// Shows the start of `text` in `preview`, unless it shows it already.
-fn show_preview(preview: &MarkdownView, text: &str) {
+pub fn show_preview(preview: &MarkdownView, text: &str) {
     let text = preview_text(without_front_matter(text));
     if !preview.shows(text) {
         preview.set_markdown(text);
@@ -952,26 +952,44 @@ fn show_preview(preview: &MarkdownView, text: &str) {
 }
 
 /// A note in the grid: `preview` as the miniature of a page, above its
-/// name and menu. The grid opens it when activated.
-fn note_card(note: &NotePath, preview: &MarkdownView) -> gtk::FlowBoxChild {
+/// name, `details` if given, and menu. The grid opens it when activated.
+pub fn note_card(
+    note: &NotePath,
+    preview: &MarkdownView,
+    details: Option<&gtk::Label>,
+) -> gtk::FlowBoxChild {
     let page = Miniature::new(preview);
     page.add_css_class("note-page");
     // Takes up rounding, so that the names line up.
     page.set_vexpand(true);
 
-    let footer = gtk::Box::builder().spacing(3).build();
-    footer.append(
+    let labels = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .valign(gtk::Align::Center)
+        .hexpand(true)
+        .build();
+    labels.append(
         &gtk::Label::builder()
             .label(note.name())
             .tooltip_text(note.name())
             .xalign(0.0)
-            .hexpand(true)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             // Leaves the width of the card to the page.
             .max_width_chars(1)
             .margin_start(3)
             .build(),
     );
+    if let Some(details) = details {
+        details.set_xalign(0.0);
+        details.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        details.set_max_width_chars(1);
+        details.set_margin_start(3);
+        details.add_css_class("caption");
+        details.add_css_class("dim-label");
+        labels.append(details);
+    }
+    let footer = gtk::Box::builder().spacing(3).build();
+    footer.append(&labels);
     footer.append(
         &gtk::MenuButton::builder()
             .icon_name("view-more-symbolic")
