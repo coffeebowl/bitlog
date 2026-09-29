@@ -68,6 +68,8 @@ mod imp {
         /// `None` for a project the vault does not know.
         pub color: Option<gdk::RGBA>,
         pub child: gtk::Widget,
+        /// The lines of text in `child`, shown as far as they fit.
+        pub lines: Vec<gtk::Label>,
     }
 
     #[glib::object_subclass]
@@ -300,6 +302,14 @@ mod imp {
                     &gtk::Allocation::new(BLOCK_X as i32, top, child_width, height),
                     -1,
                 );
+                let area = self.area(entry);
+                let bottom = area.y() + area.height();
+                for line in &entry.lines {
+                    let fits = line
+                        .compute_bounds(&*self.obj())
+                        .is_some_and(|bounds| bounds.y() + bounds.height() <= bottom);
+                    line.set_child_visible(fits);
+                }
             }
             if let Some(popover) = self.popover.borrow().as_ref() {
                 popover.present();
@@ -591,7 +601,7 @@ impl Timeline {
             .iter()
             .map(|block| {
                 let project = vault.project(&block.project);
-                let child = block_content(block, vault.project_name(&block.project));
+                let (child, lines) = block_content(block, vault.project_name(&block.project));
                 child.set_parent(self);
                 child.connect_has_focus_notify(glib::clone!(
                     #[weak(rename_to = timeline)]
@@ -605,6 +615,7 @@ impl Timeline {
                             .expect("the core only accepts valid colours")
                     }),
                     child,
+                    lines,
                 }
             })
             .collect();
@@ -704,8 +715,8 @@ impl Timeline {
     }
 }
 
-/// Title, project and first line of text of `block`.
-fn block_content(block: &Block, project_name: &str) -> gtk::Widget {
+/// Title, project and text of `block`, and the labels of its lines of text.
+fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::Label>) {
     let label = |text: &str, classes: &[&str]| {
         gtk::Label::builder()
             .label(text)
@@ -738,15 +749,17 @@ fn block_content(block: &Block, project_name: &str) -> gtk::Widget {
         },
     )]);
     content.append(&heading);
-    let first_line = block
+    let lines: Vec<_> = block
         .text
         .lines()
         .map(str::trim)
-        .find(|line| !line.is_empty());
-    if let Some(line) = first_line {
-        content.append(&label(line, &["caption", "dim-label"]));
+        .filter(|line| !line.is_empty())
+        .map(|line| label(line, &["caption", "dim-label"]))
+        .collect();
+    for line in &lines {
+        content.append(line);
     }
-    content.upcast()
+    (content.upcast(), lines)
 }
 
 /// Where `minute` lies below the top, for a grid that starts at `first`.
