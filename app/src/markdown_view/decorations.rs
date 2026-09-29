@@ -1,7 +1,7 @@
 //! What is drawn beside the text: bars beside quotes, bullets over the
 //! markers of list items and lines for rules, and what the other modules
-//! add, like the cards of code blocks and the grids of tables. And the
-//! syntax that is hidden until the cursor is at it.
+//! add, like the cards of code blocks, diagrams and the grids of tables.
+//! And the syntax that is hidden until the cursor is at it.
 
 use std::ops::Range;
 
@@ -12,6 +12,7 @@ use knotbook_core::{Formatting, MarkdownStyle};
 use super::callouts::CalloutCard;
 use super::check_boxes::CheckBox;
 use super::code_blocks::CodeCard;
+use super::diagrams::DiagramCard;
 use super::styling::{Styling, holds};
 use super::tables::Grid;
 use super::{GRID_ALPHA, MARKUP_ALPHA, lists, tags};
@@ -34,6 +35,8 @@ pub(super) struct Decorations {
     /// Rules drawn as lines, not those being edited.
     rules: Vec<Range<i32>>,
     pub(super) code_blocks: Vec<CodeCard>,
+    /// Code blocks drawn as diagrams, not those being edited.
+    pub(super) diagrams: Vec<DiagramCard>,
     pub(super) callouts: Vec<CalloutCard>,
     /// Tables drawn as grids, not those being edited.
     pub(super) grids: Vec<Grid>,
@@ -93,6 +96,12 @@ impl Decorations {
             .collect()
     }
 
+    /// Whether a diagram has another height in `view` than it has room
+    /// for, as the view changed its width.
+    pub(super) fn misfit(&self, view: &gtk::TextView) -> bool {
+        self.diagrams.iter().any(|card| card.misfits(view))
+    }
+
     /// The check box at `x`, `y` in `view`, in buffer coordinates.
     pub(super) fn check_box_at(&self, view: &gtk::TextView, x: i32, y: i32) -> Option<&CheckBox> {
         self.check_boxes
@@ -106,6 +115,9 @@ impl Decorations {
         let color = view.color();
         let (left, right) = text_edges(view, &visible);
         for card in &self.code_blocks {
+            card.snapshot(view, snapshot, &visible);
+        }
+        for card in &self.diagrams {
             card.snapshot(view, snapshot, &visible);
         }
         for range in &self.quotes {

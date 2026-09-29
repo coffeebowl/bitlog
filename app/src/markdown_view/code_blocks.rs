@@ -25,7 +25,8 @@ pub(super) struct CodeCard {
 }
 
 /// Hides the fences of the code blocks of `formatting`, but for the one
-/// the cursor is in, and adds their cards to `decorations`.
+/// the cursor is in, and adds their cards to `decorations`, but for those
+/// drawn as diagrams.
 pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mut Decorations) {
     for block in &formatting.code_blocks {
         let mut card = CodeCard {
@@ -34,6 +35,13 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
         };
         if !block.fences.is_empty() {
             decorations.revealable.push(card.range.clone());
+        }
+        if decorations
+            .diagrams
+            .iter()
+            .any(|diagram| diagram.range == card.range)
+        {
+            continue;
         }
         // Without code, the block would be no more than its fences.
         let hides_fences =

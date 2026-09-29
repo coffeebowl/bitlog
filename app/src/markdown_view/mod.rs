@@ -3,6 +3,7 @@ mod check_boxes;
 mod code_blocks;
 mod code_highlight;
 mod decorations;
+mod diagrams;
 mod lists;
 mod styling;
 mod tables;
@@ -28,6 +29,7 @@ use sourceview5::subclass::prelude::*;
 use self::check_boxes::CheckBox;
 use self::code_highlight::CodeHighlighter;
 use self::decorations::Decorations;
+use self::diagrams::Diagrams;
 use self::styling::Styling;
 use crate::colors::with_alpha;
 
@@ -89,6 +91,10 @@ mod imp {
         pub revealed: RefCell<Vec<i32>>,
         /// Whether `MarkdownView::queue_reveal` is waiting to run.
         pub reveal_queued: Cell<bool>,
+        /// Whether the text is to be formatted again when idle, as the
+        /// view changed its width.
+        pub restyle_queued: Cell<bool>,
+        pub(super) diagrams: Diagrams,
         pub highlighter: CodeHighlighter,
     }
 
@@ -220,6 +226,24 @@ mod imp {
             tags::update(self.obj().upcast_ref());
         }
 
+        /// Makes room for diagrams again as they fit the new width.
+        fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
+            self.parent_size_allocate(width, height, baseline);
+            let view = self.obj();
+            if self.decorations.borrow().misfit(view.upcast_ref())
+                && !self.restyle_queued.replace(true)
+            {
+                glib::idle_add_local_once(glib::clone!(
+                    #[weak]
+                    view,
+                    move || {
+                        view.imp().restyle_queued.set(false);
+                        view.restyle();
+                    }
+                ));
+            }
+        }
+
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             self.parent_snapshot(snapshot);
             let view = self.obj();
@@ -271,8 +295,9 @@ glib::wrapper! {
     /// Markdown with live formatting: the syntax stays visible, but dimmed,
     /// except for the markers of bullets and quotes, which are drawn as
     /// bullets and bars. Code blocks are cards, highlighted when they name
-    /// a language. Tables are grids and rules are lines, but show their
-    /// Markdown while the cursor is in them, with the columns lined up.
+    /// a language, or diagrams when they are in Mermaid. Tables are grids
+    /// and rules are lines, but show their Markdown while the cursor is in
+    /// them, with the columns lined up.
     ///
     /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
     /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces.
@@ -369,11 +394,12 @@ impl MarkdownView {
         // The modules after it take away what they draw otherwise, like the
         // bullets of tasks.
         let mut decorations = Decorations::collect(&styling, &formatting);
+        let imp = self.imp();
+        let missing = diagrams::style(&styling, &formatting, &mut decorations, &imp.diagrams);
         code_blocks::style(&styling, &formatting, &mut decorations);
         callouts::style(&styling, &formatting, &mut decorations);
         lists::style(&styling, &formatting, &mut decorations);
         tables::style(&styling, &formatting, &mut decorations);
-        let imp = self.imp();
         imp.highlighter.apply(&styling, &formatting.code_blocks);
         imp.revealed.replace(decorations.revealed(styling.cursor));
         imp.decorations.replace(decorations);
@@ -396,6 +422,29 @@ impl MarkdownView {
         }
         imp.links.replace(links);
         self.queue_draw();
+        for request in missing {
+            self.render_diagram(request);
+        }
+    }
+
+    /// Draws the diagram of `request` in the background, and formats the
+    /// text again when it is ready, if the text still has it.
+    fn render_diagram(&self, request: diagrams::Request) {
+        let view = self.downgrade();
+        glib::spawn_future_local(async move {
+            let job = request.clone();
+            // The renderer is young: a panic only fails the diagram.
+            let image = gio::spawn_blocking(move || job.render())
+                .await
+                .ok()
+                .flatten();
+            let Some(view) = view.upgrade() else {
+                return;
+            };
+            if view.imp().diagrams.finish(request, image) {
+                view.restyle();
+            }
+        });
     }
 
     /// Where the cursor is, while the user may be editing.

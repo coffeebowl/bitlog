@@ -12,6 +12,8 @@ gettext-rs = { version = "0.8.0", features = ["gettext-system"] }
 gtk = { version = "0.11.5", package = "gtk4", features = ["gnome_50"] }
 knotbook-core = { path = "../crates/knotbook-core" }
 knotbook-index = { path = "../crates/knotbook-index" }
+mermaid-rs-renderer = { version = "0.3.1", default-features = false }
+resvg = { version = "0.47.0", default-features = false, features = ["memmap-fonts", "system-fonts", "text"] }
 sourceview5 = "0.11.2"
 syntect = { version = "5.3.0", default-features = false, features = ["parsing", "regex-fancy"] }
 two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }
