@@ -555,10 +555,22 @@ impl DayView {
     fn show_standup(&self) {
         // The summary is read from the files.
         self.save_texts_now();
-        match self.vault().standup(self.date()) {
-            Ok(text) => StandupDialog::new(&text).present(Some(self)),
-            Err(err) => show_error(self, &gettext("Cannot Summarize"), &err.to_string()),
-        }
+        let vault = Vault::clone(&self.vault());
+        let date = self.date();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            async move {
+                // It reads the projects' repositories too.
+                let standup = gio::spawn_blocking(move || vault.standup(date))
+                    .await
+                    .expect("summarizing does not panic");
+                match standup {
+                    Ok(text) => StandupDialog::new(&text).present(Some(&view)),
+                    Err(err) => show_error(&view, &gettext("Cannot Summarize"), &err.to_string()),
+                }
+            }
+        ));
     }
 
     /// Offers one slot for a new block after the last one, or at the start

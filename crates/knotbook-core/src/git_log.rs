@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime};
 use git2::{
     BranchType, Delta, DiffFindOptions, ErrorCode, Oid, Patch, ReferenceType, Repository,
     Signature, Sort, Status, StatusOptions,
@@ -270,6 +270,51 @@ pub fn git_uncommitted(repo: &Path) -> Result<Uncommitted, GitLogError> {
         }
     }
     Ok(uncommitted)
+}
+
+/// The summaries of the commits on any local branch of the repository in
+/// the folder `repo` that its user made on `date`, in the time zone they
+/// were made in, oldest first and without repeats. Merges are left out.
+/// The user is whom `user.email` of the Git configuration names; without
+/// one there are none.
+pub(crate) fn own_commits_on(repo: &Path, date: NaiveDate) -> Result<Vec<String>, GitLogError> {
+    let repository = open(repo)?;
+    own_commits(&repository, date).map_err(git_error(repo))
+}
+
+fn own_commits(repository: &Repository, date: NaiveDate) -> Result<Vec<String>, git2::Error> {
+    let email = match repository.config()?.get_string("user.email") {
+        Err(err) if err.code() == ErrorCode::NotFound => return Ok(Vec::new()),
+        result => result?,
+    };
+    let mut walk = repository.revwalk()?;
+    walk.set_sorting(Sort::TIME)?;
+    walk.push_glob("refs/heads")?;
+    // Commits are committed after they are made, and time zones are less
+    // than a day apart, so the walk, newest first, ends before this.
+    let end = date.and_time(NaiveTime::MIN).and_utc().timestamp() - 24 * 3600;
+    let mut summaries = Vec::new();
+    for id in walk {
+        let commit = repository.find_commit(id?)?;
+        if commit.time().seconds() < end {
+            break;
+        }
+        let author = commit.author();
+        let own = author.email_bytes().eq_ignore_ascii_case(email.as_bytes());
+        if !own || commit.parent_count() > 1 || time_of(&author).date_naive() != date {
+            continue;
+        }
+        summaries
+            .push(String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default()).into_owned());
+    }
+    summaries.reverse();
+    let mut unique = Vec::new();
+    for summary in summaries {
+        if !unique.contains(&summary) {
+            unique.push(summary);
+        }
+    }
+    Ok(unique)
 }
 
 /// The commit `id`, a full hash, of the repository in the folder `repo`,

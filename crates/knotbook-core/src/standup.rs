@@ -1,20 +1,27 @@
 //! A summary of the last working day and of today for a standup meeting.
 
+use std::collections::BTreeMap;
+
 use chrono::{Datelike, NaiveDate};
 
 use crate::error::ReadError;
-use crate::{Day, ProjectSlug, TaskList, TaskStatus, Vault};
+use crate::git_log::own_commits_on;
+use crate::{Block, Day, ProjectSlug, TaskList, TaskStatus, Vault};
 
 impl Vault {
     /// A standup summary for the day `today` in Markdown, to paste into a
     /// chat. "Yesterday" is the last day before `today` with blocks other
     /// than breaks, with the tasks done on it; "Today" holds the blocks of
     /// `today` and the open tasks due by then. Blocks are listed by project
-    /// with their titles, breaks left out.
+    /// with their titles, breaks left out, and with the user's commits of
+    /// that day in the project's repository on this device.
+    ///
+    /// It reads the repositories, so programs with a user interface call
+    /// it outside the main thread.
     pub fn standup(&self, today: NaiveDate) -> Result<String, ReadError> {
         let yesterday = match self.last_work_day(today)? {
             Some(day) => {
-                let mut lines = self.project_lines(&day);
+                let mut lines = self.project_lines(&day.blocks, day.date)?;
                 let done = self.tasks_done_on(day.date)?;
                 if !done.is_empty() {
                     lines.push(format!("Done: {}", done.join(", ")));
@@ -24,10 +31,11 @@ impl Vault {
             None => section("Yesterday", None, &[], "Nothing logged."),
         };
 
-        let mut lines = match self.load_day(today)? {
-            Some(file) => self.project_lines(&file.day),
+        let blocks = match self.load_day(today)? {
+            Some(file) => file.day.blocks,
             None => Vec::new(),
         };
+        let mut lines = self.project_lines(&blocks, today)?;
         let tasks = self.load_tasks()?;
         let due: Vec<&str> = tasks
             .tasks()
@@ -58,12 +66,14 @@ impl Vault {
         Ok(None)
     }
 
-    /// One line per project of the blocks of `day`, in the order they first
-    /// appear, with the different titles of its blocks: "Webshop: Code
-    /// review, Payment provider switch". Breaks are left out.
-    fn project_lines(&self, day: &Day) -> Vec<String> {
+    /// One line per project of `blocks`, in the order they first appear,
+    /// with the different titles of its blocks: "Webshop: Code review,
+    /// Payment provider switch". Breaks are left out. The commits made on
+    /// `date` follow in a nested line, also for projects without blocks.
+    fn project_lines(&self, blocks: &[Block], date: NaiveDate) -> Result<Vec<String>, ReadError> {
+        let mut commits = self.commits_on(date)?;
         let mut projects: Vec<(&ProjectSlug, Vec<&str>)> = Vec::new();
-        for block in day.blocks.iter().filter(|b| !self.is_break(&b.project)) {
+        for block in blocks.iter().filter(|b| !self.is_break(&b.project)) {
             let found = projects
                 .iter()
                 .position(|(slug, _)| **slug == block.project);
@@ -76,17 +86,36 @@ impl Vault {
                 titles.push(&block.title);
             }
         }
-        projects
+        let mut lines: Vec<String> = projects
             .into_iter()
             .map(|(slug, titles)| {
                 let name = self.project_name(slug);
-                if titles.is_empty() {
+                let line = if titles.is_empty() {
                     name.to_owned()
                 } else {
                     format!("{name}: {}", titles.join(", "))
-                }
+                };
+                line + &commits_line(commits.remove(slug))
             })
-            .collect()
+            .collect();
+        lines.extend(commits.into_iter().map(|(slug, commits)| {
+            self.project_name(&slug).to_owned() + &commits_line(Some(commits))
+        }));
+        Ok(lines)
+    }
+
+    /// The user's commits made on `date` in the repository of each project
+    /// that has one on this device and commits that day. Repositories that
+    /// cannot be read, as when moved away, are left out.
+    fn commits_on(&self, date: NaiveDate) -> Result<BTreeMap<ProjectSlug, Vec<String>>, ReadError> {
+        Ok(self
+            .repo_paths()?
+            .into_iter()
+            .filter_map(|(slug, repo)| {
+                let commits = own_commits_on(&repo, date).ok()?;
+                (!commits.is_empty()).then_some((slug, commits))
+            })
+            .collect())
     }
 
     /// The titles of the tasks done on `date`, also those archived since.
@@ -100,6 +129,14 @@ impl Vault {
             .filter(|task| task.status == TaskStatus::Done && task.done == Some(date))
             .map(|task| task.title.clone())
             .collect())
+    }
+}
+
+/// The nested line under a project with `commits`, if any.
+fn commits_line(commits: Option<Vec<String>>) -> String {
+    match commits {
+        Some(commits) => format!("\n  - Commits: {}", commits.join(", ")),
+        None => String::new(),
     }
 }
 
@@ -127,7 +164,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
-    use crate::file::sample_copy;
+    use crate::file::{TempDir, sample_copy};
 
     fn sample_vault() -> Vault {
         Vault::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault"))
@@ -156,6 +193,95 @@ mod tests {
              - Meetings: Daily\n\
              - Infrastructure: Prepare release deployment, Release deployment\n\
              - Webshop: Release notes\n"
+        );
+    }
+
+    /// A repository with the user `ada@example.org` and `commits`, each
+    /// by its author at a day and hour of September 2026 in UTC+2, with
+    /// its summary and the indexes of its parents. The last one is on
+    /// `main`, checked out, and the first given for `feature`.
+    fn repository(commits: &[(&str, u32, u32, &str, &[usize])], feature: usize) -> TempDir {
+        use git2::{Repository, Signature, Time};
+        let dir = TempDir::new();
+        let repository = Repository::init(&dir.0).unwrap();
+        repository
+            .config()
+            .unwrap()
+            .set_str("user.email", "ada@example.org")
+            .unwrap();
+        let tree = repository.index().unwrap().write_tree().unwrap();
+        let tree = repository.find_tree(tree).unwrap();
+        let mut ids = Vec::new();
+        for (author, day, hour, summary, parents) in commits {
+            let time = date(2026, 9, *day).and_hms_opt(*hour, 0, 0).unwrap();
+            let time = Time::new(time.and_utc().timestamp() - 7200, 120);
+            let email = format!("{}@example.org", author.to_lowercase());
+            let author = Signature::new(author, &email, &time).unwrap();
+            let parents: Vec<git2::Commit> = parents
+                .iter()
+                .map(|i| repository.find_commit(ids[*i]).unwrap())
+                .collect();
+            let parents: Vec<&git2::Commit> = parents.iter().collect();
+            let id = repository
+                .commit(None, &author, &author, summary, &tree, &parents)
+                .unwrap();
+            ids.push(id);
+        }
+        let main = *ids.last().unwrap();
+        repository
+            .reference("refs/heads/main", main, true, "")
+            .unwrap();
+        repository
+            .reference("refs/heads/feature", ids[feature], true, "")
+            .unwrap();
+        repository.set_head("refs/heads/main").unwrap();
+        dir
+    }
+
+    #[test]
+    fn own_commits_by_project() {
+        let (_dir, vault) = sample_copy();
+        let webshop = repository(
+            &[
+                ("Ada", 21, 9, "Older", &[]),
+                ("Ada", 22, 10, "Fix cart total", &[0]),
+                ("Bob", 22, 11, "Bob's work", &[1]),
+                ("Ada", 22, 12, "Fix cart total", &[2]),
+                ("Ada", 22, 11, "Add checkout tests", &[1]),
+                ("Ada", 22, 13, "Merge branch 'feature'", &[3, 4]),
+                ("Ada", 23, 9, "Today's fix", &[5]),
+            ],
+            4,
+        );
+        let filler = repository(&[("Ada", 22, 16, "Answer mails faster", &[])], 0);
+        vault
+            .set_repo_path(&"webshop".parse().unwrap(), Some(&webshop.0))
+            .unwrap();
+        vault
+            .set_repo_path(&"filler".parse().unwrap(), Some(&filler.0))
+            .unwrap();
+        // Moved away since.
+        let moved = repository(&[("Ada", 22, 9, "Lost", &[])], 0);
+        vault
+            .set_repo_path(&"infra".parse().unwrap(), Some(&moved.0))
+            .unwrap();
+        drop(moved);
+        let standup = vault.standup(date(2026, 9, 23)).unwrap();
+        assert!(
+            standup.contains(
+                "- Webshop: Code review, Payment provider switch\n\
+                 \x20 - Commits: Fix cart total, Add checkout tests\n\
+                 - Meetings: Daily\n\
+                 - Infrastructure: Monitoring alerts\n\
+                 - Filler\n\
+                 \x20 - Commits: Answer mails faster\n\
+                 - Done: Take the keyboard to the office\n"
+            ),
+            "{standup}"
+        );
+        assert!(
+            standup.ends_with("- Webshop: Release notes\n  - Commits: Today's fix\n"),
+            "{standup}"
         );
     }
 

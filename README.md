@@ -110,7 +110,7 @@ else the current folder or the closest folder above it that holds a
 ```sh
 knotbook today              # today's blocks with their ids, working time and location
 knotbook day 2026-09-23     # the same for another day
-knotbook standup            # the last day with work and today, to paste into a chat
+knotbook standup            # the last day with work and today, with your commits, to paste into a chat
 
 knotbook block add 09:00-10:30 webshop "Checkout flow"
 knotbook block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
