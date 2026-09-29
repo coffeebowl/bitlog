@@ -867,7 +867,7 @@ dependencies = [
 
 [[package]]
 name = "knotbook-cli"
-version = "26.9.0"
+version = "26.9.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -879,7 +879,7 @@ dependencies = [
 
 [[package]]
 name = "knotbook-core"
-version = "26.9.0"
+version = "26.9.1"
 dependencies = [
  "chrono",
  "fastrand",
@@ -896,7 +896,7 @@ dependencies = [
 
 [[package]]
 name = "knotbook-gtk"
-version = "26.9.0"
+version = "26.9.1"
 dependencies = [
  "chrono",
  "gettext-rs",
@@ -911,7 +911,7 @@ dependencies = [
 
 [[package]]
 name = "knotbook-index"
-version = "26.9.0"
+version = "26.9.1"
 dependencies = [
  "chrono",
  "fastrand",

@@ -1,6 +1,6 @@
 project(
   'knotbook',
-  version: '26.09',
+  version: '26.09.1',
   license: 'GPL-3.0-or-later',
   meson_version: '>= 1.5.0',
 )
