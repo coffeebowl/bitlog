@@ -2,11 +2,12 @@
 //! reads them and keeps nothing, so rebases and rewritten commits do not
 //! matter.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveTime};
 use git2::{
-    BranchType, Delta, DiffFindOptions, ErrorCode, Oid, Patch, ReferenceType, Repository,
+    BranchType, Delta, Diff, DiffFindOptions, ErrorCode, Oid, Patch, ReferenceType, Repository,
     Signature, Sort, Status, StatusOptions,
 };
 use thiserror::Error;
@@ -21,6 +22,8 @@ pub struct Commit {
     pub time: DateTime<FixedOffset>,
     /// The first line of the message.
     pub summary: String,
+    /// The tags that point to it, sorted.
+    pub tags: Vec<String>,
 }
 
 impl Commit {
@@ -166,9 +169,10 @@ pub fn git_log(
     let mut walk = repository.revwalk().map_err(git_error(repo))?;
     walk.set_sorting(Sort::TIME).map_err(git_error(repo))?;
     walk.push(head.id()).map_err(git_error(repo))?;
+    let tags = tags_by_commit(&repository).map_err(git_error(repo))?;
     walk.skip(skip)
         .take(limit)
-        .map(|id| Ok(commit_of(&repository.find_commit(id?)?)))
+        .map(|id| Ok(commit_of(&repository.find_commit(id?)?, &tags)))
         .collect::<Result<_, git2::Error>>()
         .map_err(git_error(repo))
 }
@@ -317,6 +321,39 @@ fn own_commits(repository: &Repository, date: NaiveDate) -> Result<Vec<String>, 
     Ok(unique)
 }
 
+/// The changes the commit `id`, a full hash, of the repository in the
+/// folder `repo` made to the file `path`, as its hunks in the unified
+/// format of `git show`. `None` for a binary file or one the commit did
+/// not change. A renamed file is named by its new path, a deleted one by
+/// its old.
+///
+/// It compares the files the commit changed, so programs with a user
+/// interface call it outside the main thread.
+pub fn git_file_diff(repo: &Path, id: &str, path: &str) -> Result<Option<String>, GitLogError> {
+    let repository = open(repo)?;
+    file_diff(&repository, id, path).map_err(git_error(repo))
+}
+
+fn file_diff(repository: &Repository, id: &str, path: &str) -> Result<Option<String>, git2::Error> {
+    let commit = repository.find_commit(Oid::from_str(id)?)?;
+    let diff = commit_diff(repository, &commit)?;
+    let Some(index) = diff.deltas().position(|delta| delta_path(&delta) == path) else {
+        return Ok(None);
+    };
+    let Some(mut patch) = Patch::from_diff(&diff, index)? else {
+        return Ok(None);
+    };
+    if patch.delta().flags().is_binary() {
+        return Ok(None);
+    }
+    let text = patch.to_buf()?;
+    let text = String::from_utf8_lossy(&text);
+    // The hunks without the header naming the files; a file only renamed
+    // has none.
+    let hunks = text.find("\n@@").map_or("", |start| &text[start + 1..]);
+    Ok(Some(hunks.to_owned()))
+}
+
 /// The commit `id`, a full hash, of the repository in the folder `repo`,
 /// with what it changed.
 ///
@@ -337,22 +374,9 @@ fn details(repository: &Repository, id: &str) -> Result<CommitDetails, git2::Err
         || committer.when() != author.when())
     .then(|| (text(committer.name_bytes()), time_of(&committer)));
 
-    // Against the first parent, which for a merge is what it brought into
-    // the branch, or against nothing for the first commit.
-    let parent_tree = match commit.parents().next() {
-        Some(parent) => Some(parent.tree()?),
-        None => None,
-    };
-    let mut diff =
-        repository.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
-    diff.find_similar(Some(DiffFindOptions::new().renames(true)))?;
+    let diff = commit_diff(repository, &commit)?;
     let mut files = Vec::new();
     for (index, delta) in diff.deltas().enumerate() {
-        let path = |file: git2::DiffFile| {
-            file.path_bytes()
-                .map(|path| String::from_utf8_lossy(path).into_owned())
-                .unwrap_or_default()
-        };
         let change = match delta.status() {
             Delta::Added => FileChange::Added,
             Delta::Deleted => FileChange::Deleted,
@@ -362,11 +386,8 @@ fn details(repository: &Repository, id: &str) -> Result<CommitDetails, git2::Err
             _ => FileChange::Modified,
         };
         let old_path = matches!(change, FileChange::Renamed | FileChange::Copied)
-            .then(|| path(delta.old_file()));
-        let path = match change {
-            FileChange::Deleted => path(delta.old_file()),
-            _ => path(delta.new_file()),
-        };
+            .then(|| file_path(delta.old_file()));
+        let path = delta_path(&delta);
         // Binary files have no lines to count.
         let lines = match Patch::from_diff(&diff, index)? {
             Some(patch) if !patch.delta().flags().is_binary() => {
@@ -384,14 +405,65 @@ fn details(repository: &Repository, id: &str) -> Result<CommitDetails, git2::Err
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
 
+    let tags = tags_by_commit(repository)?;
     Ok(CommitDetails {
-        commit: commit_of(&commit),
+        commit: commit_of(&commit, &tags),
         author_email: text(author.email_bytes()),
         message: text(commit.message_bytes()).trim_end().to_owned(),
         committer: committed,
         parents: commit.parent_ids().map(|id| id.to_string()).collect(),
         files,
     })
+}
+
+/// What `commit` changed against its first parent, which for a merge is
+/// what it brought into the branch, or against nothing for the first
+/// commit, with renames found.
+fn commit_diff<'a>(
+    repository: &'a Repository,
+    commit: &git2::Commit,
+) -> Result<Diff<'a>, git2::Error> {
+    let parent_tree = match commit.parents().next() {
+        Some(parent) => Some(parent.tree()?),
+        None => None,
+    };
+    let mut diff =
+        repository.diff_tree_to_tree(parent_tree.as_ref(), Some(&commit.tree()?), None)?;
+    diff.find_similar(Some(DiffFindOptions::new().renames(true)))?;
+    Ok(diff)
+}
+
+/// The path a file changed by a commit is named by: the old one if the
+/// commit deleted it, else the new one.
+fn delta_path(delta: &git2::DiffDelta) -> String {
+    match delta.status() {
+        Delta::Deleted => file_path(delta.old_file()),
+        _ => file_path(delta.new_file()),
+    }
+}
+
+fn file_path(file: git2::DiffFile) -> String {
+    file.path_bytes()
+        .map(|path| String::from_utf8_lossy(path).into_owned())
+        .unwrap_or_default()
+}
+
+/// The names of the tags of each commit, sorted.
+fn tags_by_commit(repository: &Repository) -> Result<HashMap<Oid, Vec<String>>, git2::Error> {
+    let mut tags: HashMap<Oid, Vec<String>> = HashMap::new();
+    for reference in repository.references_glob("refs/tags/*")? {
+        let reference = reference?;
+        // Tags may also name trees or blobs.
+        let Ok(commit) = reference.peel_to_commit() else {
+            continue;
+        };
+        let name = String::from_utf8_lossy(reference.shorthand_bytes()).into_owned();
+        tags.entry(commit.id()).or_default().push(name);
+    }
+    for names in tags.values_mut() {
+        names.sort();
+    }
+    Ok(tags)
 }
 
 /// Opens the repository in the folder `repo`.
@@ -412,13 +484,15 @@ fn git_error(repo: &Path) -> impl Fn(git2::Error) -> GitLogError + '_ {
     }
 }
 
-fn commit_of(commit: &git2::Commit) -> Commit {
+/// `commit` with its tags out of `tags`.
+fn commit_of(commit: &git2::Commit, tags: &HashMap<Oid, Vec<String>>) -> Commit {
     let author = commit.author();
     Commit {
         id: commit.id().to_string(),
         author: String::from_utf8_lossy(author.name_bytes()).into_owned(),
         time: time_of(&author),
         summary: String::from_utf8_lossy(commit.summary_bytes().unwrap_or_default()).into_owned(),
+        tags: tags.get(&commit.id()).cloned().unwrap_or_default(),
     }
 }
 
@@ -750,6 +824,44 @@ mod tests {
                 },
             ]
         );
+
+        let diff = |path| git_file_diff(&dir.0, &second, path).unwrap();
+        assert_eq!(
+            diff("a.txt").unwrap(),
+            "@@ -1,2 +1,3 @@\n one\n-two\n+three\n+four\n"
+        );
+        assert_eq!(diff("b.txt").unwrap(), "@@ -0,0 +1 @@\n+x\n");
+        assert_eq!(diff("new.txt").unwrap(), "");
+        assert_eq!(diff("logo.png"), None);
+        assert_eq!(diff("old.txt"), None);
+        assert_eq!(diff("unchanged.txt"), None);
+    }
+
+    #[test]
+    fn tags_of_commits() {
+        let dir = TempDir::new();
+        let repository = repository(&dir, &["First", "Second"]);
+        let head = repository.head().unwrap().peel_to_commit().unwrap();
+        let first = head.parent(0).unwrap();
+        repository
+            .tag_lightweight("26.09", head.as_object(), false)
+            .unwrap();
+        let author = Signature::now("Ada", "ada@example.org").unwrap();
+        repository
+            .tag("0.1", first.as_object(), &author, "First release", false)
+            .unwrap();
+        repository
+            .tag_lightweight("release/0.1", first.as_object(), false)
+            .unwrap();
+        // Not a commit.
+        repository
+            .tag_lightweight("tree", head.tree().unwrap().as_object(), false)
+            .unwrap();
+        let log = git_log(&dir.0, None, 0, 10).unwrap();
+        assert_eq!(log[0].tags, ["26.09"]);
+        assert_eq!(log[1].tags, ["0.1", "release/0.1"]);
+        let details = git_commit(&dir.0, &head.id().to_string()).unwrap();
+        assert_eq!(details.commit.tags, ["26.09"]);
     }
 
     #[test]

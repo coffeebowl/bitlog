@@ -139,3 +139,11 @@ row.drop-after {
   min-width: 0;
   padding: 9px 6px;
 }
+
+/* Tags on commits in the Git log, as small pills in the accent colour. */
+.commit-tag {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  color: var(--accent-color);
+  background-color: alpha(var(--accent-bg-color), 0.15);
+}

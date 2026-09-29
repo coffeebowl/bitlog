@@ -95,6 +95,15 @@ template $KnotbookCommitDialog: Adw.Dialog {
             ]
           }
 
+          Adw.ActionRow tags_row {
+            subtitle-selectable: true;
+            use-markup: false;
+
+            styles [
+              "property",
+            ]
+          }
+
           Adw.ButtonRow day_row {
             title: _("Show _Day");
             use-underline: true;

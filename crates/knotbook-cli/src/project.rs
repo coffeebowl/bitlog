@@ -64,7 +64,8 @@ pub fn log(vault: &Vault, slug: &ProjectSlug, limit: usize) -> Result<String> {
     Ok(format_log(&git_log(&repo, None, 0, limit)?))
 }
 
-/// One line per commit: short hash, time, author and summary.
+/// One line per commit: short hash, time, author, tags as `git log
+/// --decorate` shows them, and summary.
 fn format_log(commits: &[Commit]) -> String {
     if commits.is_empty() {
         return "No commits yet.\n".to_owned();
@@ -77,8 +78,18 @@ fn format_log(commits: &[Commit]) -> String {
     commits
         .iter()
         .map(|commit| {
+            let tags = if commit.tags.is_empty() {
+                String::new()
+            } else {
+                let tags: Vec<String> = commit
+                    .tags
+                    .iter()
+                    .map(|tag| format!("tag: {tag}"))
+                    .collect();
+                format!("({}) ", tags.join(", "))
+            };
             format!(
-                "{}  {}  {:<width$}  {}\n",
+                "{}  {}  {:<width$}  {tags}{}\n",
                 commit.short_id(),
                 commit.time.format("%Y-%m-%d %H:%M"),
                 commit.author,
@@ -161,6 +172,25 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+
+    #[test]
+    fn log_lines_with_tags() {
+        let commit = |id: &str, author: &str, summary: &str, tags: &[&str]| Commit {
+            id: id.repeat(40),
+            author: author.to_owned(),
+            time: "2026-09-21T09:00:00+02:00".parse().unwrap(),
+            summary: summary.to_owned(),
+            tags: tags.iter().map(|tag| (*tag).to_owned()).collect(),
+        };
+        assert_eq!(
+            format_log(&[
+                commit("a", "Ada", "Release", &["26.09", "v1.0"]),
+                commit("b", "Grace", "Start", &[]),
+            ]),
+            "aaaaaaa  2026-09-21 09:00  Ada    (tag: 26.09, tag: v1.0) Release\n\
+             bbbbbbb  2026-09-21 09:00  Grace  Start\n"
+        );
+    }
 
     #[test]
     fn sample_projects() {

@@ -29,7 +29,7 @@ pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;
 pub use git_log::{
     Branch, Branches, ChangedFile, Commit, CommitDetails, FileChange, GitLogError, Uncommitted,
-    Upstream, git_branches, git_commit, git_log, git_uncommitted, git_upstream,
+    Upstream, git_branches, git_commit, git_file_diff, git_log, git_uncommitted, git_upstream,
 };
 pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;

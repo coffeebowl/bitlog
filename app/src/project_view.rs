@@ -703,11 +703,12 @@ impl ProjectView {
             #[weak(rename_to = view)]
             self,
             async move {
-                let details = gio::spawn_blocking(move || git_commit(&repo, &id))
+                let read = repo.clone();
+                let details = gio::spawn_blocking(move || git_commit(&read, &id))
                     .await
                     .expect("reading a commit does not panic");
                 match details {
-                    Ok(details) => CommitDialog::new(&details).present(Some(&view)),
+                    Ok(details) => CommitDialog::new(&details, repo).present(Some(&view)),
                     Err(err) => {
                         show_error(&view, &gettext("Cannot Read Commit"), &err.to_string());
                     }
@@ -849,7 +850,7 @@ fn plural(count: usize) -> u32 {
 /// shows it in detail when activated.
 fn commit_row(commit: &Commit) -> adw::ActionRow {
     let time = commit.time.with_timezone(&Local).time();
-    adw::ActionRow::builder()
+    let row = adw::ActionRow::builder()
         .title(&commit.summary)
         .subtitle(format!(
             "{} · {} · {}",
@@ -859,7 +860,20 @@ fn commit_row(commit: &Commit) -> adw::ActionRow {
         ))
         .use_markup(false)
         .activatable(true)
-        .build()
+        .build();
+    for tag in &commit.tags {
+        row.add_suffix(
+            &gtk::Label::builder()
+                .label(tag)
+                .tooltip_text(tag)
+                .ellipsize(gtk::pango::EllipsizeMode::Middle)
+                .max_width_chars(16)
+                .valign(gtk::Align::Center)
+                .css_classes(["commit-tag", "caption-heading"])
+                .build(),
+        );
+    }
+    row
 }
 
 /// The window action that shows `block`, with its target.

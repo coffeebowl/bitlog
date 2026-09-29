@@ -1,16 +1,22 @@
 use std::cell::{Cell, RefCell};
+use std::path::PathBuf;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
 use gettextrs::{gettext, ngettext};
-use gtk::glib;
-use knotbook_core::{ChangedFile, CommitDetails, FileChange};
+use gtk::{gio, glib};
+use knotbook_core::{ChangedFile, CommitDetails, FileChange, git_file_diff};
+use sourceview5::prelude::*;
 
 use crate::format::{format_full_date, format_time};
 
 /// The files the dialog lists at most, so that huge commits open quickly.
 const FILES_SHOWN: usize = 200;
+
+/// The lines of a file's changes shown at most, so that huge ones such as
+/// generated files open quickly.
+const DIFF_LINES: usize = 1000;
 
 mod imp {
     use super::*;
@@ -18,6 +24,8 @@ mod imp {
     #[derive(Debug, Default, gtk::CompositeTemplate)]
     #[template(resource = "/dev/knotbook/Knotbook/commit_dialog.ui")]
     pub struct CommitDialog {
+        /// The repository of the commit.
+        pub repo: RefCell<PathBuf>,
         /// The full hash of the commit shown.
         pub id: RefCell<String>,
         /// The local day it was made on.
@@ -40,6 +48,8 @@ mod imp {
         pub committer_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub parents_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub tags_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub day_row: TemplateChild<adw::ButtonRow>,
         #[template_child]
@@ -90,8 +100,10 @@ glib::wrapper! {
 }
 
 impl CommitDialog {
-    pub fn new(details: &CommitDetails) -> Self {
+    /// Shows `details` of a commit of the repository in the folder `repo`.
+    pub fn new(details: &CommitDetails, repo: PathBuf) -> Self {
         let dialog: Self = glib::Object::new();
+        dialog.imp().repo.replace(repo);
         dialog.show(details);
         dialog
     }
@@ -135,6 +147,11 @@ impl CommitDialog {
         ));
         let short: Vec<_> = parents.iter().map(|id| &id[..7]).collect();
         imp.parents_row.set_subtitle(&short.join(", "));
+        let tags = &commit.tags;
+        imp.tags_row.set_visible(!tags.is_empty());
+        imp.tags_row
+            .set_title(&ngettext("Tag", "Tags", plural(tags.len())));
+        imp.tags_row.set_subtitle(&tags.join(", "));
 
         self.show_files(&details.files);
     }
@@ -158,7 +175,7 @@ impl CommitDialog {
         group.set_description(Some(&description));
 
         for file in files.iter().take(FILES_SHOWN) {
-            group.add(&file_row(file));
+            group.add(&self.file_row(file));
         }
         if files.len() > FILES_SHOWN {
             let more = files.len() - FILES_SHOWN;
@@ -172,6 +189,102 @@ impl CommitDialog {
                     .build(),
             );
         }
+    }
+
+    /// A changed file: its path, how it changed unless it was only
+    /// modified, and the lines added and removed. One with lines changed
+    /// expands to show them.
+    fn file_row(&self, file: &ChangedFile) -> gtk::Widget {
+        let old = file.old_path.as_deref().unwrap_or_default();
+        let change = match file.change {
+            FileChange::Added => gettext("Added"),
+            FileChange::Deleted => gettext("Deleted"),
+            FileChange::Modified => String::new(),
+            // Translators: A file renamed by a commit, as in "Renamed from
+            // src/old.rs".
+            FileChange::Renamed => gettext("Renamed from {path}").replace("{path}", old),
+            // Translators: A file copied by a commit, as in "Copied from
+            // src/old.rs".
+            FileChange::Copied => gettext("Copied from {path}").replace("{path}", old),
+            FileChange::TypeChanged => gettext("Type changed"),
+        };
+        let lines = match file.lines {
+            Some((added, removed)) => format_lines(added, removed),
+            None => gettext("Binary"),
+        };
+        let lines = (!lines.is_empty()).then(|| {
+            gtk::Label::builder()
+                .label(lines)
+                .css_classes(["dim-label", "numeric", "caption"])
+                .build()
+        });
+        if !file
+            .lines
+            .is_some_and(|(added, removed)| added + removed > 0)
+        {
+            let row = adw::ActionRow::builder()
+                .title(&file.path)
+                .subtitle(change)
+                .use_markup(false)
+                .build();
+            if let Some(lines) = &lines {
+                row.add_suffix(lines);
+            }
+            return row.upcast();
+        }
+        let row = adw::ExpanderRow::builder()
+            .title(&file.path)
+            .subtitle(change)
+            .use_markup(false)
+            .build();
+        if let Some(lines) = &lines {
+            row.add_suffix(lines);
+        }
+        // Read when first expanded, so that the dialog opens quickly.
+        let read = Cell::new(false);
+        let path = file.path.clone();
+        row.connect_expanded_notify(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            move |row| {
+                if row.is_expanded() && !read.replace(true) {
+                    dialog.show_diff(row, path.clone());
+                }
+            }
+        ));
+        row.upcast()
+    }
+
+    /// Reads the changes of the file `path` in the background, then shows
+    /// them in `row`.
+    fn show_diff(&self, row: &adw::ExpanderRow, path: String) {
+        let imp = self.imp();
+        let repo = imp.repo.borrow().clone();
+        let id = imp.id.borrow().clone();
+        glib::spawn_future_local(glib::clone!(
+            #[weak]
+            row,
+            async move {
+                let diff = gio::spawn_blocking(move || git_file_diff(&repo, &id, &path))
+                    .await
+                    .expect("reading a diff does not panic");
+                let child = match diff {
+                    Ok(diff) => diff_view(diff.as_deref().unwrap_or_default()),
+                    Err(err) => gtk::Label::builder()
+                        .label(err.to_string())
+                        .wrap(true)
+                        .xalign(0.0)
+                        .margin_top(12)
+                        .margin_bottom(12)
+                        .margin_start(12)
+                        .margin_end(12)
+                        .css_classes(["error"])
+                        .build()
+                        .upcast(),
+                };
+                row.add_row(&child);
+            }
+        ));
     }
 
     fn copy_id(&self) {
@@ -189,40 +302,66 @@ impl CommitDialog {
     }
 }
 
-/// A changed file: its path, how it changed unless it was only modified,
-/// and the lines added and removed.
-fn file_row(file: &ChangedFile) -> adw::ActionRow {
-    let old = file.old_path.as_deref().unwrap_or_default();
-    let change = match file.change {
-        FileChange::Added => gettext("Added"),
-        FileChange::Deleted => gettext("Deleted"),
-        FileChange::Modified => String::new(),
-        // Translators: A file renamed by a commit, as in "Renamed from
-        // src/old.rs".
-        FileChange::Renamed => gettext("Renamed from {path}").replace("{path}", old),
-        // Translators: A file copied by a commit, as in "Copied from
-        // src/old.rs".
-        FileChange::Copied => gettext("Copied from {path}").replace("{path}", old),
-        FileChange::TypeChanged => gettext("Type changed"),
-    };
-    let row = adw::ActionRow::builder()
-        .title(&file.path)
-        .subtitle(change)
-        .use_markup(false)
+/// The hunks of `diff` in colours, at most `DIFF_LINES` lines of them.
+fn diff_view(diff: &str) -> gtk::Widget {
+    let total = diff.lines().count();
+    let shown: String = diff
+        .split_inclusive('\n')
+        .take(DIFF_LINES)
+        .collect::<String>();
+    let buffer = sourceview5::Buffer::new(None);
+    buffer.set_language(
+        sourceview5::LanguageManager::default()
+            .language("diff")
+            .as_ref(),
+    );
+    buffer.set_highlight_matching_brackets(false);
+    buffer.set_text(shown.trim_end_matches('\n'));
+    // Follows light and dark style like the rest of the app.
+    adw::StyleManager::default()
+        .bind_property("dark", &buffer, "style-scheme")
+        .transform_to(|_, dark: bool| {
+            let name = if dark { "Adwaita-dark" } else { "Adwaita" };
+            sourceview5::StyleSchemeManager::default().scheme(name)
+        })
+        .sync_create()
         .build();
-    let lines = match file.lines {
-        Some((added, removed)) => format_lines(added, removed),
-        None => gettext("Binary"),
-    };
-    if !lines.is_empty() {
-        row.add_suffix(
-            &gtk::Label::builder()
-                .label(lines)
-                .css_classes(["dim-label", "numeric", "caption"])
-                .build(),
-        );
+    let view = sourceview5::View::builder()
+        .buffer(&buffer)
+        .editable(false)
+        .cursor_visible(false)
+        .monospace(true)
+        .top_margin(8)
+        .bottom_margin(8)
+        .left_margin(12)
+        .right_margin(12)
+        .build();
+    // Long lines scroll sideways; the page scrolls down.
+    let scrolled = gtk::ScrolledWindow::builder()
+        .child(&view)
+        .vscrollbar_policy(gtk::PolicyType::Never)
+        .build();
+    if total <= DIFF_LINES {
+        return scrolled.upcast();
     }
-    row
+    let more = total - DIFF_LINES;
+    let text = ngettext("{count} more line", "{count} more lines", plural(more))
+        .replace("{count}", &more.to_string());
+    let label = gtk::Label::builder()
+        .label(text)
+        .margin_top(6)
+        .margin_bottom(6)
+        .css_classes(["dim-label"])
+        .build();
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.append(&scrolled);
+    content.append(&label);
+    content.upcast()
+}
+
+/// `count` for choosing a plural form.
+fn plural(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
 }
 
 /// The lines added and removed, as in "+12 −3", leaving out none.
