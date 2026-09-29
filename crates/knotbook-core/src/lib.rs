@@ -28,7 +28,8 @@ pub use device::check_repo_path;
 pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;
 pub use git_log::{
-    ChangedFile, Commit, CommitDetails, FileChange, GitLogError, git_commit, git_log,
+    Branches, ChangedFile, Commit, CommitDetails, FileChange, GitLogError, git_branches,
+    git_commit, git_log,
 };
 pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;

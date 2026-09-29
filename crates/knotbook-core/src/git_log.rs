@@ -5,7 +5,9 @@
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset};
-use git2::{Delta, DiffFindOptions, ErrorCode, Oid, Patch, Repository, Signature, Sort};
+use git2::{
+    BranchType, Delta, DiffFindOptions, ErrorCode, Oid, Patch, Repository, Signature, Sort,
+};
 use thiserror::Error;
 
 /// A commit as `git log` shows it.
@@ -36,6 +38,16 @@ pub enum GitLogError {
     NotARepository(PathBuf),
     #[error("cannot read the Git log of {}: {message}", path.display())]
     Git { path: PathBuf, message: String },
+}
+
+/// The local branches of a repository.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Branches {
+    /// Their names, sorted, with the one checked out even before its first
+    /// commit.
+    pub names: Vec<String>,
+    /// The one checked out, `None` if HEAD is detached.
+    pub current: Option<String>,
 }
 
 /// A commit with what it changed, as `git show --stat` shows it.
@@ -78,15 +90,27 @@ pub enum FileChange {
     TypeChanged,
 }
 
-/// The commits of the current branch of the repository in the folder
-/// `repo`, newest first, leaving out the first `skip` and taking at most
-/// `limit`. A branch without commits yet has none.
+/// The commits of the local branch `branch` of the repository in the
+/// folder `repo`, or with `None` of the one checked out, newest first,
+/// leaving out the first `skip` and taking at most `limit`. A branch
+/// without commits yet has none.
 ///
 /// It reads from disk and may take a while in large repositories, so
 /// programs with a user interface call it outside the main thread.
-pub fn git_log(repo: &Path, skip: usize, limit: usize) -> Result<Vec<Commit>, GitLogError> {
+pub fn git_log(
+    repo: &Path,
+    branch: Option<&str>,
+    skip: usize,
+    limit: usize,
+) -> Result<Vec<Commit>, GitLogError> {
     let repository = open(repo)?;
-    let head = match repository.head() {
+    let head = match branch {
+        Some(name) => repository
+            .find_branch(name, BranchType::Local)
+            .map(git2::Branch::into_reference),
+        None => repository.head(),
+    };
+    let head = match head {
         // A branch without commits yet.
         Err(err) if err.code() == ErrorCode::UnbornBranch => return Ok(Vec::new()),
         result => result
@@ -101,6 +125,36 @@ pub fn git_log(repo: &Path, skip: usize, limit: usize) -> Result<Vec<Commit>, Gi
         .map(|id| Ok(commit_of(&repository.find_commit(id?)?)))
         .collect::<Result<_, git2::Error>>()
         .map_err(git_error(repo))
+}
+
+/// The local branches of the repository in the folder `repo`.
+pub fn git_branches(repo: &Path) -> Result<Branches, GitLogError> {
+    let repository = open(repo)?;
+    branches(&repository).map_err(git_error(repo))
+}
+
+fn branches(repository: &Repository) -> Result<Branches, git2::Error> {
+    let mut names = repository
+        .branches(Some(BranchType::Local))?
+        .map(|branch| {
+            let (branch, _) = branch?;
+            Ok(String::from_utf8_lossy(branch.name_bytes()?).into_owned())
+        })
+        .collect::<Result<Vec<_>, git2::Error>>()?;
+    // HEAD names the branch even before its first commit, when there is
+    // no branch yet.
+    let head = repository.find_reference("HEAD")?;
+    let current = head
+        .symbolic_target_bytes()
+        .and_then(|target| target.strip_prefix(b"refs/heads/"))
+        .map(|name| String::from_utf8_lossy(name).into_owned());
+    if let Some(current) = &current
+        && !names.contains(current)
+    {
+        names.push(current.clone());
+    }
+    names.sort();
+    Ok(Branches { names, current })
 }
 
 /// The commit `id`, a full hash, of the repository in the folder `repo`,
@@ -259,13 +313,13 @@ mod tests {
     fn newest_first_in_pages() {
         let dir = TempDir::new();
         repository(&dir, &["First", "Second", "Third", "Fourth"]);
-        let all = git_log(&dir.0, 0, 10).unwrap();
+        let all = git_log(&dir.0, None, 0, 10).unwrap();
         assert_eq!(summaries(&all), ["Fourth", "Third", "Second", "First"]);
         assert_eq!(
-            summaries(&git_log(&dir.0, 1, 2).unwrap()),
+            summaries(&git_log(&dir.0, None, 1, 2).unwrap()),
             ["Third", "Second"]
         );
-        assert!(git_log(&dir.0, 4, 10).unwrap().is_empty());
+        assert!(git_log(&dir.0, None, 4, 10).unwrap().is_empty());
 
         let first = &all[3];
         assert_eq!(first.author, "Ada");
@@ -282,17 +336,53 @@ mod tests {
         let first = first.parent(0).unwrap();
         repository.branch("old", &first, false).unwrap();
         repository.set_head("refs/heads/old").unwrap();
-        assert_eq!(summaries(&git_log(&dir.0, 0, 10).unwrap()), ["First"]);
+        assert_eq!(summaries(&git_log(&dir.0, None, 0, 10).unwrap()), ["First"]);
         // A detached HEAD is read as well.
         repository.set_head_detached(first.id()).unwrap();
-        assert_eq!(summaries(&git_log(&dir.0, 0, 10).unwrap()), ["First"]);
+        assert_eq!(summaries(&git_log(&dir.0, None, 0, 10).unwrap()), ["First"]);
+    }
+
+    #[test]
+    fn other_branches() {
+        let dir = TempDir::new();
+        let repository = repository(&dir, &["First", "Second"]);
+        let head = repository.head().unwrap().peel_to_commit().unwrap();
+        let first = head.parent(0).unwrap();
+        repository.branch("old", &first, false).unwrap();
+        repository.branch("feature/x", &head, false).unwrap();
+        let current = repository.head().unwrap().shorthand().unwrap().to_owned();
+        let mut names = vec!["feature/x".to_owned(), "old".to_owned(), current.clone()];
+        names.sort();
+        assert_eq!(
+            git_branches(&dir.0).unwrap(),
+            Branches {
+                names: names.clone(),
+                current: Some(current),
+            }
+        );
+        assert_eq!(
+            summaries(&git_log(&dir.0, Some("old"), 0, 10).unwrap()),
+            ["First"]
+        );
+        assert!(git_log(&dir.0, Some("gone"), 0, 10).is_err());
+
+        repository.set_head_detached(first.id()).unwrap();
+        assert_eq!(
+            git_branches(&dir.0).unwrap(),
+            Branches {
+                names,
+                current: None,
+            }
+        );
     }
 
     #[test]
     fn no_commits_yet() {
         let dir = TempDir::new();
         repository(&dir, &[]);
-        assert!(git_log(&dir.0, 0, 10).unwrap().is_empty());
+        assert!(git_log(&dir.0, None, 0, 10).unwrap().is_empty());
+        let current = git_branches(&dir.0).unwrap().current.unwrap();
+        assert_eq!(git_branches(&dir.0).unwrap().names, [current]);
     }
 
     /// Commits `files` in the repository in `dir`, each written with its
@@ -411,12 +501,12 @@ mod tests {
         let dir = TempDir::new();
         let missing = dir.0.join("gone");
         assert_eq!(
-            git_log(&missing, 0, 10).unwrap_err().to_string(),
+            git_log(&missing, None, 0, 10).unwrap_err().to_string(),
             format!("the repository folder {} does not exist", missing.display())
         );
         fs::create_dir_all(&missing).unwrap();
         assert_eq!(
-            git_log(&missing, 0, 10).unwrap_err().to_string(),
+            git_log(&missing, None, 0, 10).unwrap_err().to_string(),
             format!("{} is not a Git repository", missing.display())
         );
     }

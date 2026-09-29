@@ -61,7 +61,7 @@ pub fn log(vault: &Vault, slug: &ProjectSlug, limit: usize) -> Result<String> {
              set one with `knotbook project edit {slug} --repo FOLDER`"
         )
     })?;
-    Ok(format_log(&git_log(&repo, 0, limit)?))
+    Ok(format_log(&git_log(&repo, None, 0, limit)?))
 }
 
 /// One line per commit: short hash, time, author and summary.

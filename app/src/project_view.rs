@@ -8,8 +8,8 @@ use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use gtk::{gdk, gio, glib};
 use knotbook_core::{
-    Commit, NotePath, Period, Project, ProjectSlug, RepoWatcher, Vault, git_commit, git_log,
-    watch_repo,
+    Branches, Commit, GitLogError, NotePath, Period, Project, ProjectSlug, RepoWatcher, Vault,
+    git_branches, git_commit, git_log, watch_repo,
 };
 use knotbook_index::{Found, ProjectBlock};
 
@@ -57,6 +57,15 @@ mod imp {
         pub repo: RefCell<Option<PathBuf>>,
         /// Watches the repository, so that the log shows new commits.
         pub repo_watcher: RefCell<Option<RepoWatcher>>,
+        /// The branch the log shows, `None` for the one checked out.
+        pub branch: RefCell<Option<String>>,
+        /// The branches of the repository as last read.
+        pub branches: RefCell<Branches>,
+        /// The branches in the dropdown, in its order, `None` for a
+        /// detached HEAD.
+        pub branch_items: RefCell<Vec<Option<String>>>,
+        /// Set while the dropdown is filled, so that choosing reads nothing.
+        pub filling_branches: Cell<bool>,
         /// Counts the reads of the log, so that one finishing after a
         /// newer one is dropped.
         pub log_reads: Cell<u32>,
@@ -104,6 +113,8 @@ mod imp {
         #[template_child]
         pub git_page: TemplateChild<adw::ViewStackPage>,
         #[template_child]
+        pub branch_dropdown: TemplateChild<gtk::DropDown>,
+        #[template_child]
         pub commits_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub commits_box: TemplateChild<gtk::Box>,
@@ -141,6 +152,11 @@ mod imp {
                 #[weak(rename_to = view)]
                 self.obj(),
                 move |_| view.show_more_commits()
+            ));
+            self.branch_dropdown.connect_selected_notify(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                move |_| view.choose_branch()
             ));
             self.notes_grid.connect_child_activated(glib::clone!(
                 #[weak(rename_to = view)]
@@ -193,6 +209,7 @@ impl ProjectView {
         }
         if other {
             imp.scrolled.vadjustment().set_value(0.0);
+            imp.branch.replace(None);
         }
         // Projects without code have no repository, and then no Git page
         // to switch to.
@@ -476,6 +493,7 @@ impl ProjectView {
         let Some(repo) = imp.repo.borrow().clone() else {
             return;
         };
+        let branch = imp.branch.borrow().clone();
         let lookup = imp.lookups.get();
         let read = imp.log_reads.get() + 1;
         imp.log_reads.set(read);
@@ -483,21 +501,31 @@ impl ProjectView {
             #[weak(rename_to = view)]
             self,
             async move {
-                let commits = gio::spawn_blocking(move || git_log(&repo, skip, limit))
-                    .await
-                    .expect("reading the log does not panic");
+                let log = gio::spawn_blocking(move || {
+                    let branches = git_branches(&repo)?;
+                    // A branch deleted elsewhere gives way to the one
+                    // checked out.
+                    let branch = branch.filter(|name| branches.names.contains(name));
+                    let commits = git_log(&repo, branch.as_deref(), skip, limit)?;
+                    Ok::<_, GitLogError>((branches, branch, commits))
+                })
+                .await
+                .expect("reading the log does not panic");
                 let imp = view.imp();
                 if imp.lookups.get() != lookup || imp.log_reads.get() != read {
                     return;
                 }
-                match commits {
-                    Ok(commits) => {
+                match log {
+                    Ok((branches, branch, commits)) => {
+                        imp.branch.replace(branch);
+                        view.fill_branches(branches);
                         if skip == 0 {
                             view.clear_commits();
                         }
                         view.add_commits(&commits, limit);
                     }
                     Err(err) => {
+                        imp.branch_dropdown.set_visible(false);
                         imp.commits_error_page
                             .set_description(Some(&err.to_string()));
                         imp.commits_stack.set_visible_child_name("error");
@@ -505,6 +533,54 @@ impl ProjectView {
                 }
             }
         ));
+    }
+
+    /// Offers `branches` in the dropdown, with the one shown chosen.
+    fn fill_branches(&self, branches: Branches) {
+        let imp = self.imp();
+        let mut items: Vec<Option<String>> = branches.names.iter().cloned().map(Some).collect();
+        if branches.current.is_none() {
+            items.insert(0, None);
+        }
+        let shown = imp
+            .branch
+            .borrow()
+            .clone()
+            .or_else(|| branches.current.clone());
+        let selected = items.iter().position(|item| *item == shown).unwrap_or(0);
+        imp.filling_branches.set(true);
+        if *imp.branch_items.borrow() != items {
+            let labels: Vec<String> = items
+                .iter()
+                .map(|item| item.clone().unwrap_or_else(|| gettext("Detached HEAD")))
+                .collect();
+            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+            imp.branch_dropdown
+                .set_model(Some(&gtk::StringList::new(&labels)));
+            imp.branch_items.replace(items);
+        }
+        imp.branch_dropdown
+            .set_selected(u32::try_from(selected).expect("branches fit in a list"));
+        imp.filling_branches.set(false);
+        imp.branch_dropdown.set_visible(true);
+        imp.branches.replace(branches);
+    }
+
+    /// Shows the log of the branch chosen in the dropdown.
+    fn choose_branch(&self) {
+        let imp = self.imp();
+        if imp.filling_branches.get() {
+            return;
+        }
+        let index = usize::try_from(imp.branch_dropdown.selected()).expect("u32 fits in usize");
+        let Some(item) = imp.branch_items.borrow().get(index).cloned() else {
+            return;
+        };
+        // Choosing the branch checked out follows HEAD to the next one
+        // checked out.
+        let branch = item.filter(|name| imp.branches.borrow().current.as_ref() != Some(name));
+        imp.branch.replace(branch);
+        self.read_log(0, COMMITS_AT_ONCE);
     }
 
     /// Adds `commits`, newest first, to the end of the log, grouped by the

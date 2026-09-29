@@ -220,60 +220,81 @@ template $KnotbookProjectView: Adw.NavigationPage {
         title: _("Git");
         visible: false;
 
-        child: Stack commits_stack {
-          StackPage {
-            name: "list";
+        child: Box {
+          orientation: vertical;
 
-            child: ScrolledWindow {
-              hscrollbar-policy: never;
+          Adw.Clamp {
+            margin-top: 24;
+            margin-start: 12;
+            margin-end: 12;
 
-              child: Adw.Clamp {
-                margin-top: 24;
-                margin-bottom: 24;
-                margin-start: 12;
-                margin-end: 12;
+            child: DropDown branch_dropdown {
+              halign: start;
+              tooltip-text: _("Branch");
+              enable-search: true;
+              search-match-mode: substring;
+              expression: expr item as <StringObject>.string;
+              visible: false;
+            };
+          }
 
-                child: Box {
-                  orientation: vertical;
-                  spacing: 24;
+          Stack commits_stack {
+            vexpand: true;
 
-                  Box commits_box {
+            StackPage {
+              name: "list";
+
+              child: ScrolledWindow {
+                hscrollbar-policy: never;
+
+                child: Adw.Clamp {
+                  margin-top: 24;
+                  margin-bottom: 24;
+                  margin-start: 12;
+                  margin-end: 12;
+
+                  child: Box {
                     orientation: vertical;
                     spacing: 24;
-                  }
 
-                  Button more_commits_button {
-                    label: _("_Load More");
-                    use-underline: true;
-                    halign: center;
-                    visible: false;
+                    Box commits_box {
+                      orientation: vertical;
+                      spacing: 24;
+                    }
 
-                    styles [
-                      "pill",
-                    ]
-                  }
+                    Button more_commits_button {
+                      label: _("_Load More");
+                      use-underline: true;
+                      halign: center;
+                      visible: false;
+
+                      styles [
+                        "pill",
+                      ]
+                    }
+                  };
                 };
               };
-            };
-          }
+            }
 
-          StackPage {
-            name: "empty";
+            StackPage {
+              name: "empty";
 
-            child: Adw.StatusPage {
-              icon-name: "document-open-recent-symbolic";
-              title: _("No Commits");
-              description: _("The current branch of the repository has no commits yet");
-            };
-          }
+              child: Adw.StatusPage {
+                icon-name: "document-open-recent-symbolic";
+                title: _("No Commits");
+                description: _("The branch has no commits yet");
+              };
+            }
 
-          StackPage {
-            name: "error";
+            StackPage {
+              name: "error";
 
-            child: Adw.StatusPage commits_error_page {
-              icon-name: "dialog-error-symbolic";
-              title: _("Cannot Read Commits");
-            };
+              child: Adw.StatusPage commits_error_page {
+                icon-name: "dialog-error-symbolic";
+                title: _("Cannot Read Commits");
+              };
+            }
           }
         };
       }
