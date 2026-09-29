@@ -49,6 +49,8 @@ template $KnotbookProjectView: Adw.NavigationPage {
 
             child: Box {
               orientation: vertical;
+              // The note cards expand; the sections stay together at the top.
+              valign: start;
               spacing: 24;
 
               Adw.PreferencesGroup {
