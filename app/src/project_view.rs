@@ -8,8 +8,9 @@ use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use gtk::{gdk, gio, glib};
 use knotbook_core::{
-    Branches, Commit, GitLogError, NotePath, Period, Project, ProjectSlug, RepoWatcher, Vault,
-    git_branches, git_commit, git_log, watch_repo,
+    Branch, Branches, Commit, GitLogError, NotePath, Period, Project, ProjectSlug, RepoWatcher,
+    Uncommitted, Upstream, Vault, git_branches, git_commit, git_log, git_uncommitted, git_upstream,
+    watch_repo,
 };
 use knotbook_index::{Found, ProjectBlock};
 
@@ -58,12 +59,12 @@ mod imp {
         /// Watches the repository, so that the log shows new commits.
         pub repo_watcher: RefCell<Option<RepoWatcher>>,
         /// The branch the log shows, `None` for the one checked out.
-        pub branch: RefCell<Option<String>>,
+        pub branch: RefCell<Option<Branch>>,
         /// The branches of the repository as last read.
         pub branches: RefCell<Branches>,
         /// The branches in the dropdown, in its order, `None` for a
         /// detached HEAD.
-        pub branch_items: RefCell<Vec<Option<String>>>,
+        pub branch_items: RefCell<Vec<Option<Branch>>>,
         /// Set while the dropdown is filled, so that choosing reads nothing.
         pub filling_branches: Cell<bool>,
         /// Counts the reads of the log, so that one finishing after a
@@ -72,8 +73,11 @@ mod imp {
         /// The time spent on the project on each day, to mark the days of
         /// commits.
         pub activity: RefCell<BTreeMap<NaiveDate, TimeDelta>>,
-        /// How many commits the log shows.
-        pub commits_shown: Cell<usize>,
+        /// The commits the log shows.
+        pub commits: RefCell<Vec<Commit>>,
+        /// The window whose activation reads the repository again, with
+        /// the handler.
+        pub activation: RefCell<Option<(gtk::Window, glib::SignalHandlerId)>>,
         /// The last day shown in the log, which commits loaded later join.
         pub last_day: RefCell<Option<(NaiveDate, adw::PreferencesGroup)>>,
         #[template_child]
@@ -114,6 +118,12 @@ mod imp {
         pub git_page: TemplateChild<adw::ViewStackPage>,
         #[template_child]
         pub branch_dropdown: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub status_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub upstream_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub uncommitted_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub commits_stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -158,6 +168,35 @@ mod imp {
                 self.obj(),
                 move |_| view.choose_branch()
             ));
+            // The working tree is not watched, so it is read again when
+            // the user may have changed it: when coming to the Git page or
+            // back to the window.
+            self.view_stack
+                .connect_visible_child_name_notify(glib::clone!(
+                    #[weak(rename_to = view)]
+                    self.obj(),
+                    move |_| view.refresh_git_page()
+                ));
+            self.obj().connect_realize(|view| {
+                let Some(window) = view.root().and_downcast::<gtk::Window>() else {
+                    return;
+                };
+                let handler = window.connect_is_active_notify(glib::clone!(
+                    #[weak]
+                    view,
+                    move |window| {
+                        if window.is_active() {
+                            view.refresh_git_page();
+                        }
+                    }
+                ));
+                view.imp().activation.replace(Some((window, handler)));
+            });
+            self.obj().connect_unrealize(|view| {
+                if let Some((window, handler)) = view.imp().activation.take() {
+                    window.disconnect(handler);
+                }
+            });
             self.notes_grid.connect_child_activated(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
@@ -445,12 +484,12 @@ impl ProjectView {
         while let Some(child) = imp.commits_box.first_child() {
             imp.commits_box.remove(&child);
         }
-        imp.commits_shown.set(0);
+        imp.commits.take();
         imp.last_day.replace(None);
         imp.more_commits_button.set_visible(false);
     }
 
-    /// Watches `repo`, if any, and reads the log again after new commits.
+    /// Watches `repo`, if any, and reads it again after changes.
     fn watch_repo(&self, repo: Option<&Path>) {
         let imp = self.imp();
         imp.repo_watcher.replace(None);
@@ -474,20 +513,30 @@ impl ProjectView {
         }
     }
 
+    /// Reads the repository again if the Git page is shown.
+    fn refresh_git_page(&self) {
+        let imp = self.imp();
+        if self.is_mapped() && imp.view_stack.visible_child_name().as_deref() == Some("git") {
+            self.reload_commits();
+        }
+    }
+
     /// Reads the next commits from the repository in the background and
     /// adds them to the log.
     fn show_more_commits(&self) {
-        self.read_log(self.imp().commits_shown.get(), COMMITS_AT_ONCE);
+        self.read_log(self.imp().commits.borrow().len(), COMMITS_AT_ONCE);
     }
 
     /// Reads the log again from the newest commit, as many commits as it
     /// shows, and replaces it.
     fn reload_commits(&self) {
-        self.read_log(0, self.imp().commits_shown.get().max(COMMITS_AT_ONCE));
+        let shown = self.imp().commits.borrow().len();
+        self.read_log(0, shown.max(COMMITS_AT_ONCE));
     }
 
     /// Reads at most `limit` commits after the first `skip` in the
     /// background, then shows them after the first `skip` of the log.
+    /// Reading from the start also reads where the branch stands.
     fn read_log(&self, skip: usize, limit: usize) {
         let imp = self.imp();
         let Some(repo) = imp.repo.borrow().clone() else {
@@ -501,30 +550,30 @@ impl ProjectView {
             #[weak(rename_to = view)]
             self,
             async move {
-                let log = gio::spawn_blocking(move || {
-                    let branches = git_branches(&repo)?;
-                    // A branch deleted elsewhere gives way to the one
-                    // checked out.
-                    let branch = branch.filter(|name| branches.names.contains(name));
-                    let commits = git_log(&repo, branch.as_deref(), skip, limit)?;
-                    Ok::<_, GitLogError>((branches, branch, commits))
-                })
-                .await
-                .expect("reading the log does not panic");
+                let log = gio::spawn_blocking(move || read_repo(&repo, branch, skip, limit))
+                    .await
+                    .expect("reading the log does not panic");
                 let imp = view.imp();
                 if imp.lookups.get() != lookup || imp.log_reads.get() != read {
                     return;
                 }
                 match log {
-                    Ok((branches, branch, commits)) => {
-                        imp.branch.replace(branch);
-                        view.fill_branches(branches);
-                        if skip == 0 {
+                    Ok(log) => {
+                        imp.branch.replace(log.branch);
+                        view.fill_branches(log.branches);
+                        if let Some(status) = log.status {
+                            view.show_status(status);
+                        }
+                        // Unchanged, as after staging, it is left as it is.
+                        if skip == 0 && *imp.commits.borrow() != log.commits {
                             view.clear_commits();
                         }
-                        view.add_commits(&commits, limit);
+                        if skip > 0 || imp.commits.borrow().is_empty() {
+                            view.add_commits(log.commits, limit);
+                        }
                     }
                     Err(err) => {
+                        view.clear_commits();
                         imp.branch_dropdown.set_visible(false);
                         imp.commits_error_page
                             .set_description(Some(&err.to_string()));
@@ -538,7 +587,7 @@ impl ProjectView {
     /// Offers `branches` in the dropdown, with the one shown chosen.
     fn fill_branches(&self, branches: Branches) {
         let imp = self.imp();
-        let mut items: Vec<Option<String>> = branches.names.iter().cloned().map(Some).collect();
+        let mut items: Vec<Option<Branch>> = branches.all.iter().cloned().map(Some).collect();
         if branches.current.is_none() {
             items.insert(0, None);
         }
@@ -546,13 +595,16 @@ impl ProjectView {
             .branch
             .borrow()
             .clone()
-            .or_else(|| branches.current.clone());
+            .or_else(|| branches.current.clone().map(Branch::Local));
         let selected = items.iter().position(|item| *item == shown).unwrap_or(0);
         imp.filling_branches.set(true);
         if *imp.branch_items.borrow() != items {
             let labels: Vec<String> = items
                 .iter()
-                .map(|item| item.clone().unwrap_or_else(|| gettext("Detached HEAD")))
+                .map(|item| match item {
+                    Some(branch) => branch.name().to_owned(),
+                    None => gettext("Detached HEAD"),
+                })
                 .collect();
             let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
             imp.branch_dropdown
@@ -578,17 +630,42 @@ impl ProjectView {
         };
         // Choosing the branch checked out follows HEAD to the next one
         // checked out.
-        let branch = item.filter(|name| imp.branches.borrow().current.as_ref() != Some(name));
+        let current = imp.branches.borrow().current.clone().map(Branch::Local);
+        let branch = item.filter(|branch| Some(branch) != current.as_ref());
         imp.branch.replace(branch);
+        self.clear_commits();
         self.read_log(0, COMMITS_AT_ONCE);
+    }
+
+    /// Shows where the branch stands against the one it tracks and, for
+    /// the one checked out, what is not committed yet.
+    fn show_status(&self, status: Status) {
+        let imp = self.imp();
+        match &status.upstream {
+            Some(upstream) => {
+                imp.upstream_row.set_subtitle(&upstream_text(upstream));
+                imp.upstream_row.set_visible(true);
+            }
+            None => imp.upstream_row.set_visible(false),
+        }
+        match status.uncommitted {
+            Some(uncommitted) => {
+                imp.uncommitted_row
+                    .set_subtitle(&uncommitted_text(uncommitted));
+                imp.uncommitted_row.set_visible(true);
+            }
+            None => imp.uncommitted_row.set_visible(false),
+        }
+        imp.status_group
+            .set_visible(status.upstream.is_some() || status.uncommitted.is_some());
     }
 
     /// Adds `commits`, newest first, to the end of the log, grouped by the
     /// local day they were made on. They are at most `limit`, as read.
-    fn add_commits(&self, commits: &[Commit], limit: usize) {
+    fn add_commits(&self, commits: Vec<Commit>, limit: usize) {
         let imp = self.imp();
         let today = Local::now().date_naive();
-        for commit in commits {
+        for commit in &commits {
             let date = commit.time.with_timezone(&Local).date_naive();
             let group = match &*imp.last_day.borrow() {
                 Some((last, group)) if *last == date => group.clone(),
@@ -608,12 +685,12 @@ impl ProjectView {
             group.add(&row);
             imp.last_day.replace(Some((date, group)));
         }
-        let shown = imp.commits_shown.get() + commits.len();
-        imp.commits_shown.set(shown);
         // A full batch may have more behind it.
         imp.more_commits_button.set_visible(commits.len() == limit);
+        let mut shown = imp.commits.borrow_mut();
+        shown.extend(commits);
         imp.commits_stack
-            .set_visible_child_name(if shown == 0 { "empty" } else { "list" });
+            .set_visible_child_name(if shown.is_empty() { "empty" } else { "list" });
     }
 
     /// Reads the commit `id` with the files it changed in the background,
@@ -659,6 +736,113 @@ impl ProjectView {
         }
         group
     }
+}
+
+/// What the Git page shows, read from the repository.
+struct Log {
+    branches: Branches,
+    /// The branch shown, `None` for the one checked out.
+    branch: Option<Branch>,
+    commits: Vec<Commit>,
+    /// Only when reading from the newest commit.
+    status: Option<Status>,
+}
+
+/// Where the branch shown stands.
+struct Status {
+    /// Against the branch it tracks, if it is a local one that tracks one.
+    upstream: Option<Upstream>,
+    /// Only for the branch checked out.
+    uncommitted: Option<Uncommitted>,
+}
+
+/// Reads at most `limit` commits of `branch` in `repo` after the first
+/// `skip`, with the branches and, from the start, where it stands. A
+/// branch deleted elsewhere gives way to the one checked out.
+fn read_repo(
+    repo: &Path,
+    branch: Option<Branch>,
+    skip: usize,
+    limit: usize,
+) -> Result<Log, GitLogError> {
+    let branches = git_branches(repo)?;
+    let branch = branch.filter(|branch| branches.all.contains(branch));
+    let commits = git_log(repo, branch.as_ref(), skip, limit)?;
+    let status = if skip == 0 {
+        let local = match &branch {
+            Some(Branch::Local(name)) => Some(name.as_str()),
+            Some(Branch::Remote(_)) => None,
+            None => branches.current.as_deref(),
+        };
+        let upstream = match local {
+            Some(name) => git_upstream(repo, name)?,
+            None => None,
+        };
+        let uncommitted = match branch {
+            Some(_) => None,
+            None => Some(git_uncommitted(repo)?),
+        };
+        Some(Status {
+            upstream,
+            uncommitted,
+        })
+    } else {
+        None
+    };
+    Ok(Log {
+        branches,
+        branch,
+        commits,
+        status,
+    })
+}
+
+/// Such as "origin/main · 2 to push · 3 to pull".
+fn upstream_text(upstream: &Upstream) -> String {
+    let (ahead, behind) = (upstream.ahead, upstream.behind);
+    let mut parts = vec![upstream.name.clone()];
+    if ahead > 0 {
+        // Translators: Commits of a branch not pushed yet, as in "2 to push".
+        let text = ngettext("{count} to push", "{count} to push", plural(ahead));
+        parts.push(text.replace("{count}", &ahead.to_string()));
+    }
+    if behind > 0 {
+        // Translators: Commits of the remote branch not pulled yet, as in
+        // "3 to pull".
+        let text = ngettext("{count} to pull", "{count} to pull", plural(behind));
+        parts.push(text.replace("{count}", &behind.to_string()));
+    }
+    if ahead == 0 && behind == 0 {
+        parts.push(gettext("up to date"));
+    }
+    parts.join(" · ")
+}
+
+/// Such as "2 changed files · 1 new file".
+fn uncommitted_text(uncommitted: Uncommitted) -> String {
+    let Uncommitted { changed, new } = uncommitted;
+    let mut parts = Vec::new();
+    if changed > 0 {
+        let text = ngettext(
+            "{count} changed file",
+            "{count} changed files",
+            plural(changed),
+        );
+        parts.push(text.replace("{count}", &changed.to_string()));
+    }
+    if new > 0 {
+        let text = ngettext("{count} new file", "{count} new files", plural(new));
+        parts.push(text.replace("{count}", &new.to_string()));
+    }
+    if parts.is_empty() {
+        return gettext("Nothing to commit");
+    }
+    parts.join(" · ")
+}
+
+/// `count` for choosing a plural form.
+fn plural(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
 }
 
 /// A commit in the log: its summary, then hash, author and time. The log

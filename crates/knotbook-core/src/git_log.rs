@@ -6,7 +6,8 @@ use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, FixedOffset};
 use git2::{
-    BranchType, Delta, DiffFindOptions, ErrorCode, Oid, Patch, Repository, Signature, Sort,
+    BranchType, Delta, DiffFindOptions, ErrorCode, Oid, Patch, ReferenceType, Repository,
+    Signature, Sort, Status, StatusOptions,
 };
 use thiserror::Error;
 
@@ -40,14 +41,61 @@ pub enum GitLogError {
     Git { path: PathBuf, message: String },
 }
 
-/// The local branches of a repository.
+/// A branch of a repository.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Branch {
+    /// A local branch, such as `main`.
+    Local(String),
+    /// A remote-tracking branch, such as `origin/main`.
+    Remote(String),
+}
+
+impl Branch {
+    /// The name as Git shows it, such as `main` or `origin/main`.
+    pub fn name(&self) -> &str {
+        match self {
+            Branch::Local(name) | Branch::Remote(name) => name,
+        }
+    }
+
+    fn reference(&self) -> String {
+        match self {
+            Branch::Local(name) => format!("refs/heads/{name}"),
+            Branch::Remote(name) => format!("refs/remotes/{name}"),
+        }
+    }
+}
+
+/// The branches of a repository.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Branches {
-    /// Their names, sorted, with the one checked out even before its first
-    /// commit.
-    pub names: Vec<String>,
-    /// The one checked out, `None` if HEAD is detached.
+    /// The local branches, sorted, with the one checked out even before
+    /// its first commit, then the remote-tracking ones, sorted.
+    pub all: Vec<Branch>,
+    /// The local branch checked out, `None` if HEAD is detached.
     pub current: Option<String>,
+}
+
+/// Where a local branch stands against the branch it tracks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Upstream {
+    /// The branch tracked, such as `origin/main`.
+    pub name: String,
+    /// The commits only on the local branch, not pushed yet.
+    pub ahead: usize,
+    /// The commits only on the branch tracked, not pulled yet.
+    pub behind: usize,
+}
+
+/// The files of a working tree that differ from the commit checked out,
+/// staged or not, as `git status` lists them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Uncommitted {
+    /// Files changed, removed or renamed.
+    pub changed: usize,
+    /// Files Git does not know yet, or only from the index. A new folder
+    /// counts once.
+    pub new: usize,
 }
 
 /// A commit with what it changed, as `git show --stat` shows it.
@@ -90,8 +138,8 @@ pub enum FileChange {
     TypeChanged,
 }
 
-/// The commits of the local branch `branch` of the repository in the
-/// folder `repo`, or with `None` of the one checked out, newest first,
+/// The commits of the branch `branch` of the repository in the folder
+/// `repo`, or with `None` of the one checked out, newest first,
 /// leaving out the first `skip` and taking at most `limit`. A branch
 /// without commits yet has none.
 ///
@@ -99,15 +147,13 @@ pub enum FileChange {
 /// programs with a user interface call it outside the main thread.
 pub fn git_log(
     repo: &Path,
-    branch: Option<&str>,
+    branch: Option<&Branch>,
     skip: usize,
     limit: usize,
 ) -> Result<Vec<Commit>, GitLogError> {
     let repository = open(repo)?;
     let head = match branch {
-        Some(name) => repository
-            .find_branch(name, BranchType::Local)
-            .map(git2::Branch::into_reference),
+        Some(branch) => repository.find_reference(&branch.reference()),
         None => repository.head(),
     };
     let head = match head {
@@ -127,20 +173,27 @@ pub fn git_log(
         .map_err(git_error(repo))
 }
 
-/// The local branches of the repository in the folder `repo`.
+/// The local and remote-tracking branches of the repository in the
+/// folder `repo`.
 pub fn git_branches(repo: &Path) -> Result<Branches, GitLogError> {
     let repository = open(repo)?;
     branches(&repository).map_err(git_error(repo))
 }
 
 fn branches(repository: &Repository) -> Result<Branches, git2::Error> {
-    let mut names = repository
-        .branches(Some(BranchType::Local))?
-        .map(|branch| {
+    let names = |kind| {
+        let mut names = Vec::new();
+        for branch in repository.branches(Some(kind))? {
             let (branch, _) = branch?;
-            Ok(String::from_utf8_lossy(branch.name_bytes()?).into_owned())
-        })
-        .collect::<Result<Vec<_>, git2::Error>>()?;
+            // Such as `origin/HEAD`, which only points to another.
+            if branch.get().kind() == Some(ReferenceType::Symbolic) {
+                continue;
+            }
+            names.push(String::from_utf8_lossy(branch.name_bytes()?).into_owned());
+        }
+        Ok::<_, git2::Error>(names)
+    };
+    let mut local = names(BranchType::Local)?;
     // HEAD names the branch even before its first commit, when there is
     // no branch yet.
     let head = repository.find_reference("HEAD")?;
@@ -149,12 +202,74 @@ fn branches(repository: &Repository) -> Result<Branches, git2::Error> {
         .and_then(|target| target.strip_prefix(b"refs/heads/"))
         .map(|name| String::from_utf8_lossy(name).into_owned());
     if let Some(current) = &current
-        && !names.contains(current)
+        && !local.contains(current)
     {
-        names.push(current.clone());
+        local.push(current.clone());
     }
-    names.sort();
-    Ok(Branches { names, current })
+    local.sort();
+    let mut remote = names(BranchType::Remote)?;
+    remote.sort();
+    let all = (local.into_iter().map(Branch::Local))
+        .chain(remote.into_iter().map(Branch::Remote))
+        .collect();
+    Ok(Branches { all, current })
+}
+
+/// Where the local branch `branch` of the repository in the folder `repo`
+/// stands against the branch it tracks, `None` if it tracks none or has
+/// no commits yet.
+///
+/// It compares the commits of both, so programs with a user interface
+/// call it outside the main thread.
+pub fn git_upstream(repo: &Path, branch: &str) -> Result<Option<Upstream>, GitLogError> {
+    let repository = open(repo)?;
+    upstream(&repository, branch).map_err(git_error(repo))
+}
+
+fn upstream(repository: &Repository, branch: &str) -> Result<Option<Upstream>, git2::Error> {
+    let not_found = |err: &git2::Error| err.code() == ErrorCode::NotFound;
+    let local = match repository.find_branch(branch, BranchType::Local) {
+        Err(err) if not_found(&err) => return Ok(None),
+        result => result?,
+    };
+    // Also when the branch tracked is gone, as after `git fetch --prune`.
+    let upstream = match local.upstream() {
+        Err(err) if not_found(&err) => return Ok(None),
+        result => result?,
+    };
+    let (Some(ours), Some(theirs)) = (local.get().target(), upstream.get().target()) else {
+        return Ok(None);
+    };
+    let (ahead, behind) = repository.graph_ahead_behind(ours, theirs)?;
+    Ok(Some(Upstream {
+        name: String::from_utf8_lossy(upstream.name_bytes()?).into_owned(),
+        ahead,
+        behind,
+    }))
+}
+
+/// The files of the working tree of the repository in the folder `repo`
+/// that differ from the commit checked out. Ignored files do not count.
+///
+/// It compares every file with the index, so programs with a user
+/// interface call it outside the main thread.
+pub fn git_uncommitted(repo: &Path) -> Result<Uncommitted, GitLogError> {
+    let repository = open(repo)?;
+    let mut options = StatusOptions::new();
+    options.include_untracked(true).exclude_submodules(true);
+    let statuses = repository
+        .statuses(Some(&mut options))
+        .map_err(git_error(repo))?;
+    let mut uncommitted = Uncommitted::default();
+    for entry in statuses.iter() {
+        let status = entry.status();
+        if status.intersects(Status::WT_NEW | Status::INDEX_NEW) {
+            uncommitted.new += 1;
+        } else if !status.is_empty() && !status.contains(Status::IGNORED) {
+            uncommitted.changed += 1;
+        }
+    }
+    Ok(uncommitted)
 }
 
 /// The commit `id`, a full hash, of the repository in the folder `repo`,
@@ -350,29 +465,123 @@ mod tests {
         let first = head.parent(0).unwrap();
         repository.branch("old", &first, false).unwrap();
         repository.branch("feature/x", &head, false).unwrap();
+        repository
+            .reference("refs/remotes/origin/main", first.id(), false, "")
+            .unwrap();
+        repository
+            .reference_symbolic(
+                "refs/remotes/origin/HEAD",
+                "refs/remotes/origin/main",
+                false,
+                "",
+            )
+            .unwrap();
         let current = repository.head().unwrap().shorthand().unwrap().to_owned();
-        let mut names = vec!["feature/x".to_owned(), "old".to_owned(), current.clone()];
-        names.sort();
+        let mut local = vec!["feature/x".to_owned(), "old".to_owned(), current.clone()];
+        local.sort();
+        let all: Vec<Branch> = (local.into_iter().map(Branch::Local))
+            .chain([Branch::Remote("origin/main".to_owned())])
+            .collect();
         assert_eq!(
             git_branches(&dir.0).unwrap(),
             Branches {
-                names: names.clone(),
+                all: all.clone(),
                 current: Some(current),
             }
         );
-        assert_eq!(
-            summaries(&git_log(&dir.0, Some("old"), 0, 10).unwrap()),
-            ["First"]
-        );
-        assert!(git_log(&dir.0, Some("gone"), 0, 10).is_err());
+        let log = |branch: Branch| {
+            let commits = git_log(&dir.0, Some(&branch), 0, 10).unwrap();
+            commits.into_iter().map(|c| c.summary).collect::<Vec<_>>()
+        };
+        assert_eq!(log(Branch::Local("old".to_owned())), ["First"]);
+        assert_eq!(log(Branch::Remote("origin/main".to_owned())), ["First"]);
+        assert!(git_log(&dir.0, Some(&Branch::Local("gone".to_owned())), 0, 10).is_err());
 
         repository.set_head_detached(first.id()).unwrap();
         assert_eq!(
             git_branches(&dir.0).unwrap(),
-            Branches {
-                names,
-                current: None,
-            }
+            Branches { all, current: None }
+        );
+    }
+
+    #[test]
+    fn ahead_and_behind() {
+        let dir = TempDir::new();
+        let repository = repository(&dir, &["First", "Second"]);
+        let head = repository.head().unwrap().peel_to_commit().unwrap();
+        let current = repository.head().unwrap().shorthand().unwrap().to_owned();
+        assert_eq!(git_upstream(&dir.0, &current).unwrap(), None);
+
+        // The remote has another commit after the first.
+        let first = head.parent(0).unwrap();
+        let author = Signature::now("Bob", "bob@example.org").unwrap();
+        let theirs = repository
+            .commit(
+                None,
+                &author,
+                &author,
+                "Theirs",
+                &first.tree().unwrap(),
+                &[&first],
+            )
+            .unwrap();
+        repository
+            .remote("origin", "https://example.org/repo.git")
+            .unwrap();
+        repository
+            .reference("refs/remotes/origin/main", theirs, false, "")
+            .unwrap();
+        let mut branch = repository.find_branch(&current, BranchType::Local).unwrap();
+        branch.set_upstream(Some("origin/main")).unwrap();
+        assert_eq!(
+            git_upstream(&dir.0, &current).unwrap(),
+            Some(Upstream {
+                name: "origin/main".to_owned(),
+                ahead: 1,
+                behind: 1,
+            })
+        );
+
+        // Pruned after it was removed on the remote.
+        repository
+            .find_reference("refs/remotes/origin/main")
+            .unwrap()
+            .delete()
+            .unwrap();
+        assert_eq!(git_upstream(&dir.0, &current).unwrap(), None);
+        assert_eq!(git_upstream(&dir.0, "gone").unwrap(), None);
+    }
+
+    #[test]
+    fn uncommitted_files() {
+        let dir = TempDir::new();
+        let repository = Repository::init(&dir.0).unwrap();
+        commit_files(
+            &dir,
+            &repository,
+            "Start",
+            &[
+                ("a.txt", Some(b"a\n")),
+                ("b.txt", Some(b"b\n")),
+                (".gitignore", Some(b"*.log\n")),
+            ],
+            "Ada",
+        );
+        assert_eq!(git_uncommitted(&dir.0).unwrap(), Uncommitted::default());
+
+        fs::write(dir.0.join("a.txt"), "changed\n").unwrap();
+        fs::remove_file(dir.0.join("b.txt")).unwrap();
+        fs::write(dir.0.join("c.txt"), "new\n").unwrap();
+        fs::create_dir(dir.0.join("folder")).unwrap();
+        fs::write(dir.0.join("folder/d.txt"), "new\n").unwrap();
+        fs::write(dir.0.join("e.txt"), "staged\n").unwrap();
+        let mut index = repository.index().unwrap();
+        index.add_path(Path::new("e.txt")).unwrap();
+        index.write().unwrap();
+        fs::write(dir.0.join("debug.log"), "ignored\n").unwrap();
+        assert_eq!(
+            git_uncommitted(&dir.0).unwrap(),
+            Uncommitted { changed: 2, new: 3 }
         );
     }
 
@@ -381,8 +590,10 @@ mod tests {
         let dir = TempDir::new();
         repository(&dir, &[]);
         assert!(git_log(&dir.0, None, 0, 10).unwrap().is_empty());
-        let current = git_branches(&dir.0).unwrap().current.unwrap();
-        assert_eq!(git_branches(&dir.0).unwrap().names, [current]);
+        let branches = git_branches(&dir.0).unwrap();
+        let current = branches.current.unwrap();
+        assert_eq!(branches.all, [Branch::Local(current.clone())]);
+        assert_eq!(git_upstream(&dir.0, &current).unwrap(), None);
     }
 
     /// Commits `files` in the repository in `dir`, each written with its

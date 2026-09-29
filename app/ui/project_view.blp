@@ -257,6 +257,28 @@ template $KnotbookProjectView: Adw.NavigationPage {
                     orientation: vertical;
                     spacing: 24;
 
+                    Adw.PreferencesGroup status_group {
+                      visible: false;
+
+                      Adw.ActionRow upstream_row {
+                        title: _("Upstream");
+                        visible: false;
+
+                        styles [
+                          "property",
+                        ]
+                      }
+
+                      Adw.ActionRow uncommitted_row {
+                        title: _("Uncommitted Changes");
+                        visible: false;
+
+                        styles [
+                          "property",
+                        ]
+                      }
+                    }
+
                     Box commits_box {
                       orientation: vertical;
                       spacing: 24;

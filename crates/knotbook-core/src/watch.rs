@@ -135,13 +135,13 @@ impl fmt::Debug for RepoWatcher {
     }
 }
 
-/// Starts watching the Git repository in the folder `repo` for new
-/// commits on its current branch or a switch to another, such as by
-/// committing, checking out, pulling or rebasing. `on_change` is then
+/// Starts watching the Git repository in the folder `repo` for changes of
+/// its branches and tags, such as by committing, checking out, fetching or
+/// rebasing, and of its index, such as by staging. `on_change` is then
 /// called on a thread of its own, once for a burst of changes.
 ///
-/// It watches only where Git keeps its branches, so that staging files
-/// or fetching changes nothing.
+/// Changes of the working tree are not watched: large ones, with build
+/// output and dependencies, would need too many watches.
 pub fn watch_repo(
     repo: &Path,
     on_change: impl Fn() + Send + 'static,
@@ -156,7 +156,7 @@ pub fn watch_repo(
     // own for its HEAD but shares the branches.
     let git_dir = fs::canonicalize(repository.path()).map_err(|err| error(err.into()))?;
     let common_dir = fs::canonicalize(repository.commondir()).map_err(|err| error(err.into()))?;
-    let heads = common_dir.join("refs").join("heads");
+    let refs = common_dir.join("refs");
     let (sender, events) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(sender).map_err(error)?;
     watcher
@@ -168,24 +168,25 @@ pub fn watch_repo(
             .map_err(error)?;
     }
     watcher
-        .watch(&heads, RecursiveMode::Recursive)
+        .watch(&refs, RecursiveMode::Recursive)
         .map_err(error)?;
-    let moves_head = move |path: &Path| {
+    let changes_repo = move |path: &Path| {
         let lock = path
             .extension()
             .is_some_and(|extension| extension == "lock");
         !lock
             && (path == git_dir.join("HEAD")
+                || path == git_dir.join("index")
                 || path == common_dir.join("packed-refs")
-                || path.starts_with(&heads))
+                || path.starts_with(&refs))
     };
     // Ends when the watcher, and with it the sender, is dropped.
     thread::spawn(move || {
         while let Some(burst) = next_burst(&events) {
             let changed = match burst {
-                Ok(paths) => paths.iter().any(|path| moves_head(path)),
-                // Maybe events were missed, which reading the log again
-                // makes up for.
+                Ok(paths) => paths.iter().any(|path| changes_repo(path)),
+                // Maybe events were missed, which reading the repository
+                // again makes up for.
                 Err(_) => true,
             };
             if changed {
@@ -318,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn repo_changes_only_with_its_branches() {
+    fn repo_changes_with_its_branches_and_index() {
         use git2::{Repository, Signature};
         let dir = crate::file::TempDir::new();
         let repository = Repository::init(&dir.0).unwrap();
@@ -335,11 +336,16 @@ mod tests {
         let _watcher = watch_repo(&dir.0, move || sender.send(()).unwrap()).unwrap();
         let changed = || changes.recv_timeout(Duration::from_secs(2)).is_ok();
 
-        // Staging and fetching leave the log as it is.
-        repository.index().unwrap().write().unwrap();
+        // What a fetch leaves besides the remote branches.
         fs::write(repository.path().join("FETCH_HEAD"), "").unwrap();
         assert!(!changed());
 
+        repository.index().unwrap().write().unwrap();
+        assert!(changed());
+        repository
+            .reference("refs/remotes/origin/main", first, false, "")
+            .unwrap();
+        assert!(changed());
         let first = repository.find_commit(first).unwrap();
         commit(&[&first]);
         assert!(changed());
