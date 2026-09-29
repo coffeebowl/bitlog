@@ -1,13 +1,16 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use gtk::{gdk, gio, glib};
-use knotbook_core::{Commit, NotePath, Period, Project, ProjectSlug, Vault, git_commit, git_log};
+use knotbook_core::{
+    Commit, NotePath, Period, Project, ProjectSlug, RepoWatcher, Vault, git_commit, git_log,
+    watch_repo,
+};
 use knotbook_index::{Found, ProjectBlock};
 
 use crate::alert::show_error;
@@ -52,6 +55,11 @@ mod imp {
         pub blocks_shown: Cell<u32>,
         /// The project's repository on this device, if it has one.
         pub repo: RefCell<Option<PathBuf>>,
+        /// Watches the repository, so that the log shows new commits.
+        pub repo_watcher: RefCell<Option<RepoWatcher>>,
+        /// Counts the reads of the log, so that one finishing after a
+        /// newer one is dropped.
+        pub log_reads: Cell<u32>,
         /// The time spent on the project on each day, to mark the days of
         /// commits.
         pub activity: RefCell<BTreeMap<NaiveDate, TimeDelta>>,
@@ -190,6 +198,9 @@ impl ProjectView {
         // to switch to.
         imp.git_page.set_visible(repo.is_some());
         imp.switcher.set_visible(repo.is_some());
+        if *imp.repo.borrow() != repo {
+            self.watch_repo(repo.as_deref());
+        }
         imp.repo.replace(repo);
         imp.slug.replace(Some(project.slug.clone()));
         imp.vault.replace(Some(vault.clone()));
@@ -422,28 +433,70 @@ impl ProjectView {
         imp.more_commits_button.set_visible(false);
     }
 
+    /// Watches `repo`, if any, and reads the log again after new commits.
+    fn watch_repo(&self, repo: Option<&Path>) {
+        let imp = self.imp();
+        imp.repo_watcher.replace(None);
+        let Some(repo) = repo else {
+            return;
+        };
+        let view: glib::SendWeakRef<Self> = self.downgrade().into();
+        let watcher = watch_repo(repo, move || {
+            let view = view.clone();
+            glib::MainContext::default().invoke(move || {
+                if let Some(view) = view.upgrade() {
+                    view.reload_commits();
+                }
+            });
+        });
+        match watcher {
+            Ok(watcher) => {
+                imp.repo_watcher.replace(Some(watcher));
+            }
+            Err(err) => glib::g_warning!("knotbook", "{err}"),
+        }
+    }
+
     /// Reads the next commits from the repository in the background and
     /// adds them to the log.
     fn show_more_commits(&self) {
+        self.read_log(self.imp().commits_shown.get(), COMMITS_AT_ONCE);
+    }
+
+    /// Reads the log again from the newest commit, as many commits as it
+    /// shows, and replaces it.
+    fn reload_commits(&self) {
+        self.read_log(0, self.imp().commits_shown.get().max(COMMITS_AT_ONCE));
+    }
+
+    /// Reads at most `limit` commits after the first `skip` in the
+    /// background, then shows them after the first `skip` of the log.
+    fn read_log(&self, skip: usize, limit: usize) {
         let imp = self.imp();
         let Some(repo) = imp.repo.borrow().clone() else {
             return;
         };
         let lookup = imp.lookups.get();
-        let skip = imp.commits_shown.get();
+        let read = imp.log_reads.get() + 1;
+        imp.log_reads.set(read);
         glib::spawn_future_local(glib::clone!(
             #[weak(rename_to = view)]
             self,
             async move {
-                let commits = gio::spawn_blocking(move || git_log(&repo, skip, COMMITS_AT_ONCE))
+                let commits = gio::spawn_blocking(move || git_log(&repo, skip, limit))
                     .await
                     .expect("reading the log does not panic");
                 let imp = view.imp();
-                if imp.lookups.get() != lookup {
+                if imp.lookups.get() != lookup || imp.log_reads.get() != read {
                     return;
                 }
                 match commits {
-                    Ok(commits) => view.add_commits(&commits),
+                    Ok(commits) => {
+                        if skip == 0 {
+                            view.clear_commits();
+                        }
+                        view.add_commits(&commits, limit);
+                    }
                     Err(err) => {
                         imp.commits_error_page
                             .set_description(Some(&err.to_string()));
@@ -455,8 +508,8 @@ impl ProjectView {
     }
 
     /// Adds `commits`, newest first, to the end of the log, grouped by the
-    /// local day they were made on.
-    fn add_commits(&self, commits: &[Commit]) {
+    /// local day they were made on. They are at most `limit`, as read.
+    fn add_commits(&self, commits: &[Commit], limit: usize) {
         let imp = self.imp();
         let today = Local::now().date_naive();
         for commit in commits {
@@ -482,8 +535,7 @@ impl ProjectView {
         let shown = imp.commits_shown.get() + commits.len();
         imp.commits_shown.set(shown);
         // A full batch may have more behind it.
-        imp.more_commits_button
-            .set_visible(commits.len() == COMMITS_AT_ONCE);
+        imp.more_commits_button.set_visible(commits.len() == limit);
         imp.commits_stack
             .set_visible_child_name(if shown == 0 { "empty" } else { "list" });
     }

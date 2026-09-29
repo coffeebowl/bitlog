@@ -42,4 +42,4 @@ pub use period::{Period, week_start};
 pub use project::{Project, ProjectStatus};
 pub use tasks::{Task, TaskList, TaskStatus};
 pub use vault::{DayFile, Vault};
-pub use watch::{VaultChange, VaultWatcher, WatchError};
+pub use watch::{RepoWatcher, VaultChange, VaultWatcher, WatchError, watch_repo};

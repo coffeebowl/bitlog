@@ -124,6 +124,78 @@ pub(crate) fn watch(
     Ok(VaultWatcher { _watcher: watcher })
 }
 
+/// Watches a Git repository until it is dropped.
+pub struct RepoWatcher {
+    _watcher: RecommendedWatcher,
+}
+
+impl fmt::Debug for RepoWatcher {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RepoWatcher").finish_non_exhaustive()
+    }
+}
+
+/// Starts watching the Git repository in the folder `repo` for new
+/// commits on its current branch or a switch to another, such as by
+/// committing, checking out, pulling or rebasing. `on_change` is then
+/// called on a thread of its own, once for a burst of changes.
+///
+/// It watches only where Git keeps its branches, so that staging files
+/// or fetching changes nothing.
+pub fn watch_repo(
+    repo: &Path,
+    on_change: impl Fn() + Send + 'static,
+) -> Result<RepoWatcher, WatchError> {
+    let error = |source| WatchError {
+        path: repo.to_owned(),
+        source,
+    };
+    let repository =
+        git2::Repository::open(repo).map_err(|err| error(notify::Error::generic(err.message())))?;
+    // Events name absolute, resolved paths. A worktree has a folder of its
+    // own for its HEAD but shares the branches.
+    let git_dir = fs::canonicalize(repository.path()).map_err(|err| error(err.into()))?;
+    let common_dir = fs::canonicalize(repository.commondir()).map_err(|err| error(err.into()))?;
+    let heads = common_dir.join("refs").join("heads");
+    let (sender, events) = mpsc::channel();
+    let mut watcher = notify::recommended_watcher(sender).map_err(error)?;
+    watcher
+        .watch(&git_dir, RecursiveMode::NonRecursive)
+        .map_err(error)?;
+    if common_dir != git_dir {
+        watcher
+            .watch(&common_dir, RecursiveMode::NonRecursive)
+            .map_err(error)?;
+    }
+    watcher
+        .watch(&heads, RecursiveMode::Recursive)
+        .map_err(error)?;
+    let moves_head = move |path: &Path| {
+        let lock = path
+            .extension()
+            .is_some_and(|extension| extension == "lock");
+        !lock
+            && (path == git_dir.join("HEAD")
+                || path == common_dir.join("packed-refs")
+                || path.starts_with(&heads))
+    };
+    // Ends when the watcher, and with it the sender, is dropped.
+    thread::spawn(move || {
+        while let Some(burst) = next_burst(&events) {
+            let changed = match burst {
+                Ok(paths) => paths.iter().any(|path| moves_head(path)),
+                // Maybe events were missed, which reading the log again
+                // makes up for.
+                Err(_) => true,
+            };
+            if changed {
+                on_change();
+            }
+        }
+    });
+    Ok(RepoWatcher { _watcher: watcher })
+}
+
 /// The files changed next, collected until no change comes for
 /// `DEBOUNCE`, or the first error. `None` once the watcher is gone.
 fn next_burst(
@@ -243,5 +315,36 @@ mod tests {
         ] {
             assert_eq!(change(ignored), None, "{ignored}");
         }
+    }
+
+    #[test]
+    fn repo_changes_only_with_its_branches() {
+        use git2::{Repository, Signature};
+        let dir = crate::file::TempDir::new();
+        let repository = Repository::init(&dir.0).unwrap();
+        let tree = repository.index().unwrap().write_tree().unwrap();
+        let tree = repository.find_tree(tree).unwrap();
+        let author = Signature::now("Ada", "ada@example.org").unwrap();
+        let commit = |parents: &[&git2::Commit]| {
+            repository
+                .commit(Some("HEAD"), &author, &author, "Change", &tree, parents)
+                .unwrap()
+        };
+        let first = commit(&[]);
+        let (sender, changes) = mpsc::channel();
+        let _watcher = watch_repo(&dir.0, move || sender.send(()).unwrap()).unwrap();
+        let changed = || changes.recv_timeout(Duration::from_secs(2)).is_ok();
+
+        // Staging and fetching leave the log as it is.
+        repository.index().unwrap().write().unwrap();
+        fs::write(repository.path().join("FETCH_HEAD"), "").unwrap();
+        assert!(!changed());
+
+        let first = repository.find_commit(first).unwrap();
+        commit(&[&first]);
+        assert!(changed());
+        repository.branch("old", &first, false).unwrap();
+        repository.set_head("refs/heads/old").unwrap();
+        assert!(changed());
     }
 }
