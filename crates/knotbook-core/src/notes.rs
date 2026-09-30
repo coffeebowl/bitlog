@@ -93,16 +93,17 @@ fn note_path(target: &str, project: Option<&ProjectSlug>) -> Option<NotePath> {
     }
 }
 
-/// Points the wiki links to `from` in the day note and block texts of `day`
-/// to `to`. Returns whether there were any.
-fn relink_day(day: &mut Day, from: &NotePath, to: &NotePath) -> bool {
+/// Points the wiki links of the day note and block texts of `day` to the
+/// note `target` gives for the one they point to, if it gives one. Returns
+/// whether any changed.
+pub(crate) fn relink_day(day: &mut Day, target: &impl Fn(&NotePath) -> Option<NotePath>) -> bool {
     let mut changed = false;
-    if let Some(note) = relinked(&day.note, None, from, to) {
+    if let Some(note) = relinked(&day.note, None, target) {
         day.note = note;
         changed = true;
     }
     for block in &mut day.blocks {
-        if let Some(text) = relinked(&block.text, Some(&block.project), from, to) {
+        if let Some(text) = relinked(&block.text, Some(&block.project), target) {
             block.text = text;
             changed = true;
         }
@@ -110,28 +111,30 @@ fn relink_day(day: &mut Day, from: &NotePath, to: &NotePath) -> bool {
     changed
 }
 
-/// `text` of the project `project` with its wiki links to `from` pointing
-/// to `to`, keeping their `|text` and `#heading`, or `None` if it has none.
+/// `text` of the project `project` with its wiki links pointing to the note
+/// `target` gives for the one they point to, keeping their short form,
+/// `|text` and `#heading`, or `None` if none changed.
 fn relinked(
     text: &str,
     project: Option<&ProjectSlug>,
-    from: &NotePath,
-    to: &NotePath,
+    target: &impl Fn(&NotePath) -> Option<NotePath>,
 ) -> Option<String> {
     let mut relinked = text.to_owned();
     let mut changed = false;
     // From the end, so that the ranges before stay valid.
     for link in wiki_links(text, project).iter().rev() {
-        if link.note.as_ref() != Some(from) {
+        let Some(to) = link.note.as_ref().and_then(target) else {
             continue;
-        }
-        let target = if link.is_short(text) {
+        };
+        let written = if link.is_short(text) {
             to.name().to_owned()
         } else {
             format!("{}/{}", to.project(), to.name())
         };
-        relinked.replace_range(link.range.clone(), &target);
-        changed = true;
+        if text[link.range.clone()] != written {
+            relinked.replace_range(link.range.clone(), &written);
+            changed = true;
+        }
     }
     changed.then_some(relinked)
 }
@@ -298,41 +301,53 @@ impl Vault {
         self.record_write(&from, None);
         fs::rename(&from, &to).map_err(|source| SaveError::Write { path: to, source })?;
         if update_links {
-            self.relink_notes(note, &renamed)?;
-            self.relink_days(note, &renamed)?;
+            let target = |link: &NotePath| (link == note).then(|| renamed.clone());
+            self.relink_notes(&target)?;
+            self.change_days(|day| relink_day(day, &target))?;
         }
         Ok(renamed)
     }
 
-    /// Changes the wiki links to `from` in all notes to point to `to`, those
-    /// in the renamed note itself included.
-    fn relink_notes(&self, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
+    /// Points the wiki links in all notes to the note `target` gives for the
+    /// one they point to, if it gives one. Returns the number of notes changed.
+    pub(crate) fn relink_notes(
+        &self,
+        target: &impl Fn(&NotePath) -> Option<NotePath>,
+    ) -> Result<usize, SaveError> {
+        let mut changed = 0;
         for project in self.projects() {
             for note in self.notes(&project.slug)? {
                 let text = self.load_note(&note)?.text;
-                if let Some(text) = relinked(&text, Some(&project.slug), from, to) {
+                if let Some(text) = relinked(&text, Some(&project.slug), target) {
                     self.write(&self.note_path(&note), &text)?;
+                    changed += 1;
                 }
             }
         }
-        Ok(())
+        Ok(changed)
     }
 
-    /// Changes the wiki links to `from` in all day files to point to `to`.
-    /// Days that cannot be read are left alone; `knotbook doctor` names them.
-    fn relink_days(&self, from: &NotePath, to: &NotePath) -> Result<(), SaveError> {
+    /// Applies `change` to all days and saves those it changes, as it tells
+    /// by returning `true`. Returns the number of days changed. Days that
+    /// cannot be read are left alone; `knotbook doctor` names them.
+    pub(crate) fn change_days(
+        &self,
+        change: impl Fn(&mut Day) -> bool,
+    ) -> Result<usize, SaveError> {
+        let mut changed = 0;
         for date in self.all_days()? {
             let Ok(Some(file)) = self.load_day(date) else {
                 continue;
             };
-            if relink_day(&mut file.day.clone(), from, to) {
+            if change(&mut file.day.clone()) {
                 self.update_day(&file, |day| {
-                    relink_day(day, from, to);
+                    change(day);
                     Ok(())
                 })?;
+                changed += 1;
             }
         }
-        Ok(())
+        Ok(changed)
     }
 
     /// Deletes the note `note` for good.

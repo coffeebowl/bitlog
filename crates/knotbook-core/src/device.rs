@@ -61,6 +61,28 @@ impl Vault {
         }
         Ok(())
     }
+
+    /// Moves the repository of the project `from` on this device to the
+    /// project `to`, as when the project is renamed.
+    pub(crate) fn rename_repo_path(
+        &self,
+        from: &ProjectSlug,
+        to: &ProjectSlug,
+    ) -> Result<(), SaveError> {
+        let path = self.device_path();
+        let Some(text) = read_optional(&path)? else {
+            return Ok(());
+        };
+        let mut document = parse_text(&path, &text, parse)?.0;
+        let Some(repos) = document.get_mut("repos").and_then(Item::as_table_mut) else {
+            return Ok(());
+        };
+        if let Some(repo) = repos.remove(from.as_str()) {
+            repos.insert(to.as_str(), repo);
+            self.write(&path, &document.to_string())?;
+        }
+        Ok(())
+    }
 }
 
 /// Whether `repo` may be set as a project's repository: the absolute path

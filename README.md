@@ -122,6 +122,7 @@ knotbook project list
 knotbook project add client-portal --name "Client portal" --color ff7800
 knotbook project edit client-portal --status archived
 knotbook project edit client-portal --repo ~/code/client-portal   # only on this device
+knotbook project rename client-portal portal   # also in all days and notes
 knotbook log client-portal --limit 5   # latest commits of that repository
 
 knotbook task list --all    # open tasks with their ids, then the finished ones

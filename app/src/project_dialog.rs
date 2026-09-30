@@ -27,6 +27,9 @@ mod imp {
         pub shown: RefCell<Option<Project>>,
         /// The repository folder as chosen, shown in `repo_row`.
         pub repo: RefCell<Option<PathBuf>>,
+        /// The IDs and names of the projects there are, which a new
+        /// project cannot take.
+        pub taken: RefCell<Vec<(ProjectSlug, String)>>,
         #[template_child]
         pub cancel_button: TemplateChild<gtk::Button>,
         #[template_child]
@@ -37,6 +40,8 @@ mod imp {
         pub slug_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub slug_row: TemplateChild<adw::EntryRow>,
+        #[template_child]
+        pub slug_hint: TemplateChild<gtk::Label>,
         #[template_child]
         pub color_button: TemplateChild<gtk::ColorDialogButton>,
         #[template_child]
@@ -132,8 +137,9 @@ glib::wrapper! {
 }
 
 impl ProjectDialog {
-    /// A dialog to change `project`, or to add a new project if it is `None`.
-    pub fn new(project: Option<&Project>) -> Self {
+    /// A dialog to change `project`, or to add a new project if it is
+    /// `None`, next to the projects `projects`.
+    pub fn new(project: Option<&Project>, projects: &[Project]) -> Self {
         let dialog: Self = glib::Object::new();
         let imp = dialog.imp();
         // A new project starts with the values of the core.
@@ -159,6 +165,12 @@ impl ProjectDialog {
             imp.save_button.set_label(&gettext("_Add"));
         }
         imp.shown.replace(Some(shown.clone()));
+        imp.taken.replace(
+            projects
+                .iter()
+                .map(|project| (project.slug.clone(), project.name.clone()))
+                .collect(),
+        );
         dialog.update_save_button();
         dialog
     }
@@ -274,15 +286,37 @@ impl ProjectDialog {
         self.update_save_button();
     }
 
-    /// Allows saving once there is a name and, for a new project, a valid ID.
+    /// Allows saving once there is a name and, for a new project, a valid
+    /// ID no other project has.
     fn update_save_button(&self) {
         let imp = self.imp();
-        let slug_valid = !imp.slug_group.is_visible() || self.slug().is_some();
+        let slug = self.slug();
+        let taken = imp.taken.borrow();
+        let owner = slug
+            .as_ref()
+            .and_then(|slug| taken.iter().find(|(other, _)| other == slug))
+            .map(|(_, name)| name);
+        let slug_valid = !imp.slug_group.is_visible() || (slug.is_some() && owner.is_none());
         let slug_error = !slug_valid && !imp.slug_row.text().is_empty();
         if slug_error {
             imp.slug_row.add_css_class("error");
         } else {
             imp.slug_row.remove_css_class("error");
+        }
+        match owner {
+            Some(name) => {
+                imp.slug_hint.set_label(
+                    &gettext("The project “{name}” already has this ID.").replace("{name}", name),
+                );
+                imp.slug_hint.remove_css_class("warning");
+                imp.slug_hint.add_css_class("error");
+            }
+            None => {
+                imp.slug_hint
+                    .set_label(&gettext("The ID cannot be changed later."));
+                imp.slug_hint.remove_css_class("error");
+                imp.slug_hint.add_css_class("warning");
+            }
         }
         imp.save_button
             .set_sensitive(!self.name().is_empty() && slug_valid);

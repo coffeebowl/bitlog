@@ -741,7 +741,7 @@ impl ProjectsPage {
     fn edit(&self, slug: Option<ProjectSlug>) {
         let vault = self.vault();
         let project = slug.as_ref().and_then(|slug| vault.project(slug));
-        let dialog = ProjectDialog::new(project);
+        let dialog = ProjectDialog::new(project, vault.projects());
         // Read when the dialog opens, so that saving only writes a change.
         let repo = slug.as_ref().map(|slug| {
             vault

@@ -209,6 +209,13 @@ enum ProjectCommand {
         #[arg(long, group = "change", conflicts_with = "repo")]
         no_repo: bool,
     },
+    /// Change a project's slug, in all days and notes that refer to it.
+    Rename {
+        /// The slug of the project
+        slug: ProjectSlug,
+        /// The new slug
+        new_slug: ProjectSlug,
+    },
 }
 
 #[derive(Subcommand)]
@@ -566,6 +573,9 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
             let changes = changes(values, status, no_repo)?;
             project::edit_project(&mut vault, &slug, changes)
         }
+        ProjectCommand::Rename { slug, new_slug } => {
+            project::rename_project(&mut vault, &slug, &new_slug)
+        }
     }
 }
 
@@ -723,6 +733,9 @@ mod tests {
         parse("knotbook project add docs --repo ../docs").unwrap();
         parse("knotbook project edit docs --no-repo").unwrap();
         assert!(parse("knotbook project edit docs --repo ../docs --no-repo").is_err());
+        parse("knotbook project rename docs documentation").unwrap();
+        assert!(parse("knotbook project rename docs").is_err());
+        assert!(parse("knotbook project rename docs Docs").is_err());
         parse("knotbook task edit t9x2 --title Call --no-due").unwrap();
         assert!(parse("knotbook task edit t9x2").is_err());
         assert!(parse("knotbook task edit t9x2 --due 2026-09-30 --no-due").is_err());

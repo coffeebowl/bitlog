@@ -36,11 +36,17 @@ template $KnotbookProjectDialog: Adw.Dialog {
       }
 
       Adw.PreferencesGroup slug_group {
-        description: _("Names the project's folder and is used in the command line. It cannot be changed later.");
+        description: _("Names the project's folder and is used in the command line.");
 
         Adw.EntryRow slug_row {
           title: _("ID");
           activates-default: true;
+        }
+
+        Label slug_hint {
+          margin-top: 12;
+          wrap: true;
+          xalign: 0;
         }
       }
 

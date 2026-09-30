@@ -136,6 +136,20 @@ pub fn edit_project(vault: &mut Vault, slug: &ProjectSlug, changes: ProjectChang
     Ok(())
 }
 
+pub fn rename_project(vault: &mut Vault, slug: &ProjectSlug, new_slug: &ProjectSlug) -> Result<()> {
+    let (days, notes) = vault.rename_project(slug, new_slug)?;
+    let plural = |count: usize, noun: &str| match count {
+        1 => format!("1 {noun}"),
+        _ => format!("{count} {noun}s"),
+    };
+    println!(
+        "Renamed project {slug} to {new_slug}, changed {} and {}",
+        plural(days, "day"),
+        plural(notes, "note")
+    );
+    Ok(())
+}
+
 /// The repository change of `changes`, checked before anything is saved,
 /// so that an invalid path changes nothing.
 fn checked_repo(changes: &ProjectChanges) -> Result<Option<Option<PathBuf>>, EditError> {

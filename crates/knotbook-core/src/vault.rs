@@ -1,14 +1,16 @@
 //! Read access to a whole vault.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Months, NaiveDate};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_folder, read_optional, read_text, write_atomic};
+use crate::notes::relink_day;
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
-use crate::{Day, DayWarning, EditError, Project, ProjectSlug, TaskList, VaultConfig};
+use crate::{Day, DayWarning, EditError, NotePath, Project, ProjectSlug, TaskList, VaultConfig};
 
 #[derive(Debug, Clone)]
 pub struct Vault {
@@ -278,6 +280,65 @@ impl Vault {
         // The name may place it elsewhere.
         self.sort_projects();
         Ok(self.project(slug).expect("the project was just saved"))
+    }
+
+    /// Changes the slug of the project `from` to `to`: points the blocks of
+    /// all days, wiki links in days and notes, the order of the projects
+    /// and the repository of this device to `to`, then moves the project's
+    /// folder. Returns the number of days and notes changed.
+    ///
+    /// Nothing is changed while a day cannot be read. The folder is moved
+    /// last, so that renaming again after an interruption finishes the job.
+    pub fn rename_project(
+        &mut self,
+        from: &ProjectSlug,
+        to: &ProjectSlug,
+    ) -> Result<(usize, usize), SaveError> {
+        if self.project(from).is_none() {
+            return Err(EditError::UnknownProject(from.clone()).into());
+        }
+        let folder = |slug: &ProjectSlug| self.root.join("projects").join(slug.as_str());
+        let (old, new) = (folder(from), folder(to));
+        if self.project(to).is_some() || new.exists() {
+            return Err(EditError::ProjectExists(to.clone()).into());
+        }
+        for date in self.all_days()? {
+            self.load_day(date)?;
+        }
+        let target = |note: &NotePath| {
+            (note.project() == from)
+                .then(|| NotePath::new(to.clone(), note.name()).expect("the name stays valid"))
+        };
+        let days = self.change_days(|day| {
+            let mut changed = relink_day(day, &target);
+            for block in day.blocks.iter_mut().filter(|block| block.project == *from) {
+                block.project = to.clone();
+                changed = true;
+            }
+            changed
+        })?;
+        let notes = self.relink_notes(&target)?;
+        if self.config.projects.order.contains(from) {
+            self.update_config(|config| {
+                for slug in &mut config.projects.order {
+                    if slug == from {
+                        *slug = to.clone();
+                    }
+                }
+                Ok(())
+            })?;
+        }
+        self.rename_repo_path(from, to)?;
+        fs::rename(&old, &new).map_err(|source| SaveError::Write {
+            path: new.clone(),
+            source,
+        })?;
+        let path = Project::path(&self.root, to);
+        let project = Project::read(&self.root, to.clone(), &read_text(&path)?)?;
+        self.projects.retain(|project| project.slug != *from);
+        self.projects.push(project);
+        self.sort_projects();
+        Ok((days, notes))
     }
 
     /// Where exports go. Knotbook may overwrite anything in there.
@@ -997,6 +1058,78 @@ mod tests {
         vault
             .update_project(&slug, |project| project.set_color("#ff7800"))
             .unwrap();
+    }
+
+    #[test]
+    fn rename_project() {
+        let (_dir, mut vault) = sample_copy();
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        let platform: ProjectSlug = "platform".parse().unwrap();
+        let repo = vault.root().join("code");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        vault.set_repo_path(&infra, Some(&repo)).unwrap();
+
+        // Days 21 to 23 have infra blocks, only checkout-flow links to an
+        // infra note.
+        assert_eq!(vault.rename_project(&infra, &platform).unwrap(), (3, 1));
+        assert_eq!(
+            slugs(&vault),
+            ["webshop", "platform", "meetings", "filler", "pause"]
+        );
+        assert!(!vault.root().join("projects/infra").exists());
+        let deployment: NotePath = "projects/platform/notes/deployment.md".parse().unwrap();
+        assert!(vault.note_path(&deployment).is_file());
+        let checkout = "projects/webshop/notes/checkout-flow.md".parse().unwrap();
+        assert!(
+            vault
+                .load_note(&checkout)
+                .unwrap()
+                .text
+                .contains("[[platform/deployment]]")
+        );
+        let day = vault.load_day(date(2026, 9, 23)).unwrap().unwrap().day;
+        assert!(day.blocks.iter().any(|block| block.project == platform));
+        assert!(
+            day.blocks
+                .iter()
+                .any(|block| block.text.contains("[[platform/deployment]]"))
+        );
+        for date in vault.all_days().unwrap() {
+            let day = vault.load_day(date).unwrap().unwrap().day;
+            assert!(day.blocks.iter().all(|block| block.project != infra));
+        }
+        assert_eq!(
+            vault.repo_paths().unwrap(),
+            BTreeMap::from([(platform.clone(), repo)])
+        );
+        let reopened = Vault::open(vault.root()).unwrap();
+        assert_eq!(slugs(&reopened), slugs(&vault));
+
+        let meetings: ProjectSlug = "meetings".parse().unwrap();
+        assert!(matches!(
+            vault.rename_project(&infra, &meetings),
+            Err(SaveError::Edit(EditError::UnknownProject(_)))
+        ));
+        assert!(matches!(
+            vault.rename_project(&platform, &meetings),
+            Err(SaveError::Edit(EditError::ProjectExists(_)))
+        ));
+    }
+
+    #[test]
+    fn rename_project_needs_readable_days() {
+        let (_dir, mut vault) = sample_copy();
+        let path = vault.day_path(date(2026, 9, 22));
+        fs::write(&path, "---\nnot: [valid\n").unwrap();
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        let platform: ProjectSlug = "platform".parse().unwrap();
+        assert!(matches!(
+            vault.rename_project(&infra, &platform),
+            Err(SaveError::Read(_))
+        ));
+        assert!(vault.project(&infra).is_some());
+        let day = vault.load_day(date(2026, 9, 21)).unwrap().unwrap().day;
+        assert!(day.blocks.iter().any(|block| block.project == infra));
     }
 
     #[test]
