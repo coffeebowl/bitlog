@@ -21,6 +21,8 @@ const LINE_X: f32 = 56.0;
 const BLOCK_X: f32 = 72.0;
 const KNOT_RADIUS: f32 = 5.0;
 const CURRENT_KNOT_RADIUS: f32 = 7.0;
+/// Half the height of the arrow that marks the time now.
+const NOW_ARROW: f32 = 5.0;
 /// Height of the edges that change start or end of a block when dragged.
 const EDGE: f32 = 6.0;
 
@@ -376,6 +378,15 @@ mod imp {
                 snapshot.append_color(&with_alpha(&accent, 0.3), rounded.bounds());
                 snapshot.pop();
                 snapshot.append_border(&rounded, &[2.0; 4], &[accent; 4]);
+            }
+
+            if let Some(now) = now.filter(|now| (first..=last).contains(now)) {
+                append_now(
+                    snapshot,
+                    y_of(first, now),
+                    width,
+                    &with_alpha(&foreground, 0.5),
+                );
             }
         }
     }
@@ -769,6 +780,22 @@ fn y_of(first: u32, minute: u32) -> f32 {
 
 fn block_height(start: u32, end: u32) -> f32 {
     (end - start) as f32 * MINUTE_HEIGHT
+}
+
+/// The line across the grid at the time now, `y`, with an arrow at its
+/// right end pointing back at it, clear of the knots.
+fn append_now(snapshot: &gtk::Snapshot, y: f32, width: f32, color: &gdk::RGBA) {
+    let tip = width - 2.0 * NOW_ARROW;
+    let line = graphene::Rect::new(LINE_X, y - 1.0, tip - LINE_X, 2.0);
+    snapshot.append_color(color, &line);
+    // The tip is cut to the height of the line, so the two meet flush.
+    let arrow = gsk::PathBuilder::new();
+    arrow.move_to(tip, y - 1.0);
+    arrow.line_to(width, y - NOW_ARROW);
+    arrow.line_to(width, y + NOW_ARROW);
+    arrow.line_to(tip, y + 1.0);
+    arrow.close();
+    snapshot.append_fill(&arrow.to_path(), gsk::FillRule::Winding, color);
 }
 
 fn append_knot(snapshot: &gtk::Snapshot, y: f32, radius: f32, color: &gdk::RGBA) {
