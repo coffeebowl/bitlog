@@ -35,11 +35,14 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
 /// out the last of the spaces they are indented with, and widens bullets to
 /// the same width, but for those check boxes take the place of. Numbers
 /// stay as they are. Lines after the first of an item line up with its
-/// text.
+/// text, and so do the lines they wrap into.
 fn indent(styling: &Styling, formatting: &Formatting) {
     let text = styling.text;
     let bold = pango::AttrList::new();
     bold.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
+    // Where the text of each line of a list item starts, by where the
+    // line starts.
+    let mut texts = HashMap::new();
     // How wide the markers of each item are, by where they start.
     let mut rooms = HashMap::new();
     for marker in &formatting.list_markers {
@@ -83,6 +86,21 @@ fn indent(styling: &Styling, formatting: &Formatting) {
         };
         let spacing = tags::spacing(&styling.buffer, pixels);
         tags::apply(&styling.buffer, &spacing, last..last + 1);
+        texts.insert(indent.spaces.start, target);
+    }
+    for marker in &formatting.list_markers {
+        let line = text[..marker.start].rfind('\n').map_or(0, |at| at + 1);
+        // Markers after others or after a quote marker keep their lines.
+        if !text[line..marker.start].trim().is_empty() {
+            continue;
+        }
+        let start = texts.get(&line).copied().unwrap_or(0);
+        texts.insert(line, start + rooms[&marker.start]);
+    }
+    for (line, pixels) in texts {
+        let hanging = tags::hanging(&styling.buffer, pixels);
+        let line = styling.offset(line);
+        tags::apply_to_lines(&styling.buffer, &hanging, line..line);
     }
 }
 

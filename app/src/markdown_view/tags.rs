@@ -199,6 +199,17 @@ pub(super) fn spacing(buffer: &gtk::TextBuffer, pixels: i32) -> String {
     name
 }
 
+/// The name of a tag that starts the lines a line wraps into `pixels`
+/// further in than its first, added unless it is there already.
+pub(super) fn hanging(buffer: &gtk::TextBuffer, pixels: i32) -> String {
+    let name = format!("hanging {pixels}");
+    // A negative indent indents all lines but the first.
+    get_or_add(buffer, &name, || {
+        gtk::TextTag::builder().name(&name).indent(-pixels).build()
+    });
+    name
+}
+
 /// Applies the tag named `name` to the whole lines of the characters of
 /// `range`, with their line breaks, as tags that format lines need.
 pub(super) fn apply_to_lines(buffer: &gtk::TextBuffer, name: &str, range: Range<i32>) {
