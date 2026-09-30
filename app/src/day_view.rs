@@ -428,11 +428,12 @@ impl DayView {
                 }
             }
         ));
-        imp.block_title.connect_activate(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_| view.save_texts_now()
-        ));
+        // Enter finishes the title, leaving it saves it.
+        imp.block_title.connect_activate(|entry| {
+            if let Some(root) = entry.root() {
+                root.set_focus(None::<&gtk::Widget>);
+            }
+        });
         let editors: [&gtk::Widget; 3] = [
             imp.note_view.upcast_ref(),
             imp.block_text.upcast_ref(),
@@ -447,6 +448,44 @@ impl DayView {
             ));
             editor.add_controller(focus);
         }
+
+        // Clicking beside the editor being typed into leaves it, even where
+        // nothing takes the focus, like the background or a label.
+        let click = gtk::GestureClick::new();
+        click.set_propagation_phase(gtk::PropagationPhase::Capture);
+        click.connect_pressed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |click, _, x, y| {
+                // Clicks into popovers arrive here too, with coordinates
+                // that do not belong to this page.
+                let surface = click.current_event().and_then(|event| event.surface());
+                if view.native().and_then(|native| native.surface()) != surface {
+                    return;
+                }
+                let Some(root) = view.root() else { return };
+                let Some(focus) = root.focus() else { return };
+                let imp = view.imp();
+                let editors: [&gtk::Widget; 3] = [
+                    imp.note_view.upcast_ref(),
+                    imp.block_text.upcast_ref(),
+                    imp.block_title.upcast_ref(),
+                ];
+                let Some(editor) = editors
+                    .into_iter()
+                    .find(|editor| focus == **editor || focus.is_ancestor(*editor))
+                else {
+                    return;
+                };
+                let inside = view
+                    .pick(x, y, gtk::PickFlags::DEFAULT)
+                    .is_some_and(|picked| picked == *editor || picked.is_ancestor(editor));
+                if !inside {
+                    root.set_focus(None::<&gtk::Widget>);
+                }
+            }
+        ));
+        self.add_controller(click);
     }
 
     fn save_texts_later(&self) {
