@@ -9,13 +9,6 @@ template $KnotbookProjectView: Adw.NavigationPage {
     Adw.HeaderBar {
       title-widget: Adw.WindowTitle window_title {};
 
-      [start]
-      Button new_note_button {
-        icon-name: "list-add-symbolic";
-        tooltip-text: _("New Note");
-        action-name: "notes.new";
-      }
-
       [end]
       Button edit_button {
         icon-name: "document-edit-symbolic";
@@ -107,6 +100,18 @@ template $KnotbookProjectView: Adw.NavigationPage {
 
               Adw.PreferencesGroup {
                 title: _("Notes");
+
+                // Without notes, the row in their place adds one.
+                header-suffix: Button new_note_button {
+                  icon-name: "list-add-symbolic";
+                  tooltip-text: _("New Note");
+                  action-name: "notes.new";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                  ]
+                };
 
                 Stack notes_stack {
                   vhomogeneous: false;

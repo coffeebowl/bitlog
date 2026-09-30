@@ -277,6 +277,7 @@ impl ProjectView {
             Err(err) => {
                 imp.notes_error_row.set_subtitle(&err.to_string());
                 imp.notes_stack.set_visible_child_name("error");
+                imp.new_note_button.set_visible(true);
                 return;
             }
         };
@@ -291,6 +292,7 @@ impl ProjectView {
             .collect();
         imp.notes_stack
             .set_visible_child_name(if notes.is_empty() { "empty" } else { "list" });
+        imp.new_note_button.set_visible(!notes.is_empty());
         imp.notes.replace(notes);
     }
 
