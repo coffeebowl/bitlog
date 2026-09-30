@@ -13,6 +13,7 @@ use knotbook_core::{
 };
 
 use crate::alert::show_error;
+use crate::config;
 use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_span, format_time, kind_name,
 };
@@ -91,6 +92,8 @@ mod imp {
         pub block_project_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub block_text: TemplateChild<MarkdownView>,
+        #[template_child]
+        pub panel_handle: TemplateChild<gtk::Box>,
     }
 
     #[glib::object_subclass]
@@ -184,6 +187,7 @@ mod imp {
             view.setup_detail_actions();
             view.setup_time_popovers();
             view.setup_text_editing();
+            view.setup_panel_resizing();
         }
     }
     impl WidgetImpl for DayView {}
@@ -406,6 +410,77 @@ impl DayView {
     }
 
     /// Saves the texts a second after the last change, or when they are left.
+    /// Makes the block panel as wide as dragged at its edge, and remembers
+    /// that width.
+    fn setup_panel_resizing(&self) {
+        let imp = self.imp();
+        let settings = gio::Settings::new(config::app_id());
+        imp.split_view
+            .set_max_sidebar_width(settings.int("block-panel-width").into());
+        imp.panel_handle.set_cursor_from_name(Some("ew-resize"));
+
+        // The view takes the drag, as the pointer soon leaves the thin edge.
+        let drag = gtk::GestureDrag::new();
+        drag.set_propagation_phase(gtk::PropagationPhase::Capture);
+        drag.connect_drag_begin(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |drag, x, y| {
+                let imp = view.imp();
+                let at_edge = imp.split_view.shows_sidebar()
+                    && imp
+                        .split_view
+                        .compute_point(
+                            &*imp.panel_handle,
+                            &gtk::graphene::Point::new(x as f32, y as f32),
+                        )
+                        .is_some_and(|point| {
+                            imp.panel_handle
+                                .contains(point.x().into(), point.y().into())
+                        });
+                drag.set_state(if at_edge {
+                    gtk::EventSequenceState::Claimed
+                } else {
+                    gtk::EventSequenceState::Denied
+                });
+            }
+        ));
+        drag.connect_drag_update(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |drag, offset, _| {
+                let split_view = &view.imp().split_view;
+                let Some((start, _)) = drag.start_point() else {
+                    return;
+                };
+                // The panel is at the end, so it grows towards the start.
+                let total = f64::from(split_view.width());
+                let width = match view.direction() {
+                    gtk::TextDirection::Rtl => start + offset,
+                    _ => total - start - offset,
+                };
+                let width = width
+                    .min(total * split_view.sidebar_width_fraction())
+                    .max(split_view.min_sidebar_width());
+                split_view.set_max_sidebar_width(width.round());
+            }
+        ));
+        drag.connect_drag_end(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_, _, _| {
+                let width = view.imp().split_view.max_sidebar_width();
+                if let Err(err) = settings.set_int("block-panel-width", width as i32) {
+                    glib::g_warning!(
+                        "knotbook",
+                        "Cannot save the width of the block panel: {err}"
+                    );
+                }
+            }
+        ));
+        imp.split_view.add_controller(drag);
+    }
+
     fn setup_text_editing(&self) {
         let imp = self.imp();
         for view in [&*imp.note_view, &*imp.block_text] {
@@ -448,6 +523,14 @@ impl DayView {
             ));
             editor.add_controller(focus);
         }
+        // A title left with its text selected would stay grey behind it.
+        let focus = gtk::EventControllerFocus::new();
+        focus.connect_leave(glib::clone!(
+            #[weak(rename_to = entry)]
+            imp.block_title,
+            move |_| entry.select_region(0, 0)
+        ));
+        imp.block_title.add_controller(focus);
 
         // Clicking beside the editor being typed into leaves it, even where
         // nothing takes the focus, like the background or a label.

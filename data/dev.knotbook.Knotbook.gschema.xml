@@ -38,5 +38,10 @@
       <summary>Order of the notes</summary>
       <description>Whether the notes page lists the notes by when they were last edited, by name or by project.</description>
     </key>
+    <key name="block-panel-width" type="i">
+      <default>440</default>
+      <summary>Width of the block panel</summary>
+      <description>How wide the panel with the block shown in the day view is at most, as dragged at its edge.</description>
+    </key>
   </schema>
 </schemalist>

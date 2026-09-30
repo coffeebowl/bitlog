@@ -680,6 +680,11 @@ impl Timeline {
             area.width() as i32,
             area.height() as i32,
         )));
+        let previous_focus = self
+            .root()
+            .and_then(|root| root.focus())
+            .map(|widget| widget.downgrade())
+            .unwrap_or_default();
         popover.connect_closed(glib::clone!(
             #[weak(rename_to = timeline)]
             self,
@@ -687,6 +692,16 @@ impl Timeline {
                 let imp = timeline.imp();
                 imp.pending.set(None);
                 imp.popover.take();
+                // Otherwise the focus leaves the popover for whatever GTK
+                // finds next, like the title of the block shown.
+                if let Some(root) = timeline.root() {
+                    match previous_focus.upgrade().filter(|widget| widget.is_mapped()) {
+                        Some(widget) => {
+                            widget.grab_focus();
+                        }
+                        None => root.set_focus(None::<&gtk::Widget>),
+                    }
+                }
                 popover.unparent();
                 timeline.queue_draw();
             }

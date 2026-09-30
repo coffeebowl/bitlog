@@ -105,7 +105,8 @@ template $KnotbookDayView: Adw.NavigationPage {
         sidebar-position: end;
         show-sidebar: false;
         min-sidebar-width: 260;
-        max-sidebar-width: 360;
+        // At most half the width, and as wide as dragged at its edge.
+        sidebar-width-fraction: 0.5;
 
         content: Stack stack {
           StackPage {
@@ -377,174 +378,182 @@ template $KnotbookDayView: Adw.NavigationPage {
           }
         };
 
-        sidebar: ScrolledWindow {
-          hscrollbar-policy: never;
+        sidebar: Overlay {
+          child: ScrolledWindow {
+            hscrollbar-policy: never;
 
-          child: Box {
-            orientation: vertical;
-            spacing: 6;
-            margin-top: 12;
-            margin-bottom: 12;
-            margin-start: 12;
-            margin-end: 12;
-
-            Box {
+            child: Box {
+              orientation: vertical;
               spacing: 6;
+              margin-top: 12;
+              margin-bottom: 12;
+              margin-start: 12;
+              margin-end: 12;
 
-              Entry block_title {
-                hexpand: true;
-                truncate-multiline: true;
+              Box {
+                spacing: 6;
 
-                accessibility {
-                  label: _("Title");
+                Entry block_title {
+                  hexpand: true;
+                  truncate-multiline: true;
+
+                  accessibility {
+                    label: _("Title");
+                  }
+
+                  styles [
+                    "flat",
+                    "title-3",
+                  ]
                 }
 
-                styles [
-                  "flat",
-                  "title-3",
-                ]
+                Button {
+                  icon-name: "user-trash-symbolic";
+                  tooltip-text: _("Delete Block");
+                  valign: start;
+                  action-name: "day.delete-block";
+
+                  styles [
+                    "flat",
+                    "circular",
+                  ]
+                }
+
+                Button {
+                  icon-name: "window-close-symbolic";
+                  tooltip-text: _("Close");
+                  valign: start;
+                  action-name: "day.close-block";
+
+                  styles [
+                    "flat",
+                    "circular",
+                  ]
+                }
               }
 
-              Button {
-                icon-name: "user-trash-symbolic";
-                tooltip-text: _("Delete Block");
-                valign: start;
-                action-name: "day.delete-block";
+              Box {
+                spacing: 6;
 
-                styles [
-                  "flat",
-                  "circular",
-                ]
-              }
+                MenuButton block_time_button {
+                  tooltip-text: _("Change Time");
+                  always-show-arrow: true;
 
-              Button {
-                icon-name: "window-close-symbolic";
-                tooltip-text: _("Close");
-                valign: start;
-                action-name: "day.close-block";
+                  styles [
+                    "flat",
+                  ]
 
-                styles [
-                  "flat",
-                  "circular",
-                ]
-              }
-            }
+                  popover: Popover block_time_popover {
+                    default-widget: set_block_time_button;
 
-            Box {
-              spacing: 6;
+                    child: Box {
+                      orientation: vertical;
+                      spacing: 12;
+                      margin-top: 6;
+                      margin-bottom: 6;
+                      margin-start: 6;
+                      margin-end: 6;
 
-              MenuButton block_time_button {
-                tooltip-text: _("Change Time");
-                always-show-arrow: true;
+                      Grid {
+                        column-spacing: 12;
+                        row-spacing: 6;
 
-                styles [
-                  "flat",
-                ]
+                        Label {
+                          label: _("_Start");
+                          use-underline: true;
+                          mnemonic-widget: block_start;
+                          xalign: 0;
 
-                popover: Popover block_time_popover {
-                  default-widget: set_block_time_button;
+                          layout {
+                            column: 0;
+                            row: 0;
+                          }
+                        }
 
-                  child: Box {
-                    orientation: vertical;
-                    spacing: 12;
-                    margin-top: 6;
-                    margin-bottom: 6;
-                    margin-start: 6;
-                    margin-end: 6;
+                        SpinButton block_start {
+                          adjustment: Adjustment {
+                            upper: 1439;
+                            page-increment: 60;
+                          };
 
-                    Grid {
-                      column-spacing: 12;
-                      row-spacing: 6;
+                          wrap: true;
+                          activates-default: true;
 
-                      Label {
-                        label: _("_Start");
+                          layout {
+                            column: 1;
+                            row: 0;
+                          }
+                        }
+
+                        Label {
+                          label: _("_End");
+                          use-underline: true;
+                          mnemonic-widget: block_end;
+                          xalign: 0;
+
+                          layout {
+                            column: 0;
+                            row: 1;
+                          }
+                        }
+
+                        SpinButton block_end {
+                          adjustment: Adjustment {
+                            upper: 1439;
+                            page-increment: 60;
+                          };
+
+                          wrap: true;
+                          activates-default: true;
+
+                          layout {
+                            column: 1;
+                            row: 1;
+                          }
+                        }
+                      }
+
+                      Button set_block_time_button {
+                        label: _("_Set");
                         use-underline: true;
-                        mnemonic-widget: block_start;
-                        xalign: 0;
+                        action-name: "day.set-block-time";
 
-                        layout {
-                          column: 0;
-                          row: 0;
-                        }
+                        styles [
+                          "suggested-action",
+                        ]
                       }
-
-                      SpinButton block_start {
-                        adjustment: Adjustment {
-                          upper: 1439;
-                          page-increment: 60;
-                        };
-
-                        wrap: true;
-                        activates-default: true;
-
-                        layout {
-                          column: 1;
-                          row: 0;
-                        }
-                      }
-
-                      Label {
-                        label: _("_End");
-                        use-underline: true;
-                        mnemonic-widget: block_end;
-                        xalign: 0;
-
-                        layout {
-                          column: 0;
-                          row: 1;
-                        }
-                      }
-
-                      SpinButton block_end {
-                        adjustment: Adjustment {
-                          upper: 1439;
-                          page-increment: 60;
-                        };
-
-                        wrap: true;
-                        activates-default: true;
-
-                        layout {
-                          column: 1;
-                          row: 1;
-                        }
-                      }
-                    }
-
-                    Button set_block_time_button {
-                      label: _("_Set");
-                      use-underline: true;
-                      action-name: "day.set-block-time";
-
-                      styles [
-                        "suggested-action",
-                      ]
-                    }
+                    };
                   };
-                };
+                }
+
+                MenuButton block_project_button {
+                  tooltip-text: _("Change Project");
+                  always-show-arrow: true;
+
+                  styles [
+                    "flat",
+                  ]
+
+                  child: Label block_project_label {
+                    use-markup: true;
+                    ellipsize: end;
+                  };
+                }
               }
 
-              MenuButton block_project_button {
-                tooltip-text: _("Change Project");
-                always-show-arrow: true;
-
-                styles [
-                  "flat",
-                ]
-
-                child: Label block_project_label {
-                  use-markup: true;
-                  ellipsize: end;
-                };
+              $KnotbookMarkdownView block_text {
+                margin-top: 12;
+                editable: true;
+                placeholder: _("Add text");
               }
-            }
-
-            $KnotbookMarkdownView block_text {
-              margin-top: 12;
-              editable: true;
-              placeholder: _("Add text");
-            }
+            };
           };
+
+          [overlay]
+          Box panel_handle {
+            width-request: 6;
+            halign: start;
+          }
         };
       };
     };
