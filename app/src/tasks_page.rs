@@ -2,8 +2,8 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{TaskId, Vault};
 use gtk::glib;
-use knotbook_core::{TaskId, Vault};
 
 use crate::task_list_view::TaskListView;
 
@@ -11,7 +11,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/tasks_page.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/tasks_page.ui")]
     pub struct TasksPage {
         #[template_child]
         pub list: TemplateChild<TaskListView>,
@@ -21,7 +21,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for TasksPage {
-        const NAME: &'static str = "KnotbookTasksPage";
+        const NAME: &'static str = "BitLogTasksPage";
         type Type = super::TasksPage;
         type ParentType = adw::NavigationPage;
 

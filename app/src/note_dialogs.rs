@@ -1,10 +1,10 @@
 //! The questions around notes that the project and note pages share.
 
 use adw::prelude::*;
+use bitlog_core::{NotePath, ProjectSlug, Vault};
+use bitlog_index::Found;
 use gettextrs::{gettext, ngettext};
 use gtk::glib;
-use knotbook_core::{NotePath, ProjectSlug, Vault};
-use knotbook_index::Found;
 
 use crate::alert::show_error;
 use crate::search_index::SearchIndex;

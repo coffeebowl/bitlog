@@ -1,9 +1,9 @@
 //! Dates, times and durations as the app shows them.
 
+use bitlog_core::ProjectStatus;
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeDelta};
 use gettextrs::gettext;
 use gtk::glib;
-use knotbook_core::ProjectStatus;
 
 /// `date` formatted with the codes of g_date_time_format(), in the user's
 /// language.

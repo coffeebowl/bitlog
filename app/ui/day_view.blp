@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookDayView: Adw.NavigationPage {
+template $BitLogDayView: Adw.NavigationPage {
   title: _("Day");
 
   child: Adw.BreakpointBin {
@@ -326,14 +326,14 @@ template $KnotbookDayView: Adw.NavigationPage {
                     }
                   }
 
-                  $KnotbookMarkdownView note_view {
+                  $BitLogMarkdownView note_view {
                     editable: true;
                     placeholder: _("Add a note · no headings");
                   }
 
-                  $KnotbookTaskListView tasks {}
+                  $BitLogTaskListView tasks {}
 
-                  $KnotbookTimeline timeline {}
+                  $BitLogTimeline timeline {}
                 };
               };
             };
@@ -363,7 +363,7 @@ template $KnotbookDayView: Adw.NavigationPage {
                   ]
                 }
 
-                $KnotbookTaskListView empty_tasks {}
+                $BitLogTaskListView empty_tasks {}
               };
             };
           }
@@ -541,7 +541,7 @@ template $KnotbookDayView: Adw.NavigationPage {
                 }
               }
 
-              $KnotbookMarkdownView block_text {
+              $BitLogMarkdownView block_text {
                 margin-top: 12;
                 editable: true;
                 placeholder: _("Add text · no headings");

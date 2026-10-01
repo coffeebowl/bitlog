@@ -1,8 +1,8 @@
 //! Choosing a project in a popover.
 
 use adw::prelude::*;
+use bitlog_core::{Project, ProjectSlug, ProjectStatus, Vault};
 use gtk::glib;
-use knotbook_core::{Project, ProjectSlug, ProjectStatus, Vault};
 
 use crate::colors::color_dot;
 

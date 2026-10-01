@@ -3,10 +3,10 @@
 
 use std::ops::Range;
 
+use bitlog_core::{CalloutKind, Formatting};
 use gettextrs::gettext;
 use gtk::prelude::*;
 use gtk::{gdk, graphene, gsk, pango};
-use knotbook_core::{CalloutKind, Formatting};
 
 use super::decorations::{Decorations, QUOTE_BAR_WIDTH, char_location, line_span, text_edges};
 use super::styling::Styling;

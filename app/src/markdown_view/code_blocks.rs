@@ -3,9 +3,9 @@
 
 use std::ops::Range;
 
+use bitlog_core::Formatting;
 use gtk::prelude::*;
 use gtk::{gdk, graphene, gsk, pango};
-use knotbook_core::Formatting;
 
 use super::decorations::{Decorations, line_span, text_edges};
 use super::styling::Styling;

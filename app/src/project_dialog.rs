@@ -4,10 +4,10 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{EditError, Project, ProjectSlug, check_repo_path};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{EditError, Project, ProjectSlug, check_repo_path};
 
 use crate::alert::show_error;
 use crate::format::{PROJECT_STATUSES, status_name};
@@ -17,7 +17,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/project_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/project_dialog.ui")]
     pub struct ProjectDialog {
         /// The ID last made from the name, replaced along with the name
         /// until the user types another one.
@@ -60,7 +60,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for ProjectDialog {
-        const NAME: &'static str = "KnotbookProjectDialog";
+        const NAME: &'static str = "BitLogProjectDialog";
         type Type = super::ProjectDialog;
         type ParentType = adw::Dialog;
 

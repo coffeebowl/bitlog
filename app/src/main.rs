@@ -86,7 +86,7 @@ fn main() -> glib::ExitCode {
 fn show_about(app: &adw::Application) {
     let developer = "coffeebowl";
     let dialog = adw::AboutDialog::builder()
-        .application_name("Knotbook")
+        .application_name("BitLog")
         .application_icon(config::app_id())
         .comments(gettext("Keep a daily log of your work"))
         .version(config::version())

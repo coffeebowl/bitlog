@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{NoteFile, NotePath, ReadError, SavedNote, Vault};
+use bitlog_index::{Backlink, Found};
 use gettextrs::{gettext, ngettext};
 use gtk::glib;
-use knotbook_core::{NoteFile, NotePath, ReadError, SavedNote, Vault};
-use knotbook_index::{Backlink, Found};
 
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
@@ -23,7 +23,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/note_view.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/note_view.ui")]
     pub struct NoteView {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub index: RefCell<SearchIndex>,
@@ -50,7 +50,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for NoteView {
-        const NAME: &'static str = "KnotbookNoteView";
+        const NAME: &'static str = "BitLogNoteView";
         type Type = super::NoteView;
         type ParentType = adw::NavigationPage;
 
@@ -184,7 +184,7 @@ impl NoteView {
             }
             Err(ReadError::Io { source, .. }) if source.kind() == io::ErrorKind::NotFound => false,
             Err(err) => {
-                glib::g_warning!("knotbook", "{err}");
+                glib::g_warning!("bitlog", "{err}");
                 true
             }
         }
@@ -222,7 +222,7 @@ impl NoteView {
                     return;
                 }
                 let backlinks = backlinks.unwrap_or_else(|err| {
-                    glib::g_warning!("knotbook", "{err}");
+                    glib::g_warning!("bitlog", "{err}");
                     Vec::new()
                 });
                 imp.backlinks_list.remove_all();
@@ -336,7 +336,7 @@ fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
         .iter()
         .flat_map(|project| {
             vault.notes(&project.slug).unwrap_or_else(|err| {
-                glib::g_warning!("knotbook", "{err}");
+                glib::g_warning!("bitlog", "{err}");
                 Vec::new()
             })
         })

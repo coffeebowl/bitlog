@@ -1,11 +1,11 @@
-# Knotbook file format
+# BitLog file format
 
 **Status:** Draft of format version 1. This document describes the target
-format. Knotbook implements it step by step, so parts of it may not be
+format. BitLog implements it step by step, so parts of it may not be
 supported by the current code yet.
 
-A Knotbook vault is an ordinary folder of plain text files. Every file can be
-read and corrected by hand, in any text editor, without Knotbook. The files are
+A BitLog vault is an ordinary folder of plain text files. Every file can be
+read and corrected by hand, in any text editor, without BitLog. The files are
 the only source of truth; the local index and caches can be rebuilt from them
 at any time.
 
@@ -13,7 +13,7 @@ at any time.
 
 | Term | Meaning | Stored in |
 | --- | --- | --- |
-| Vault | The folder holding all data | `knotbook.toml` at its root |
+| Vault | The folder holding all data | `bitlog.toml` at its root |
 | Day | One calendar day of work | `daily/YYYY/MM/YYYY-MM-DD.md` |
 | Day note | Free text about the whole day | Day file, below the date heading |
 | Block | A time span of a day assigned to one project | Day file, front matter and one section |
@@ -42,7 +42,7 @@ A project note is identified by its path relative to the vault,
 ```
 my-vault/
   README.md                          # explains the format to humans and LLMs
-  knotbook.toml
+  bitlog.toml
   tasks.toml                         # global task list
   tasks-archive-2026.toml            # tasks finished in 2026, once archived
   daily/2026/09/2026-09-23.md        # one day: front matter, day note, blocks with text
@@ -50,22 +50,22 @@ my-vault/
   projects/project-a/notes/auth-middleware.md
   templates/note.md
   exports/                           # generated, may be overwritten
-  .knotbook/                         # local, never sync
+  .bitlog/                         # local, never sync
     index.sqlite
     device.toml                      # per device, e.g. repository paths
 ```
 
 A new vault is created in a folder that is missing or holds only hidden
-entries, such as `.git` or a sync tool's marker. It gets `knotbook.toml`, the
-default projects, `templates/note.md` and `README.md`. `/.knotbook/` is added
-to `.gitignore` and `/.knotbook` to `.stignore`, extending files that already
+entries, such as `.git` or a sync tool's marker. It gets `bitlog.toml`, the
+default projects, `templates/note.md` and `README.md`. `/.bitlog/` is added
+to `.gitignore` and `/.bitlog` to `.stignore`, extending files that already
 exist. The other files and folders are created when first needed.
 
-## Vault configuration: `knotbook.toml`
+## Vault configuration: `bitlog.toml`
 
 ```toml
 format = 1
-name = "My Knotbook"
+name = "My BitLog"
 
 [week]
 first_day = "mon"
@@ -94,7 +94,7 @@ Only `format` is required. Missing fields take these defaults:
 
 | Field | Default | Rule |
 | --- | --- | --- |
-| `name` | `"Knotbook"` | |
+| `name` | `"BitLog"` | |
 | `week.first_day` | `"mon"` | weekday, short (`mon`) or long (`monday`) |
 | `week.workdays` | `["mon", "tue", "wed", "thu", "fri"]` | weekdays |
 | `week.target_hours` | `40.0` | not negative |
@@ -170,8 +170,8 @@ let token = refresh(&session).await?;
 - Blocks are a list of flow mappings, **one block per line**, sorted by start
   time.
 - Times are strings `"HH:MM"`, the date is a string `"YYYY-MM-DD"`, both in the
-  user's local time zone. Knotbook validates both itself.
-- **Canonical form:** Knotbook rewrites the front matter completely on every
+  user's local time zone. BitLog validates both itself.
+- **Canonical form:** BitLog rewrites the front matter completely on every
   save, in a fixed field order, with **all strings in double quotes**. This
   avoids the well-known YAML pitfalls (`no` as a boolean, `10:30` as a number).
   The order is `format`, `date`, `kind`, `location`, `tags`, `energy`, `work`,
@@ -199,9 +199,9 @@ let token = refresh(&session).await?;
 ### Date heading
 
 - Directly after the front matter comes `# YYYY-MM-DD`, matching `date`. It is
-  owned by Knotbook and deliberately language-independent; the weekday is only
+  owned by BitLog and deliberately language-independent; the weekday is only
   shown in the app.
-- It is optional when reading. If it is missing, Knotbook adds it on the next
+- It is optional when reading. If it is missing, BitLog adds it on the next
   write.
 
 ### Day note
@@ -212,7 +212,7 @@ let token = refresh(&session).await?;
 ### Block Markdown
 
 Block texts and the day note use a restricted subset of Markdown, because the
-outline of the document belongs to Knotbook:
+outline of the document belongs to BitLog:
 
 - **Allowed:** paragraphs, lists and task lists, code blocks, inline code,
   bold, italic, strikethrough, links, block quotes, tables, tags (`#tag`,
@@ -223,8 +223,8 @@ outline of the document belongs to Knotbook:
   as text and escaped on save (`\# Text`, `\---`), so that it appears as text in
   every Markdown viewer. The backslash is dimmed in the editor.
 - **Outside the app:** Hand-written headings in block texts are tolerated and
-  belong to the text of the block. Knotbook does not change them unasked;
-  `knotbook doctor` reports them and offers to escape them.
+  belong to the text of the block. BitLog does not change them unasked;
+  `bitlog doctor` reports them and offers to escape them.
 - **Wiki links** to notes work as in project notes (see there). In a block
   text, `[[name]]` points to a note of the block's project; the day note
   belongs to no project, so only links like `[[project-a/name]]` point to a
@@ -240,30 +240,30 @@ outline of the document belongs to Knotbook:
   of a line, outside code blocks, quotes and lists. All other headings belong
   to the text of the preceding block (see block Markdown).
 - If a block has more than one heading, the first one counts. The others are
-  read as text, with a warning. Knotbook escapes them on writing
+  read as text, with a warning. BitLog escapes them on writing
   (`\## Title {#id}`), so that they stay text when sections are reordered.
 - Blank lines around the day note and around a block text are layout, not
-  text; Knotbook writes exactly one blank line there.
+  text; BitLog writes exactly one blank line there.
 - The text below a block heading is the **block text**. It belongs to the user
   and is written back character for character.
-- Knotbook writes the sections in order of their start times.
-- If a block in the front matter has no heading, Knotbook adds it on the next
+- BitLog writes the sections in order of their start times.
+- If a block in the front matter has no heading, BitLog adds it on the next
   write.
 - A heading with an ID marker whose ID is not in the front matter is an
   ordinary hand-written heading: it stays where it is and belongs to the text
   of the preceding block, or to the day note if no block precedes it. It
-  produces a warning, and `knotbook doctor` reports it and offers to escape it.
-- When a block that has text is deleted, Knotbook asks whether to discard the
+  produces a warning, and `bitlog doctor` reports it and offers to escape it.
+- When a block that has text is deleted, BitLog asks whether to discard the
   text or move it to the day note. Moved text is appended to the day note
   below a bold line naming the block, such as `**09:00–10:30 project-a: Title**`.
 
 ### Block rules
 
-- Blocks do not overlap. Knotbook prevents it within a day; when reading,
+- Blocks do not overlap. BitLog prevents it within a day; when reading,
   overlaps are flagged, not discarded. A block past midnight is not checked
   against the blocks of the next day.
 - Blocks get their project from the vault's projects and the day its location
-  from `[locations]` when set in Knotbook. Unknown values read from a file are
+  from `[locations]` when set in BitLog. Unknown values read from a file are
   kept.
 - Blocks do not have to be contiguous. The point is a rough assignment.
 - An `end` earlier than `start` means the next day. The block counts towards
@@ -285,7 +285,7 @@ outline of the document belongs to Knotbook:
 - Known drawbacks, accepted deliberately: no real time types (hence strings and
   own validation), no format-preserving YAML editing in Rust (hence canonical
   rewriting; comments in the front matter are lost).
-- Standalone files (`knotbook.toml`, `project.toml`, `tasks.toml`) stay TOML,
+- Standalone files (`bitlog.toml`, `project.toml`, `tasks.toml`) stay TOML,
   because they are also edited and commented by hand, and TOML can be edited
   while preserving formatting and comments.
 
@@ -314,13 +314,13 @@ Only `format` is required. Missing fields take these defaults:
 | `category` | `"work"` | free text; blocks of `break` projects are breaks |
 | `created` | none | TOML local date |
 
-Knotbook writes all fields except a missing `created`. Comments, formatting,
+BitLog writes all fields except a missing `created`. Comments, formatting,
 unchanged values and unknown fields are kept as they are. `pinned` of earlier
 versions is such an unknown field now; the order of projects is set in
-`knotbook.toml`.
+`bitlog.toml`.
 
 The path to a project's local Git repository differs on every machine, so it
-is stored per device in `.knotbook/device.toml`:
+is stored per device in `.bitlog/device.toml`:
 
 ```toml
 [repos]
@@ -330,7 +330,7 @@ project-a = "/home/me/code/project-a"
 Each entry maps a project slug to the absolute path of a folder with a Git
 repository. A missing file or table means no repositories. Entries of
 unknown projects are ignored and, like comments and other tables, kept when
-Knotbook writes the file. Knotbook only sets paths of folders that hold
+BitLog writes the file. BitLog only sets paths of folders that hold
 `.git`.
 
 **Default projects of a new vault:**
@@ -381,16 +381,16 @@ take these defaults:
 | `due` | none | TOML local date |
 | `done` | none | TOML local date; the day the task was done or dropped |
 
-- A missing `tasks.toml` is an empty list. Knotbook creates it with the first
+- A missing `tasks.toml` is an empty list. BitLog creates it with the first
   task.
-- Knotbook writes open tasks first, then done and dropped ones, each in the
+- BitLog writes open tasks first, then done and dropped ones, each in the
   order chosen by the user. New tasks go to the end of the open tasks. A task
   that is done or dropped gets today as `done` and moves to the top of the
   finished tasks; opened again, it loses `done` and moves to the end of the
   open tasks.
 - Comments, formatting, unchanged values and unknown fields are kept as they
   are. Tasks may also be written by hand as an array of inline tables;
-  Knotbook writes them as `[[task]]` tables.
+  BitLog writes them as `[[task]]` tables.
 - **Archiving** happens only when the user asks for it. It moves all done and
   dropped tasks to `tasks-archive-YYYY.toml`, by the year of `done`, else of
   `created`, else of the current date. An archive has the same format as
@@ -404,7 +404,7 @@ take these defaults:
 - Live in `projects/<slug>/notes/` and belong to the project only through this
   folder.
 - Plain Markdown; front matter is allowed but not evaluated.
-- Knotbook only reads wiki links from them. Tags are defined below, but not
+- BitLog only reads wiki links from them. Tags are defined below, but not
   evaluated yet.
 - Full Markdown, including headings.
 - Checkboxes are text, not managed tasks.
@@ -440,13 +440,13 @@ created; any other text in `{{…}}` stays as it is:
 
 Without a template, or if the file is missing, a new note is empty.
 
-**Renaming** a note changes only its file name. Knotbook offers to change the
+**Renaming** a note changes only its file name. BitLog offers to change the
 wiki links to it in all notes, day notes and block texts as well; it then
 replaces only the link targets and keeps the rest of each link.
 
 ## Exports: `exports/`
 
-Knotbook writes exports on request and overwrites an earlier export of the
+BitLog writes exports on request and overwrites an earlier export of the
 same name. Nothing reads them back.
 
 | File | Content |
@@ -466,13 +466,13 @@ their texts.
 
 | File or part | Written by | When |
 | --- | --- | --- |
-| `knotbook.toml`, `tasks.toml`, `project.toml` | Knotbook | any time, preserving formatting and comments |
-| `tasks-archive-YYYY.toml` | Knotbook | when archiving, preserving formatting and comments |
-| Day file: front matter, date heading and block headings | Knotbook | any time |
-| Day file: day note and block texts | user | always; Knotbook keeps them unchanged, except, if the user agrees, for wiki links to a renamed note |
-| Project notes | user | always; Knotbook only when creating them from the template and, if the user agrees, in wiki links to a renamed note |
-| `exports/*` | Knotbook | may be overwritten completely |
-| `.knotbook/*` | Knotbook | local |
+| `bitlog.toml`, `tasks.toml`, `project.toml` | BitLog | any time, preserving formatting and comments |
+| `tasks-archive-YYYY.toml` | BitLog | when archiving, preserving formatting and comments |
+| Day file: front matter, date heading and block headings | BitLog | any time |
+| Day file: day note and block texts | user | always; BitLog keeps them unchanged, except, if the user agrees, for wiki links to a renamed note |
+| Project notes | user | always; BitLog only when creating them from the template and, if the user agrees, in wiki links to a renamed note |
+| `exports/*` | BitLog | may be overwritten completely |
+| `.bitlog/*` | BitLog | local |
 
 Every write:
 
@@ -492,7 +492,7 @@ Every write:
   `<name>.sync-conflict-<date>-<time>-<device><extension>` (Syncthing) or
   `<name> (conflicted copy…)<extension>` (Nextcloud), in the folder of their
   original. Copies are never read as days, notes or tasks.
-- A copy has no common ancestor with its original, so Knotbook cannot tell
+- A copy has no common ancestor with its original, so BitLog cannot tell
   which side changed something. It takes what both sides agree on and what
   only one side has; an empty text or a missing field gives way to the other
   side. Everything else is a contradiction that the user decides. A block or
@@ -503,15 +503,15 @@ Every write:
 - `tasks.toml`: tasks are merged by their IDs, field by field. A task only
   one side has whose ID is in a task archive was archived on the other side
   and stays archived.
-- Project notes, `project.toml` and `knotbook.toml`: never merged; the user
+- Project notes, `project.toml` and `bitlog.toml`: never merged; the user
   picks a version.
 - A copy that is the same as its original, or whose original is missing, is
   merged without asking. After merging, the copy is removed.
 - Git conflict markers (lines starting with `<<<<<<<` and `>>>>>>>`) are
-  only reported: in project notes by `knotbook doctor`, in all other files
+  only reported: in project notes by `bitlog doctor`, in all other files
   as the reason they cannot be read. They are resolved with Git.
-- `knotbook doctor` lists the conflict copies with their contradictions, and
-  `knotbook doctor --fix` merges those without any.
+- `bitlog doctor` lists the conflict copies with their contradictions, and
+  `bitlog doctor --fix` merges those without any.
 - The app merges copies without contradictions as soon as it sees them. For
   the others, the user chooses the original's or the copy's side of each
   contradiction, a text after comparing both versions. Taking a block that
@@ -519,9 +519,9 @@ Every write:
 
 ## Versioning
 
-- Every TOML file and every day front matter carries `format`. Knotbook reads
+- Every TOML file and every day front matter carries `format`. BitLog reads
   all known versions and writes the current one.
 - New optional fields do not increase the version; only renames or changes in
   meaning do, each with a migration.
 - This document and JSON schemas for the TOML files (for Taplo) and the day
-  front matter are part of the Knotbook repository.
+  front matter are part of the BitLog repository.

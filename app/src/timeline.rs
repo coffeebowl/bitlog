@@ -3,10 +3,10 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{Block, Day, Vault, minute_of_day};
 use chrono::Local;
 use glib::subclass::Signal;
 use gtk::{gdk, glib, graphene, gsk, pango};
-use knotbook_core::{Block, Day, Vault, minute_of_day};
 
 use crate::colors::{sea_green, with_alpha};
 
@@ -76,7 +76,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for Timeline {
-        const NAME: &'static str = "KnotbookTimeline";
+        const NAME: &'static str = "BitLogTimeline";
         type Type = super::Timeline;
         type ParentType = gtk::Widget;
     }

@@ -3,10 +3,10 @@
 
 use std::ops::Range;
 
+use bitlog_core::MarkdownStyle;
 use gtk::glib::translate::IntoGlib;
 use gtk::prelude::*;
 use gtk::{gdk, pango};
-use knotbook_core::MarkdownStyle;
 
 use super::{CODE_ALPHA, MARKUP_ALPHA};
 use crate::colors::with_alpha;

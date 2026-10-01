@@ -4,11 +4,11 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{EditError, LocationKey, Vault, VaultConfig};
 use chrono::{NaiveDate, NaiveTime, TimeDelta, Weekday};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gio, glib};
-use knotbook_core::{EditError, LocationKey, Vault, VaultConfig};
 
 use crate::alert::show_error;
 use crate::format::{format_date, format_duration, format_time};
@@ -23,7 +23,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/preferences_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/preferences_dialog.ui")]
     pub struct PreferencesDialog {
         /// The vault folder, which note templates have to lie in.
         pub root: RefCell<PathBuf>,
@@ -64,7 +64,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for PreferencesDialog {
-        const NAME: &'static str = "KnotbookPreferencesDialog";
+        const NAME: &'static str = "BitLogPreferencesDialog";
         type Type = super::PreferencesDialog;
         type ParentType = adw::Dialog;
 
@@ -136,7 +136,7 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// Changes the settings of a vault, kept in its `knotbook.toml`.
+    /// Changes the settings of a vault, kept in its `bitlog.toml`.
     pub struct PreferencesDialog(ObjectSubclass<imp::PreferencesDialog>)
         @extends adw::Dialog, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;

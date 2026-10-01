@@ -37,7 +37,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for WeekChart {
-        const NAME: &'static str = "KnotbookWeekChart";
+        const NAME: &'static str = "BitLogWeekChart";
         type Type = super::WeekChart;
         type ParentType = gtk::Widget;
 

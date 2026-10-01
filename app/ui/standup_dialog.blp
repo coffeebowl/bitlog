@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookStandupDialog: Adw.Dialog {
+template $BitLogStandupDialog: Adw.Dialog {
   title: _("Standup");
   content-width: 560;
   content-height: 480;
@@ -22,7 +22,7 @@ template $KnotbookStandupDialog: Adw.Dialog {
           vexpand: true;
           hscrollbar-policy: never;
 
-          child: $KnotbookMarkdownView text {
+          child: $BitLogMarkdownView text {
             full: true;
             top-margin: 12;
             bottom-margin: 12;

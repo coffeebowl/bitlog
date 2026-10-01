@@ -5,9 +5,9 @@
 
 use std::ops::Range;
 
+use bitlog_core::{Formatting, MarkdownStyle};
 use gtk::prelude::*;
 use gtk::{gdk, graphene, gsk, pango};
-use knotbook_core::{Formatting, MarkdownStyle};
 
 use super::callouts::CalloutCard;
 use super::check_boxes::CheckBox;

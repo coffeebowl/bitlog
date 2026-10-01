@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookTasksPage: Adw.NavigationPage {
+template $BitLogTasksPage: Adw.NavigationPage {
   title: _("Tasks");
 
   child: Adw.ToolbarView {
@@ -23,7 +23,7 @@ template $KnotbookTasksPage: Adw.NavigationPage {
         margin-start: 12;
         margin-end: 12;
 
-        child: $KnotbookTaskListView list {
+        child: $BitLogTaskListView list {
           full: true;
           show-finished: bind show_finished.active;
         };

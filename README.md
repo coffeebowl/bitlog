@@ -1,27 +1,29 @@
-# Knotbook
+<div align="center">
+  <img src="data/icons/hicolor/scalable/apps/dev.bitlog.BitLog.svg" width="128" height="128" alt="">
+  <h1>BitLog</h1>
+  <p>A daily dev log for developers, made for Linux and GNOME.</p>
+</div>
 
-A daily dev log for developers, made for Linux and GNOME.
-
-Knotbook splits the working day into 15-minute blocks and assigns them to
+BitLog splits the working day into 15-minute blocks and assigns them to
 projects – roughly and in hindsight, without a stopwatch. Blocks can carry
 Markdown notes, projects keep a small set of notes of their own. All data
 lives in plain text files in an ordinary folder, the vault, which you can
 sync with Syncthing, Nextcloud, Git or anything else. There is no server.
 The file format is described in [docs/format-spec.md](docs/format-spec.md).
 
-Knotbook is at an early stage of development.
+BitLog is at an early stage of development.
 
 ## Installing
 
-Every [release](https://github.com/coffeebowl/knotbook/releases) comes with
-a Flatpak bundle, `knotbook-<version>.flatpak`. Download it and install it,
+Every [release](https://github.com/coffeebowl/bitlog/releases) comes with
+a Flatpak bundle, `bitlog-<version>.flatpak`. Download it and install it,
 either with a double click in GNOME Software or KDE Discover, or on the
 command line:
 
 ```sh
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
-flatpak install --user ./knotbook-<version>.flatpak
-flatpak run dev.knotbook.Knotbook
+flatpak install --user ./bitlog-<version>.flatpak
+flatpak run dev.bitlog.BitLog
 ```
 
 Flatpak fetches the GNOME runtime from Flathub along the way. The bundle
@@ -30,7 +32,7 @@ with `flatpak install --user --reinstall`.
 
 ## Building
 
-Knotbook is written in Rust (stable). The app needs GTK 4.22, libadwaita 1.9
+BitLog is written in Rust (stable). The app needs GTK 4.22, libadwaita 1.9
 and GtkSourceView 5.20 or newer, and is built with Meson and Blueprint. On
 Fedora:
 
@@ -51,24 +53,24 @@ into `_install/` and start it:
 ```sh
 meson setup _build --prefix="$PWD/_install"
 meson install -C _build
-XDG_DATA_DIRS="$PWD/_install/share:$XDG_DATA_DIRS" _install/bin/knotbook-gtk
+XDG_DATA_DIRS="$PWD/_install/share:$XDG_DATA_DIRS" _install/bin/bitlog-gtk
 ```
 
 `XDG_DATA_DIRS` lets the app find its settings schema and icon in `_install/`.
 On first start, open a vault folder; `fixtures/sample-vault/` is one to try.
-Knotbook opens the same vault again on the next start.
+BitLog opens the same vault again on the next start.
 `meson test -C _build` validates the desktop file, metainfo and settings
 schema.
 
 ### Flatpak
 
-The Flatpak manifest is `build-aux/dev.knotbook.Knotbook.json`. It needs
+The Flatpak manifest is `build-aux/dev.bitlog.BitLog.json`. It needs
 `flatpak-builder`, the GNOME 50 SDK and the Rust extension from Flathub:
 
 ```sh
 flatpak install flathub org.gnome.Sdk//50 org.freedesktop.Sdk.Extension.rust-stable//25.08
-flatpak-builder --user --install --force-clean _flatpak build-aux/dev.knotbook.Knotbook.json
-flatpak run dev.knotbook.Knotbook
+flatpak-builder --user --install --force-clean _flatpak build-aux/dev.bitlog.BitLog.json
+flatpak run dev.bitlog.BitLog
 ```
 
 The build runs without network access and takes the crates from
@@ -87,74 +89,74 @@ The app gets access to the home folder, so that a vault can live anywhere in
 it.
 
 For a release, `build-aux/flatpak-bundle.sh` builds the Flatpak and packs
-it into `_dist/knotbook-<version>.flatpak`, which goes into the release's
+it into `_dist/bitlog-<version>.flatpak`, which goes into the release's
 assets.
 
 ## Command line
 
-The command `knotbook` works on a vault from the terminal. Build and install
+The command `bitlog` works on a vault from the terminal. Build and install
 it with Cargo:
 
 ```sh
-cargo install --path crates/knotbook-cli
+cargo install --path crates/bitlog-cli
 ```
 
-`knotbook init` creates a new vault in the current folder, or in the folder
+`bitlog init` creates a new vault in the current folder, or in the folder
 given with `--vault`. The folder may only hold hidden files such as `.git`.
 
 All other commands work on an existing vault. It is the folder given with
-`--vault`, or else the one in the environment variable `KNOTBOOK_VAULT`, or
+`--vault`, or else the one in the environment variable `BITLOG_VAULT`, or
 else the current folder or the closest folder above it that holds a
-`knotbook.toml`.
+`bitlog.toml`.
 
 ```sh
-knotbook today              # today's blocks with their ids, working time and location
-knotbook day 2026-09-23     # the same for another day
-knotbook standup            # the last day with work and today, with your commits, to paste into a chat
+bitlog today              # today's blocks with their ids, working time and location
+bitlog day 2026-09-23     # the same for another day
+bitlog standup            # the last day with work and today, with your commits, to paste into a chat
 
-knotbook block add 09:00-10:30 webshop "Checkout flow"
-knotbook block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
-knotbook block note k7f3    # edit the block's text in $VISUAL or $EDITOR
-knotbook block rm k7f3 --move-text
-knotbook set --location office --work 08:30-16:45
+bitlog block add 09:00-10:30 webshop "Checkout flow"
+bitlog block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
+bitlog block note k7f3    # edit the block's text in $VISUAL or $EDITOR
+bitlog block rm k7f3 --move-text
+bitlog set --location office --work 08:30-16:45
 
-knotbook project list
-knotbook project add client-portal --name "Client portal" --color ff7800
-knotbook project edit client-portal --status archived
-knotbook project edit client-portal --repo ~/code/client-portal   # only on this device
-knotbook project rename client-portal portal   # also in all days and notes
-knotbook log client-portal --limit 5   # latest commits of that repository
+bitlog project list
+bitlog project add client-portal --name "Client portal" --color ff7800
+bitlog project edit client-portal --status archived
+bitlog project edit client-portal --repo ~/code/client-portal   # only on this device
+bitlog project rename client-portal portal   # also in all days and notes
+bitlog log client-portal --limit 5   # latest commits of that repository
 
-knotbook task list --all    # open tasks with their ids, then the finished ones
-knotbook task add "Renew the TLS certificate" --due 2026-09-30
-knotbook task done h4c8     # also: drop, reopen
-knotbook task edit h4c8 --title "Renew the certificates" --no-due
-knotbook task move h4c8 1   # to the top of the open tasks
-knotbook task archive       # move finished tasks to tasks-archive-YYYY.toml
+bitlog task list --all    # open tasks with their ids, then the finished ones
+bitlog task add "Renew the TLS certificate" --due 2026-09-30
+bitlog task done h4c8     # also: drop, reopen
+bitlog task edit h4c8 --title "Renew the certificates" --no-due
+bitlog task move h4c8 1   # to the top of the open tasks
+bitlog task archive       # move finished tasks to tasks-archive-YYYY.toml
 
-knotbook search release deploy     # blocks, day notes, notes and tasks holding both words
-knotbook search '"release notes"'  # the words as written, one after the other
-knotbook stats              # time per project this month, and remote work days
-knotbook stats --week       # also --year, or --from 2026-09-01 --to 2026-09-30
+bitlog search release deploy     # blocks, day notes, notes and tasks holding both words
+bitlog search '"release notes"'  # the words as written, one after the other
+bitlog stats              # time per project this month, and remote work days
+bitlog stats --week       # also --year, or --from 2026-09-01 --to 2026-09-30
 
-knotbook export blocks --from 2026-09-01 --to 2026-09-30   # CSV in exports/, all without dates
-knotbook export week --date 2026-09-23                     # Markdown report of that week
-knotbook export remote                                     # remote work days per year as CSV
+bitlog export blocks --from 2026-09-01 --to 2026-09-30   # CSV in exports/, all without dates
+bitlog export week --date 2026-09-23                     # Markdown report of that week
+bitlog export remote                                     # remote work days per year as CSV
 
-knotbook doctor             # sync conflict copies, unknown projects, overlaps,
+bitlog doctor             # sync conflict copies, unknown projects, overlaps,
                             # headings in texts, broken wiki links in notes
-knotbook doctor --fix       # merge conflict copies without contradictions,
+bitlog doctor --fix       # merge conflict copies without contradictions,
                             # escape those headings so they read as text
 ```
 
 These commands change today unless `--date 2026-09-23` names another day.
 
-`search` and `stats` use an index of the vault in `.knotbook/index.sqlite`,
+`search` and `stats` use an index of the vault in `.bitlog/index.sqlite`,
 which they create and bring up to date by themselves. It is never synced and
 can be deleted at any time.
 
-`knotbook --help` lists all commands.
+`bitlog --help` lists all commands.
 
 ## License
 
-Knotbook is licensed under the [GNU General Public License v3.0 or later](LICENSE).
+BitLog is licensed under the [GNU General Public License v3.0 or later](LICENSE).

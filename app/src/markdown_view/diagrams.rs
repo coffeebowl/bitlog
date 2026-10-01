@@ -9,9 +9,9 @@ use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock};
 
+use bitlog_core::Formatting;
 use gtk::prelude::*;
 use gtk::{gdk, glib, graphene, gsk};
-use knotbook_core::Formatting;
 use mermaid_rs_renderer::{RenderOptions, Theme};
 use resvg::{tiny_skia, usvg};
 

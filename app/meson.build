@@ -2,7 +2,7 @@ subdir('ui')
 
 cargo_options = [
   '--manifest-path', meson.project_source_root() / 'Cargo.toml',
-  '--package', 'knotbook-gtk',
+  '--package', 'bitlog-gtk',
 ]
 if get_option('buildtype') == 'release'
   cargo_options += ['--release']
@@ -15,7 +15,7 @@ custom_target(
   'cargo-build',
   build_by_default: true,
   build_always_stale: true,
-  output: 'knotbook-gtk',
+  output: 'bitlog-gtk',
   console: true,
   install: true,
   install_dir: get_option('bindir'),
@@ -23,6 +23,6 @@ custom_target(
   command: [
     cargo, 'build', cargo_options,
     '&&',
-    'cp', cargo_target / rust_target / 'knotbook-gtk', '@OUTPUT@',
+    'cp', cargo_target / rust_target / 'bitlog-gtk', '@OUTPUT@',
   ],
 )

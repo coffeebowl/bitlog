@@ -5,11 +5,11 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gdk, glib};
-use knotbook_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
@@ -26,7 +26,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/projects_page.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/projects_page.ui")]
     pub struct ProjectsPage {
         pub vault: RefCell<Option<Rc<Vault>>>,
         /// One group per status that has projects.
@@ -72,7 +72,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for ProjectsPage {
-        const NAME: &'static str = "KnotbookProjectsPage";
+        const NAME: &'static str = "BitLogProjectsPage";
         type Type = super::ProjectsPage;
         type ParentType = adw::NavigationPage;
 
@@ -557,7 +557,7 @@ impl ProjectsPage {
                         imp.data.replace(data);
                         page.show_list();
                     }
-                    Err(err) => glib::g_warning!("knotbook", "{err}"),
+                    Err(err) => glib::g_warning!("bitlog", "{err}"),
                 }
             }
         ));

@@ -39,6 +39,6 @@ app/ui/sync_conflict_dialog.blp
 app/ui/task_list_view.blp
 app/ui/tasks_page.blp
 app/ui/window.blp
-data/dev.knotbook.Knotbook.desktop.in
-data/dev.knotbook.Knotbook.gschema.xml
-data/dev.knotbook.Knotbook.metainfo.xml.in
+data/dev.bitlog.BitLog.desktop.in
+data/dev.bitlog.BitLog.gschema.xml
+data/dev.bitlog.BitLog.metainfo.xml.in

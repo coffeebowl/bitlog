@@ -20,7 +20,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for ShareBar {
-        const NAME: &'static str = "KnotbookShareBar";
+        const NAME: &'static str = "BitLogShareBar";
         type Type = super::ShareBar;
         type ParentType = gtk::Widget;
 

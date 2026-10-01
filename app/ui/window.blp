@@ -1,8 +1,8 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookWindow: Adw.ApplicationWindow {
-  title: _("Knotbook");
+template $BitLogWindow: Adw.ApplicationWindow {
+  title: _("BitLog");
   width-request: 360;
   height-request: 294;
 
@@ -32,8 +32,8 @@ template $KnotbookWindow: Adw.ApplicationWindow {
           }
 
           content: Adw.StatusPage {
-            icon-name: "dev.knotbook.Knotbook";
-            title: _("Welcome to Knotbook");
+            icon-name: "dev.bitlog.BitLog";
+            title: _("Welcome to BitLog");
             description: _("Open a vault, the folder that holds your log, or start a new one");
 
             child: Box {
@@ -241,7 +241,7 @@ menu primary_menu {
     }
 
     item {
-      label: _("_About Knotbook");
+      label: _("_About BitLog");
       action: "app.about";
     }
   }

@@ -5,9 +5,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-app_id=dev.knotbook.Knotbook
+app_id=dev.bitlog.BitLog
 version=$(sed -n "s/^  version: '\(.*\)',$/\1/p" meson.build)
-bundle=_dist/knotbook-$version.flatpak
+bundle=_dist/bitlog-$version.flatpak
 
 flatpak-builder --user --force-clean --repo=_repo _flatpak "build-aux/$app_id.json"
 mkdir -p _dist

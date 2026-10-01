@@ -4,9 +4,9 @@
 
 use std::ops::Range;
 
+use bitlog_core::{Formatting, MarkdownStyle, TableLine};
 use gtk::prelude::*;
 use gtk::{gdk, graphene, gsk, pango};
-use knotbook_core::{Formatting, MarkdownStyle, TableLine};
 
 use super::decorations::{Decorations, char_location, line_span};
 use super::styling::Styling;

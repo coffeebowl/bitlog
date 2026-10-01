@@ -4,13 +4,13 @@ use std::time::Duration;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Local, NaiveDate, NaiveTime, Timelike};
-use gettextrs::gettext;
-use gtk::{gio, glib};
-use knotbook_core::{
+use bitlog_core::{
     Block, BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, SaveError,
     Vault,
 };
+use chrono::{Local, NaiveDate, NaiveTime, Timelike};
+use gettextrs::gettext;
+use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::config;
@@ -27,7 +27,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/day_view.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/day_view.ui")]
     pub struct DayView {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub date: Cell<NaiveDate>,
@@ -98,7 +98,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for DayView {
-        const NAME: &'static str = "KnotbookDayView";
+        const NAME: &'static str = "BitLogDayView";
         type Type = super::DayView;
         type ParentType = adw::NavigationPage;
 
@@ -471,10 +471,7 @@ impl DayView {
             move |_, _, _| {
                 let width = view.imp().split_view.max_sidebar_width();
                 if let Err(err) = settings.set_int("block-panel-width", width as i32) {
-                    glib::g_warning!(
-                        "knotbook",
-                        "Cannot save the width of the block panel: {err}"
-                    );
+                    glib::g_warning!("bitlog", "Cannot save the width of the block panel: {err}");
                 }
             }
         ));

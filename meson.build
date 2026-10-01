@@ -1,5 +1,5 @@
 project(
-  'knotbook',
+  'bitlog',
   version: '26.09.1',
   license: 'GPL-3.0-or-later',
   meson_version: '>= 1.5.0',
@@ -8,7 +8,7 @@ project(
 i18n = import('i18n')
 gnome = import('gnome')
 
-app_id = 'dev.knotbook.Knotbook'
+app_id = 'dev.bitlog.BitLog'
 gettext_package = meson.project_name()
 localedir = get_option('prefix') / get_option('localedir')
 pkgdatadir = get_option('prefix') / get_option('datadir') / meson.project_name()
@@ -28,7 +28,7 @@ cargo_env.set('MESON_APP_ID', app_id)
 cargo_env.set('MESON_VERSION', meson.project_version())
 cargo_env.set('MESON_GETTEXT_PACKAGE', gettext_package)
 cargo_env.set('MESON_LOCALEDIR', localedir)
-cargo_env.set('MESON_RESOURCES_FILE', pkgdatadir / 'knotbook.gresource')
+cargo_env.set('MESON_RESOURCES_FILE', pkgdatadir / 'bitlog.gresource')
 meson.add_devenv(cargo_env)
 
 subdir('app')

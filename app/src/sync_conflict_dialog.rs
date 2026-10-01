@@ -4,13 +4,13 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use gettextrs::gettext;
-use glib::subclass::Signal;
-use gtk::glib;
-use knotbook_core::{
+use bitlog_core::{
     Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError, Task, TaskId,
     TaskList, TaskStatus, Vault, VaultChange,
 };
+use gettextrs::gettext;
+use glib::subclass::Signal;
+use gtk::glib;
 
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
@@ -20,7 +20,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/sync_conflict_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/sync_conflict_dialog.ui")]
     pub struct SyncConflictDialog {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub copy: RefCell<Option<ConflictCopy>>,
@@ -36,7 +36,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for SyncConflictDialog {
-        const NAME: &'static str = "KnotbookSyncConflictDialog";
+        const NAME: &'static str = "BitLogSyncConflictDialog";
         type Type = super::SyncConflictDialog;
         type ParentType = adw::Dialog;
 

@@ -1,0 +1,19 @@
+[package]
+name = "bitlog-core"
+description = "Data model, file format and vault I/O for BitLog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono = { version = "0.4.45", default-features = false, features = ["std", "clock", "serde"] }
+fastrand = "2.5.0"
+git2 = { version = "0.21.0", default-features = false, features = ["vendored-libgit2"] }
+notify = "8.2.0"
+pulldown-cmark = { version = "0.13.4", default-features = false }
+serde = { version = "1.0.229", features = ["derive"] }
+serde-saphyr = { version = "1.3.0", default-features = false, features = ["deserialize"] }
+serde_json = { version = "1.0.151", features = ["preserve_order"] }
+thiserror = "2.0.21"
+toml = "1.1.6"
+toml_edit = "0.25.15"

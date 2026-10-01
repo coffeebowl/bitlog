@@ -3,10 +3,10 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::Vault;
+use bitlog_index::{Found, IndexError, SearchHit};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::Vault;
-use knotbook_index::{Found, IndexError, SearchHit};
 
 use crate::format::format_full_date;
 use crate::search_index::SearchIndex;
@@ -19,7 +19,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/search_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/search_dialog.ui")]
     pub struct SearchDialog {
         #[template_child]
         pub entry: TemplateChild<gtk::SearchEntry>,
@@ -48,7 +48,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for SearchDialog {
-        const NAME: &'static str = "KnotbookSearchDialog";
+        const NAME: &'static str = "BitLogSearchDialog";
         type Type = super::SearchDialog;
         type ParentType = adw::Dialog;
 
@@ -184,11 +184,7 @@ fn commands(new_block: bool) -> Vec<Command> {
             "folder-new-symbolic",
             "win.new-vault",
         ),
-        command(
-            gettext("About Knotbook"),
-            "help-about-symbolic",
-            "app.about",
-        ),
+        command(gettext("About BitLog"), "help-about-symbolic", "app.about"),
     ]);
     commands
 }

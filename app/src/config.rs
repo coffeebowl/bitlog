@@ -8,7 +8,7 @@
     reason = "plain Cargo builds must compile, only running them needs Meson"
 )]
 
-const UNSET: &str = "Knotbook has to be built with Meson";
+const UNSET: &str = "BitLog has to be built with Meson";
 
 pub fn app_id() -> &'static str {
     option_env!("MESON_APP_ID").expect(UNSET)

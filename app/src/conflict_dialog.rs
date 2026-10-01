@@ -12,7 +12,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/conflict_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/conflict_dialog.ui")]
     pub struct ConflictDialog {
         #[template_child]
         pub header_bar: TemplateChild<adw::HeaderBar>,
@@ -34,7 +34,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for ConflictDialog {
-        const NAME: &'static str = "KnotbookConflictDialog";
+        const NAME: &'static str = "BitLogConflictDialog";
         type Type = super::ConflictDialog;
         type ParentType = adw::Dialog;
 

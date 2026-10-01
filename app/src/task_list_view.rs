@@ -3,10 +3,10 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{EditError, SaveError, Task, TaskId, TaskList, TaskStatus, Vault};
 use chrono::{Local, NaiveDate};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{EditError, SaveError, Task, TaskId, TaskList, TaskStatus, Vault};
 
 use crate::alert::show_error;
 use crate::format::{format_short_date, glib_date, naive_date};
@@ -15,7 +15,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate, glib::Properties)]
-    #[template(resource = "/dev/knotbook/Knotbook/task_list_view.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/task_list_view.ui")]
     #[properties(wrapper_type = super::TaskListView)]
     pub struct TaskListView {
         /// Whether tasks can be edited and sorted, as on the task page, or
@@ -62,7 +62,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for TaskListView {
-        const NAME: &'static str = "KnotbookTaskListView";
+        const NAME: &'static str = "BitLogTaskListView";
         type Type = super::TaskListView;
         type ParentType = adw::Bin;
 

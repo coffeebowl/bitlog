@@ -5,11 +5,11 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{NotePath, Project, ProjectSlug, Vault};
 use chrono::{DateTime, Datelike, Local, NaiveDate};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gio, glib};
-use knotbook_core::{NotePath, Project, ProjectSlug, Vault};
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
@@ -45,7 +45,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, gtk::CompositeTemplate, glib::Properties)]
-    #[template(resource = "/dev/knotbook/Knotbook/notes_page.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/notes_page.ui")]
     #[properties(wrapper_type = super::NotesPage)]
     pub struct NotesPage {
         /// How the list is ordered: "recent", "name" or "project".
@@ -104,7 +104,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for NotesPage {
-        const NAME: &'static str = "KnotbookNotesPage";
+        const NAME: &'static str = "BitLogNotesPage";
         type Type = super::NotesPage;
         type ParentType = adw::NavigationPage;
 
@@ -295,14 +295,14 @@ impl NotesPage {
             .iter()
             .flat_map(|project| {
                 vault.notes(&project.slug).unwrap_or_else(|err| {
-                    glib::g_warning!("knotbook", "{err}");
+                    glib::g_warning!("bitlog", "{err}");
                     Vec::new()
                 })
             })
             .map(|note| {
                 let modified = vault.note_modified(&note).map_or_else(
                     |err| {
-                        glib::g_warning!("knotbook", "{err}");
+                        glib::g_warning!("bitlog", "{err}");
                         None
                     },
                     |modified| Some(DateTime::from(modified)),

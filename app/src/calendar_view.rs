@@ -6,10 +6,10 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use std::collections::BTreeMap;
 
+use bitlog_core::{DayFile, Period, ProjectSlug, Vault, week_start};
 use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{gdk, glib, pango};
-use knotbook_core::{DayFile, Period, ProjectSlug, Vault, week_start};
 
 use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot};
 use crate::format::{
@@ -32,7 +32,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/calendar_view.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/calendar_view.ui")]
     pub struct CalendarView {
         pub vault: RefCell<Option<Rc<Vault>>>,
         /// A day in the month or week shown.
@@ -62,7 +62,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for CalendarView {
-        const NAME: &'static str = "KnotbookCalendarView";
+        const NAME: &'static str = "BitLogCalendarView";
         type Type = super::CalendarView;
         type ParentType = adw::NavigationPage;
 

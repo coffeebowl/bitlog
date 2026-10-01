@@ -5,11 +5,11 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use gtk::prelude::*;
-use gtk::{glib, pango};
-use knotbook_core::{
+use bitlog_core::{
     Continuation, Formatting, MarkdownMode, TaskItem, continue_list, continue_quote, nest_list_item,
 };
+use gtk::prelude::*;
+use gtk::{glib, pango};
 
 use super::check_boxes::CheckBox;
 use super::decorations::Decorations;

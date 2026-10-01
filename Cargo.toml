@@ -1,9 +1,9 @@
 [workspace]
-members = ["app", "crates/knotbook-cli", "crates/knotbook-core", "crates/knotbook-index"]
+members = ["app", "crates/bitlog-cli", "crates/bitlog-core", "crates/bitlog-index"]
 resolver = "3"
 
 [workspace.package]
-# Knotbook uses calendar versions, YY.MM for the first release of a month
+# BitLog uses calendar versions, YY.MM for the first release of a month
 # and YY.MM.N for the ones after it. Cargo needs SemVer, so 26.09 is 26.9.0
 # here and 26.09.1 is 26.9.1. meson.build holds the version as shown.
 version = "26.9.1"

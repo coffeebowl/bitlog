@@ -10,9 +10,9 @@ use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::{LazyLock, Once};
 
+use bitlog_core::CodeBlock;
 use gtk::glib::translate::IntoGlib;
 use gtk::{gdk, pango};
-use knotbook_core::CodeBlock;
 use sourceview5::prelude::*;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{

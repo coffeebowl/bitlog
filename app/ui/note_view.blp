@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookNoteView: Adw.NavigationPage {
+template $BitLogNoteView: Adw.NavigationPage {
   tag: "note";
 
   child: Adw.ToolbarView {
@@ -45,7 +45,7 @@ template $KnotbookNoteView: Adw.NavigationPage {
       child: Adw.ClampScrollable {
         maximum-size: 720;
 
-        child: $KnotbookMarkdownView editor {
+        child: $BitLogMarkdownView editor {
           full: true;
           editable: true;
           placeholder: _("Add text");

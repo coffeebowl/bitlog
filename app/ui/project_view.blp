@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookProjectView: Adw.NavigationPage {
+template $BitLogProjectView: Adw.NavigationPage {
   tag: "project";
 
   child: Adw.ToolbarView {
@@ -91,7 +91,7 @@ template $KnotbookProjectView: Adw.NavigationPage {
                 title: _("Activity");
                 description: _("Time spent per day in the last 30 days");
 
-                $KnotbookHeatmap heatmap {
+                $BitLogHeatmap heatmap {
                   cell-size: 18;
                   single-row: true;
                   halign: start;

@@ -17,7 +17,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for Miniature {
-        const NAME: &'static str = "KnotbookMiniature";
+        const NAME: &'static str = "BitLogMiniature";
         type Type = super::Miniature;
         type ParentType = gtk::Widget;
     }

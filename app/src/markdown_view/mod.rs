@@ -17,12 +17,12 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{
+    MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, wiki_links,
+};
 use glib::SignalHandlerId;
 use glib::subclass::Signal;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{
-    MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, wiki_links,
-};
 use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 
@@ -100,7 +100,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for MarkdownView {
-        const NAME: &'static str = "KnotbookMarkdownView";
+        const NAME: &'static str = "BitLogMarkdownView";
         type Type = super::MarkdownView;
         type ParentType = sourceview5::View;
 

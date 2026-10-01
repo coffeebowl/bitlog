@@ -3,10 +3,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use bitlog_core::{NotePath, ProjectSlug, Vault};
+use bitlog_index::{Backlink, Index, IndexError, ProjectBlock, SearchHit};
 use chrono::{NaiveDate, TimeDelta};
 use gtk::{gio, glib};
-use knotbook_core::{NotePath, ProjectSlug, Vault};
-use knotbook_index::{Backlink, Index, IndexError, ProjectBlock, SearchHit};
 
 /// What the project page shows of a project.
 #[derive(Debug)]
@@ -193,10 +193,10 @@ impl SearchIndex {
 }
 
 /// Brings `index` up to date with the files of `vault`. Files that cannot be
-/// read are left out with a warning; `knotbook doctor` tells more about them.
+/// read are left out with a warning; `bitlog doctor` tells more about them.
 fn refresh(index: &mut Index, vault: &Vault) -> Result<(), IndexError> {
     for err in index.refresh(vault)? {
-        glib::g_warning!("knotbook", "{err}");
+        glib::g_warning!("bitlog", "{err}");
     }
     Ok(())
 }

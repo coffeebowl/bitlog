@@ -4,15 +4,15 @@ use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Local, NaiveDate, TimeDelta};
-use gettextrs::{gettext, ngettext};
-use gtk::{gdk, gio, glib};
-use knotbook_core::{
+use bitlog_core::{
     Branch, Branches, Commit, GitLogError, NotePath, Period, Project, ProjectSlug, RepoWatcher,
     Uncommitted, Upstream, Vault, git_branches, git_commit, git_log, git_uncommitted, git_upstream,
     watch_repo,
 };
-use knotbook_index::{Found, ProjectBlock};
+use bitlog_index::{Found, ProjectBlock};
+use chrono::{Local, NaiveDate, TimeDelta};
+use gettextrs::{gettext, ngettext};
+use gtk::{gdk, gio, glib};
 
 use crate::alert::show_error;
 use crate::commit_dialog::CommitDialog;
@@ -41,7 +41,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/project_view.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/project_view.ui")]
     pub struct ProjectView {
         /// The project shown.
         pub slug: RefCell<Option<ProjectSlug>>,
@@ -136,7 +136,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for ProjectView {
-        const NAME: &'static str = "KnotbookProjectView";
+        const NAME: &'static str = "BitLogProjectView";
         type Type = super::ProjectView;
         type ParentType = adw::NavigationPage;
 
@@ -238,7 +238,7 @@ impl ProjectView {
             .repo_paths()
             .map(|mut repos| repos.remove(&project.slug))
             .unwrap_or_else(|err| {
-                glib::g_warning!("knotbook", "{err}");
+                glib::g_warning!("bitlog", "{err}");
                 None
             });
         let git = imp.view_stack.visible_child_name().as_deref() == Some("git");
@@ -331,7 +331,7 @@ impl ProjectView {
                 }
                 match data {
                     Ok(data) => view.show_data(&vault, &project, data, today),
-                    Err(err) => glib::g_warning!("knotbook", "{err}"),
+                    Err(err) => glib::g_warning!("bitlog", "{err}"),
                 }
                 // After the activity, which marks the days of commits.
                 view.clear_commits();
@@ -473,7 +473,7 @@ impl ProjectView {
                 }
                 match blocks {
                     Ok(blocks) => view.add_blocks(blocks, Local::now().date_naive()),
-                    Err(err) => glib::g_warning!("knotbook", "{err}"),
+                    Err(err) => glib::g_warning!("bitlog", "{err}"),
                 }
             }
         ));
@@ -511,7 +511,7 @@ impl ProjectView {
             Ok(watcher) => {
                 imp.repo_watcher.replace(Some(watcher));
             }
-            Err(err) => glib::g_warning!("knotbook", "{err}"),
+            Err(err) => glib::g_warning!("bitlog", "{err}"),
         }
     }
 
@@ -923,7 +923,7 @@ fn block_row(block: &ProjectBlock, today: NaiveDate) -> adw::ActionRow {
 pub fn note_text(vault: &Vault, note: &NotePath) -> String {
     vault.load_note(note).map_or_else(
         |err| {
-            glib::g_warning!("knotbook", "{err}");
+            glib::g_warning!("bitlog", "{err}");
             String::new()
         },
         |file| file.text,

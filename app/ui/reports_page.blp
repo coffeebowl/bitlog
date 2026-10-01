@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookReportsPage: Adw.NavigationPage {
+template $BitLogReportsPage: Adw.NavigationPage {
   title: _("Reports");
 
   child: Adw.BreakpointBin {
@@ -128,7 +128,7 @@ template $KnotbookReportsPage: Adw.NavigationPage {
           title: _("Time per Category");
           description: _("Project categories, breaks left out");
 
-          $KnotbookShareBar category_bar {
+          $BitLogShareBar category_bar {
             margin-top: 12;
           }
         }
@@ -140,7 +140,7 @@ template $KnotbookReportsPage: Adw.NavigationPage {
             vscrollbar-policy: never;
             propagate-natural-height: true;
 
-            child: $KnotbookHeatmap heatmap {
+            child: $BitLogHeatmap heatmap {
               halign: start;
               margin-bottom: 6;
             };

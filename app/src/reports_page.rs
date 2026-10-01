@@ -4,11 +4,11 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{Period, Vault};
+use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
-use knotbook_core::{Period, Vault};
-use knotbook_index::export;
 
 use crate::alert::show_error;
 use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot, sea_green};
@@ -36,7 +36,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/reports_page.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/reports_page.ui")]
     pub struct ReportsPage {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub index: RefCell<SearchIndex>,
@@ -66,7 +66,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for ReportsPage {
-        const NAME: &'static str = "KnotbookReportsPage";
+        const NAME: &'static str = "BitLogReportsPage";
         type Type = super::ReportsPage;
         type ParentType = adw::NavigationPage;
 
@@ -170,7 +170,7 @@ impl ReportsPage {
                 }
                 match data {
                     Ok(data) => page.show_data(&vault, data, year),
-                    Err(err) => glib::g_warning!("knotbook", "{err}"),
+                    Err(err) => glib::g_warning!("bitlog", "{err}"),
                 }
             }
         ));
@@ -221,7 +221,7 @@ impl ReportsPage {
                             None::<&gio::Cancellable>,
                             |result| {
                                 if let Err(err) = result {
-                                    glib::g_warning!("knotbook", "{err}");
+                                    glib::g_warning!("bitlog", "{err}");
                                 }
                             },
                         );

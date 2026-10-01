@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=BitLog
+Comment=Keep a daily log of your work
+# Translators: Search terms to find this application. Do not translate or localize the semicolons. The list must also end with a semicolon.
+Keywords=log;journal;diary;timesheet;time;notes;developer;
+Exec=bitlog-gtk
+Icon=dev.bitlog.BitLog
+Terminal=false
+Type=Application
+Categories=Development;Utility;
+StartupNotify=true

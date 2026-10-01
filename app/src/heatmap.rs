@@ -3,10 +3,10 @@ use std::collections::BTreeMap;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::week_start;
 use chrono::{Datelike, Days, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{gdk, glib, graphene, gsk};
-use knotbook_core::week_start;
 
 use crate::colors::with_alpha;
 use crate::format::{format_date, format_duration, format_full_date};
@@ -63,7 +63,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for Heatmap {
-        const NAME: &'static str = "KnotbookHeatmap";
+        const NAME: &'static str = "BitLogHeatmap";
         type Type = super::Heatmap;
         type ParentType = gtk::Widget;
 

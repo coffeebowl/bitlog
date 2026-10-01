@@ -9,7 +9,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/standup_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/standup_dialog.ui")]
     pub struct StandupDialog {
         #[template_child]
         pub toast_overlay: TemplateChild<adw::ToastOverlay>,
@@ -21,7 +21,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for StandupDialog {
-        const NAME: &'static str = "KnotbookStandupDialog";
+        const NAME: &'static str = "BitLogStandupDialog";
         type Type = super::StandupDialog;
         type ParentType = adw::Dialog;
 

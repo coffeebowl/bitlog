@@ -3,10 +3,10 @@ use std::path::PathBuf;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::{ChangedFile, CommitDetails, FileChange, git_file_diff};
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
 use gettextrs::{gettext, ngettext};
 use gtk::{gio, glib};
-use knotbook_core::{ChangedFile, CommitDetails, FileChange, git_file_diff};
 use sourceview5::prelude::*;
 
 use crate::format::{format_full_date, format_time};
@@ -22,7 +22,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/commit_dialog.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/commit_dialog.ui")]
     pub struct CommitDialog {
         /// The repository of the commit.
         pub repo: RefCell<PathBuf>,
@@ -58,7 +58,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for CommitDialog {
-        const NAME: &'static str = "KnotbookCommitDialog";
+        const NAME: &'static str = "BitLogCommitDialog";
         type Type = super::CommitDialog;
         type ParentType = adw::Dialog;
 

@@ -4,14 +4,14 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::{Local, NaiveDate, TimeDelta};
-use gettextrs::{gettext, ngettext};
-use gtk::{gio, glib};
-use knotbook_core::{
+use bitlog_core::{
     BlockId, ConflictCopy, NotePath, ProjectSlug, ProjectStatus, ReadError, TaskId, Vault,
     VaultChange, VaultWatcher, WatchError,
 };
-use knotbook_index::Found;
+use bitlog_index::Found;
+use chrono::{Local, NaiveDate, TimeDelta};
+use gettextrs::{gettext, ngettext};
+use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::calendar_view::CalendarView;
@@ -69,7 +69,7 @@ mod imp {
     use super::*;
 
     #[derive(Debug, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/knotbook/Knotbook/window.ui")]
+    #[template(resource = "/dev/bitlog/BitLog/window.ui")]
     pub struct Window {
         pub settings: gio::Settings,
         #[template_child]
@@ -156,7 +156,7 @@ mod imp {
 
     #[glib::object_subclass]
     impl ObjectSubclass for Window {
-        const NAME: &'static str = "KnotbookWindow";
+        const NAME: &'static str = "BitLogWindow";
         type Type = super::Window;
         type ParentType = adw::ApplicationWindow;
 
@@ -447,7 +447,7 @@ impl Window {
     fn create_vault_in(&self, path: &Path) {
         let name = path
             .file_name()
-            .map_or("Knotbook".into(), |name| name.to_string_lossy());
+            .map_or("BitLog".into(), |name| name.to_string_lossy());
         match Vault::create(path, &name, Local::now().date_naive()) {
             Ok(_) => self.open_vault(path),
             Err(err) => show_error(self, &gettext("Cannot Create Vault"), &err.to_string()),
@@ -494,7 +494,7 @@ impl Window {
         let indexed = vault.clone();
         glib::spawn_future_local(async move {
             if let Err(err) = index.update(&indexed).await {
-                glib::g_warning!("knotbook", "{err}");
+                glib::g_warning!("bitlog", "{err}");
             }
         });
         // The watcher tells its own writes apart through the vault it
@@ -594,7 +594,7 @@ impl Window {
                 self.check_conflicts();
             }
             // Watching goes on, a later change may be seen again.
-            Err(err) => glib::g_warning!("knotbook", "{err}"),
+            Err(err) => glib::g_warning!("bitlog", "{err}"),
         }
     }
 
@@ -610,7 +610,7 @@ impl Window {
         let copies = match vault.conflict_copies() {
             Ok(copies) => copies,
             Err(err) => {
-                glib::g_warning!("knotbook", "{err}");
+                glib::g_warning!("bitlog", "{err}");
                 Vec::new()
             }
         };
@@ -628,9 +628,9 @@ impl Window {
                     self.show_changes(std::slice::from_ref(&copy.of));
                 }
                 Ok(false) => open.push(copy),
-                // An unreadable copy cannot be resolved here; `knotbook
+                // An unreadable copy cannot be resolved here; `bitlog
                 // doctor` names it.
-                Err(err) => glib::g_warning!("knotbook", "{err}"),
+                Err(err) => glib::g_warning!("bitlog", "{err}"),
             }
         }
         let count = u32::try_from(open.len()).unwrap_or(u32::MAX);

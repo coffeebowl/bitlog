@@ -1,6 +1,6 @@
 gnome.compile_resources(
-  'knotbook',
-  'knotbook.gresource.xml',
+  'bitlog',
+  'bitlog.gresource.xml',
   gresource_bundle: true,
   source_dir: meson.project_build_root() / 'app' / 'ui',
   dependencies: blueprints,
@@ -44,7 +44,7 @@ test(
 test(
   'validate-metainfo',
   find_program('appstreamcli'),
-  # There is no homepage yet. Remove the override once knotbook.dev is online.
+  # There is no homepage yet. Remove the override once bitlog.dev is online and linked here.
   args: [
     'validate', '--no-net', '--explain',
     '--override=url-homepage-missing=info',

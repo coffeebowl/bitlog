@@ -1,7 +1,7 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $KnotbookConflictDialog: Adw.Dialog {
+template $BitLogConflictDialog: Adw.Dialog {
   title: _("Note Changed Elsewhere");
   content-width: 900;
   content-height: 600;
@@ -59,7 +59,7 @@ template $KnotbookConflictDialog: Adw.Dialog {
             vexpand: true;
             hscrollbar-policy: never;
 
-            child: $KnotbookMarkdownView mine {
+            child: $BitLogMarkdownView mine {
               full: true;
               top-margin: 12;
               bottom-margin: 12;
@@ -99,7 +99,7 @@ template $KnotbookConflictDialog: Adw.Dialog {
             vexpand: true;
             hscrollbar-policy: never;
 
-            child: $KnotbookMarkdownView theirs {
+            child: $BitLogMarkdownView theirs {
               full: true;
               top-margin: 12;
               bottom-margin: 12;
