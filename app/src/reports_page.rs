@@ -4,14 +4,14 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Period, Vault};
+use bitlog_core::{Period, ProjectSlug, Vault};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
 
 use crate::alert::show_error;
-use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot, sea_green};
+use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot, lightness, mix, sea_green};
 use crate::format::{capitalize, format_date, format_duration, format_share, format_short_date};
 use crate::heatmap::Heatmap;
 use crate::search_index::{ReportData, SearchIndex};
@@ -23,6 +23,11 @@ const CATEGORY_COLORS: [&str; 9] = [
     "#3584e4", "#2190a4", "#3a944a", "#c88800", "#ed5b00", "#e62d42", "#d56199", "#9141ac",
     "#6f8396",
 ];
+
+/// The size of a day in the heatmap of a year, and the most it grows to in
+/// the single row of a week or month.
+const HEATMAP_CELL: f32 = 8.0;
+const HEATMAP_ROW_CELL: f32 = 32.0;
 
 /// What the export menu offers.
 #[derive(Debug, Clone, Copy)]
@@ -58,8 +63,6 @@ mod imp {
         pub categories_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub category_bar: TemplateChild<ShareBar>,
-        #[template_child]
-        pub year_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub heatmap: TemplateChild<Heatmap>,
     }
@@ -150,13 +153,16 @@ impl ReportsPage {
     pub fn reload(&self) {
         let imp = self.imp();
         let vault = imp.vault.borrow().clone().expect("reports need a vault");
-        let date = self.date();
         let period = self.range(&vault);
         self.show_title(period);
         // A report covers one week.
         self.action_set_enabled("reports.export-week", self.period() == Period::Week);
-        let year = Period::Year.range(date, vault.config().week.first_day);
-        imp.year_group.set_title(&date.year().to_string());
+        // A year in a column per week, a week or month in a single row with
+        // the days as big as the width allows.
+        let year = self.period() == Period::Year;
+        imp.heatmap.set_single_row(!year);
+        imp.heatmap
+            .set_cell_size(if year { HEATMAP_CELL } else { HEATMAP_ROW_CELL });
         let lookup = imp.lookups.get() + 1;
         imp.lookups.set(lookup);
         let index = imp.index.borrow().clone();
@@ -164,12 +170,12 @@ impl ReportsPage {
             #[weak(rename_to = page)]
             self,
             async move {
-                let data = index.report(&vault, period, year).await;
+                let data = index.report(&vault, period).await;
                 if page.imp().lookups.get() != lookup {
                     return;
                 }
                 match data {
-                    Ok(data) => page.show_data(&vault, data, year),
+                    Ok(data) => page.show_data(&vault, data, period),
                     Err(err) => glib::g_warning!("bitlog", "{err}"),
                 }
             }
@@ -275,7 +281,7 @@ impl ReportsPage {
         }
     }
 
-    fn show_data(&self, vault: &Vault, data: ReportData, year: (NaiveDate, NaiveDate)) {
+    fn show_data(&self, vault: &Vault, data: ReportData, period: (NaiveDate, NaiveDate)) {
         let imp = self.imp();
         for (group, row) in imp.rows.take() {
             group.remove(&row);
@@ -342,16 +348,52 @@ impl ReportsPage {
         }
         imp.rows.replace(rows);
 
-        let mut days = BTreeMap::<NaiveDate, TimeDelta>::new();
-        for (date, slug, time) in &data.year {
+        // Each day in the colors of its projects, mixed by the time spent on
+        // them, all as light as the projects are on average, so that only
+        // the time makes a day stand out.
+        let lightness = average_lightness(vault);
+        let mut days = BTreeMap::<NaiveDate, Vec<(gdk::RGBA, TimeDelta)>>::new();
+        for (date, slug, time) in &data.days {
             if !vault.is_break(slug) {
-                *days.entry(*date).or_default() += *time;
+                days.entry(*date)
+                    .or_default()
+                    .push((project_color(vault, slug), *time));
             }
         }
-        let days: Vec<(NaiveDate, TimeDelta)> = days.into_iter().collect();
-        let green = sea_green();
+        let days = days.into_iter().map(|(date, parts)| {
+            let time = parts.iter().map(|(_, time)| *time).sum();
+            let parts: Vec<_> = parts
+                .into_iter()
+                .map(|(color, time)| (color, time.num_minutes() as f32))
+                .collect();
+            (date, time, mix(&parts, lightness))
+        });
         imp.heatmap
-            .show(&days, green, year, vault.config().week.first_day);
+            .show(days, period, vault.config().week.first_day);
+    }
+}
+
+/// The color of the project `slug`, gray for one the vault does not know.
+fn project_color(vault: &Vault, slug: &ProjectSlug) -> gdk::RGBA {
+    let color = vault
+        .project(slug)
+        .map_or(UNKNOWN_PROJECT_COLOR, |project| project.color.as_str());
+    gdk::RGBA::parse(color).expect("project colors are valid")
+}
+
+/// How light the colors of the projects of `vault` are on average, breaks
+/// left out.
+fn average_lightness(vault: &Vault) -> f32 {
+    let lightnesses: Vec<f32> = vault
+        .projects()
+        .iter()
+        .filter(|project| !project.is_break())
+        .map(|project| lightness(&project_color(vault, &project.slug)))
+        .collect();
+    if lightnesses.is_empty() {
+        lightness(&sea_green())
+    } else {
+        lightnesses.iter().sum::<f32>() / lightnesses.len() as f32
     }
 }
 

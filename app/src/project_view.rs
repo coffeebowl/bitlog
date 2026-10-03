@@ -427,8 +427,7 @@ impl ProjectView {
         imp.activity.replace(activity.iter().copied().collect());
         let color = gdk::RGBA::parse(project.color.as_str()).expect("project colors are valid");
         imp.heatmap.show(
-            activity,
-            color,
+            activity.iter().map(|(date, time)| (*date, *time, color)),
             Heatmap::last_days(today, ACTIVITY_DAYS),
             first_day,
         );

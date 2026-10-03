@@ -31,8 +31,8 @@ pub struct Activity {
     /// The first and last day shown.
     first: NaiveDate,
     last: NaiveDate,
-    days: BTreeMap<NaiveDate, TimeDelta>,
-    color: gdk::RGBA,
+    /// The time spent on a day, and its color.
+    days: BTreeMap<NaiveDate, (TimeDelta, gdk::RGBA)>,
 }
 
 mod imp {
@@ -172,10 +172,9 @@ mod imp {
                     snapshot.append_layout(&layout, &with_alpha(&widget.color(), 0.6));
                     snapshot.restore();
                 }
-                let time = activity.days.get(&date).copied().unwrap_or_default();
-                let color = match level(time) {
-                    0.0 => empty,
-                    alpha => with_alpha(&activity.color, alpha),
+                let color = match activity.days.get(&date) {
+                    Some((time, color)) if level(*time) > 0.0 => with_alpha(color, level(*time)),
+                    _ => empty,
                 };
                 let cell = gsk::RoundedRect::from_rect(
                     graphene::Rect::new(x, y, cell_size, cell_size),
@@ -213,12 +212,11 @@ impl Heatmap {
         (today - Days::new(days - 1), today)
     }
 
-    /// Shows `days`, the time spent per day, in `color`, from `first` to
-    /// `last`, with weeks starting on `first_day`.
+    /// Shows `days`, the time spent per day and the color of the day, from
+    /// `first` to `last`, with weeks starting on `first_day`.
     pub fn show(
         &self,
-        days: &[(NaiveDate, TimeDelta)],
-        color: gdk::RGBA,
+        days: impl IntoIterator<Item = (NaiveDate, TimeDelta, gdk::RGBA)>,
         (first, last): (NaiveDate, NaiveDate),
         first_day: Weekday,
     ) {
@@ -228,11 +226,10 @@ impl Heatmap {
             first,
             last,
             days: days
-                .iter()
-                .copied()
-                .filter(|(date, _)| (first..=last).contains(date))
+                .into_iter()
+                .filter(|(date, ..)| (first..=last).contains(date))
+                .map(|(date, time, color)| (date, (time, color)))
                 .collect(),
-            color,
         }));
         self.queue_resize();
         self.queue_draw();
@@ -338,8 +335,8 @@ impl Heatmap {
             let (left, top) = self.origin(activity, *date, width);
             (left..left + cell).contains(&x) && (top..top + cell).contains(&y)
         })?;
-        let time = activity.days.get(&date).copied().unwrap_or_default();
-        Some((date, time))
+        let time = activity.days.get(&date).map(|(time, _)| *time);
+        Some((date, time.unwrap_or_default()))
     }
 }
 
