@@ -5,7 +5,7 @@ use adw::subclass::prelude::*;
 use gtk::{glib, gsk};
 
 /// The width the child is laid out at, as the width of a page.
-const PAGE_WIDTH: f32 = 480.0;
+const PAGE_WIDTH: f32 = 540.0;
 /// The height of a page in portrait to its width, as A4 has.
 const PORTRAIT: f32 = std::f32::consts::SQRT_2;
 /// The width a miniature asks for.

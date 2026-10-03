@@ -28,6 +28,7 @@ use sourceview5::subclass::prelude::*;
 
 use self::check_boxes::CheckBox;
 use self::code_highlight::CodeHighlighter;
+pub use self::code_highlight::{Highlighting, Themes, themes};
 use self::decorations::Decorations;
 use self::diagrams::Diagrams;
 use self::styling::Styling;

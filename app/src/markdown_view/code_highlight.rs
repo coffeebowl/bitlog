@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::{LazyLock, Once};
+use std::sync::{Arc, LazyLock, Once};
 
 use bitlog_core::CodeBlock;
 use gtk::glib::translate::IntoGlib;
@@ -186,7 +186,8 @@ impl CodeHighlighter {
         if let Some(spans) = self.cache.borrow().get(&key) {
             return spans.clone();
         }
-        let spans: Rc<[Span]> = if let Some(spans) = self.syntect_spans(language, code) {
+        let theme = self.theme.borrow();
+        let spans: Rc<[Span]> = if let Some(spans) = syntect_spans(&theme, language, code) {
             spans.into()
         } else if let Some(buffer) = self.buffer(language) {
             buffer_spans(&buffer, code).into()
@@ -199,35 +200,6 @@ impl CodeHighlighter {
         }
         cache.insert(key, spans.clone());
         spans
-    }
-
-    /// Highlights `code` by syntect, if it knows `language`.
-    fn syntect_spans(&self, language: &str, code: &str) -> Option<Vec<Span>> {
-        let syntaxes = &*SYNTAXES;
-        let language = match language.to_lowercase().as_str() {
-            "console" | "shell" | "zsh" => "bash".to_owned(),
-            language => language.to_owned(),
-        };
-        let syntax = syntaxes.find_syntax_by_token(&language)?;
-        let theme = self.theme.borrow();
-        let mut highlighter = HighlightLines::new(syntax, &theme);
-        let mut spans = Vec::new();
-        let mut offset = 0;
-        for line in LinesWithEndings::from(code) {
-            // Only broken grammars fail, which then leave the rest as it is.
-            let Ok(parts) = highlighter.highlight_line(line, syntaxes) else {
-                break;
-            };
-            for (style, part) in parts {
-                let length = i32::try_from(part.chars().count()).unwrap_or(i32::MAX);
-                let look = Look::from_syntect(style);
-                if look != Look::default() {
-                    spans.push((offset..offset + length, look));
-                }
-                offset += length;
-            }
-        }
-        Some(spans)
     }
 
     fn buffer(&self, language: &str) -> Option<sourceview5::Buffer> {
@@ -290,6 +262,119 @@ fn theme(scheme: &sourceview5::StyleScheme) -> Theme {
         scopes: items.collect(),
         ..Theme::default()
     }
+}
+
+thread_local! {
+    static THEMES: Themes = Themes(Arc::new([false, true].map(|dark| {
+        let name = if dark { "Adwaita-dark" } else { "Adwaita" };
+        sourceview5::StyleSchemeManager::default()
+            .scheme(name)
+            .as_ref()
+            .map(theme)
+            .unwrap_or_default()
+    })));
+}
+
+/// The colours of the light and the dark style scheme, to highlight text
+/// outside Markdown views in any thread.
+#[derive(Debug, Clone)]
+pub struct Themes(Arc<[Theme; 2]>);
+
+/// The themes, made once in the main thread, which alone may read the
+/// style schemes.
+pub fn themes() -> Themes {
+    THEMES.with(Themes::clone)
+}
+
+impl Themes {
+    /// Highlights `code` in `language`, named as in code blocks or by a file
+    /// extension, by syntect alone, so that it can run in the background.
+    /// `None` if syntect does not know the language.
+    pub fn highlight(&self, language: &str, code: &str) -> Option<Highlighting> {
+        let [light, dark] = &*self.0;
+        Some(Highlighting([
+            syntect_spans(light, language, code)?,
+            syntect_spans(dark, language, code)?,
+        ]))
+    }
+}
+
+/// The parts of a text that stand out, in light and in dark colours.
+#[derive(Debug)]
+pub struct Highlighting([Vec<Span>; 2]);
+
+impl Highlighting {
+    /// Pango attributes for `code`, the text highlighted, in the light or
+    /// `dark` colours.
+    pub fn attributes(&self, code: &str, dark: bool) -> pango::AttrList {
+        // Spans count characters, Pango bytes.
+        let mut bytes: Vec<u32> = code
+            .char_indices()
+            .map(|(byte, _)| u32::try_from(byte).unwrap_or(u32::MAX))
+            .collect();
+        bytes.push(u32::try_from(code.len()).unwrap_or(u32::MAX));
+        let byte = |offset: i32| {
+            bytes[usize::try_from(offset)
+                .unwrap_or_default()
+                .min(bytes.len() - 1)]
+        };
+        let attributes = pango::AttrList::new();
+        for (range, look) in &self.0[usize::from(dark)] {
+            let add = |mut attribute: pango::Attribute| {
+                attribute.set_start_index(byte(range.start));
+                attribute.set_end_index(byte(range.end));
+                attributes.insert(attribute);
+            };
+            if let Some(color) = look.foreground {
+                let channel = |value: f32| (value * 65535.0).round() as u16;
+                add(pango::AttrColor::new_foreground(
+                    channel(color.red()),
+                    channel(color.green()),
+                    channel(color.blue()),
+                )
+                .upcast());
+            }
+            // Schemes only make text bold.
+            if look
+                .weight
+                .is_some_and(|weight| weight >= pango::Weight::Semibold.into_glib())
+            {
+                add(pango::AttrInt::new_weight(pango::Weight::Bold).upcast());
+            }
+            if let Some(style) = look.style {
+                add(pango::AttrInt::new_style(style).upcast());
+            }
+        }
+        attributes
+    }
+}
+
+/// Highlights `code` by syntect, if it knows `language`.
+fn syntect_spans(theme: &Theme, language: &str, code: &str) -> Option<Vec<Span>> {
+    let syntaxes = &*SYNTAXES;
+    let language = match language.to_lowercase().as_str() {
+        "console" | "shell" | "zsh" => "bash".to_owned(),
+        language => language.to_owned(),
+    };
+    let syntax = syntaxes.find_syntax_by_token(&language)?;
+    let mut highlighter = HighlightLines::new(syntax, theme);
+    let mut spans = Vec::new();
+    let mut offset = 0;
+    for line in LinesWithEndings::from(code) {
+        // Only broken grammars fail, which then leave the rest as it is.
+        let Ok(parts) = highlighter.highlight_line(line, syntaxes) else {
+            break;
+        };
+        for (style, part) in parts {
+            let length = i32::try_from(part.chars().count()).unwrap_or(i32::MAX);
+            let look = Look::from_syntect(style);
+            if look != Look::default() {
+                spans.push((offset..offset + length, look));
+            }
+            offset += length;
+        }
+    }
+    Some(spans)
 }
 
 /// Highlights `code` in `buffer`, right away instead of when idle.

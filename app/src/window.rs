@@ -211,8 +211,10 @@ mod imp {
                 window.imp().notes_page.show_overview();
             });
             klass.install_action("win.show-projects", None, |window, _, _| {
-                window.show_projects();
+                // First, so that reloading does not build the project left
+                // once more.
                 window.imp().projects_page.show_overview();
+                window.show_projects();
                 window.select_project_row();
             });
             klass.install_action(
@@ -222,8 +224,12 @@ mod imp {
                     let slug: ProjectSlug = slug
                         .and_then(|slug| slug.str()?.parse().ok())
                         .expect("projects are passed as their slug");
-                    window.show_projects();
-                    window.imp().projects_page.open_project(&slug);
+                    // Without reloading the page first, which would show the
+                    // project open before once more.
+                    window.save_texts_now();
+                    let imp = window.imp();
+                    window.show_page(&imp.projects_page, &imp.projects_row);
+                    imp.projects_page.open_project(&slug);
                     window.select_project_row();
                 },
             );

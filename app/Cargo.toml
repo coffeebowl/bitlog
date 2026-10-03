@@ -17,3 +17,5 @@ resvg = { version = "0.47.0", default-features = false, features = ["memmap-font
 sourceview5 = "0.11.2"
 syntect = { version = "5.3.0", default-features = false, features = ["parsing", "regex-fancy"] }
 two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }
+zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
+poppler-rs = "0.26"

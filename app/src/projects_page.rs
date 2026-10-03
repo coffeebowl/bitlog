@@ -244,13 +244,11 @@ impl ProjectsPage {
 
     /// The project open, alone or below one of its notes, if any.
     pub fn shown_project(&self) -> Option<ProjectSlug> {
-        let imp = self.imp();
-        // Unlike `find_page()`, the stack leaves out a page while it is
-        // popped with an animation.
-        let project_view: &glib::Object = imp.project_view.upcast_ref();
-        let stack = imp.nav.navigation_stack();
-        let shown = (0..stack.n_items()).any(|i| stack.item(i).as_ref() == Some(project_view));
-        if shown { imp.project_view.slug() } else { None }
+        if self.shows("project") {
+            self.imp().project_view.slug()
+        } else {
+            None
+        }
     }
 
     /// Saves the note being typed, if there are unsaved changes.
@@ -595,9 +593,14 @@ impl ProjectsPage {
         }
     }
 
-    /// Whether the page with `tag` is in the navigation view.
+    /// Whether the page with `tag` is in the navigation view. Unlike
+    /// `find_page()`, a page on its way out is not, so that it is not built
+    /// again while going back.
     fn shows(&self, tag: &str) -> bool {
-        self.imp().nav.find_page(tag).is_some()
+        let stack = self.imp().nav.navigation_stack();
+        (0..stack.n_items())
+            .filter_map(|i| stack.item(i).and_downcast::<adw::NavigationPage>())
+            .any(|page| page.tag().as_deref() == Some(tag))
     }
 
     /// Shows the project open with its notes as they are now, and marks the

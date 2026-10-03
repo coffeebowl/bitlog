@@ -33,13 +33,13 @@ with `flatpak install --user --reinstall`.
 
 ## Building
 
-BitLog is written in Rust (stable). The app needs GTK 4.22, libadwaita 1.9
-and GtkSourceView 5.20 or newer, and is built with Meson and Blueprint. On
-Fedora:
+BitLog is written in Rust (stable). The app needs GTK 4.22, libadwaita 1.9,
+GtkSourceView 5.20 or newer and poppler-glib, and is built with Meson and
+Blueprint. On Fedora:
 
 ```sh
-sudo dnf install gtk4-devel libadwaita-devel gtksourceview5-devel meson ninja-build \
-  blueprint-compiler gettext desktop-file-utils appstream
+sudo dnf install gtk4-devel libadwaita-devel gtksourceview5-devel poppler-glib-devel \
+  meson ninja-build blueprint-compiler gettext desktop-file-utils appstream
 ```
 
 Cargo alone is enough for checks and tests:

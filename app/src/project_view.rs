@@ -13,9 +13,10 @@ use bitlog_core::{
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
-use gtk::{gdk, gdk_pixbuf, gio, glib};
+use gtk::{gdk, gio, glib};
 
 use crate::alert::show_error;
+use crate::asset_preview::asset_page;
 use crate::commit_dialog::CommitDialog;
 use crate::format::{
     format_duration, format_full_date, format_share, format_time, format_weekday_date,
@@ -38,16 +39,6 @@ const COMMITS_AT_ONCE: usize = 50;
 
 /// The lines of a note its miniature formats at most, more than fit.
 const PREVIEW_LINES: usize = 50;
-
-/// The size of the icon on the page of an asset.
-const ASSET_ICON_SIZE: i32 = 48;
-
-/// The size an image is read at for its miniature, enough to cover a page.
-const ASSET_PAGE_SIZE: i32 = 720;
-
-/// The largest image, in bytes, that its miniature shows. Larger ones show
-/// the icon of their type, as reading them would take too long.
-const MAX_IMAGE_PREVIEW_SIZE: u64 = 50_000_000;
 
 mod imp {
     use super::*;
@@ -1134,108 +1125,22 @@ fn not_local() -> String {
     gettext("The file is not on a local file system.")
 }
 
-/// An asset in the grid: the miniature of a square page with an icon for
-/// its type or, for an image, the image, above its name, folder and size,
-/// and menu. The grid opens it when activated.
+/// An asset in the grid: its page, above its name, folder and size, and
+/// menu. The grid opens it when activated.
 fn asset_card(vault: &Vault, asset: &Asset) -> gtk::FlowBoxChild {
     let path = &asset.path;
-    let (content_type, _) = gio::content_type_guess(Some(path.name()), None);
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    // Above the page, not on it, so that it is not scaled down with it.
-    let icon = gtk::Image::builder()
-        .gicon(&gio::content_type_get_symbolic_icon(&content_type))
-        .pixel_size(ASSET_ICON_SIZE)
-        .halign(gtk::Align::Center)
-        .valign(gtk::Align::Center)
-        .css_classes(["dim-label"])
-        .build();
-    let page = gtk::Overlay::builder()
-        .child(&Miniature::square(&content))
-        .overflow(gtk::Overflow::Hidden)
-        .build();
-    page.add_overlay(&icon);
-    let is_image = gio::content_type_get_mime_type(&content_type)
-        .is_some_and(|mime_type| mime_type.starts_with("image/"));
-    if is_image && asset.size <= MAX_IMAGE_PREVIEW_SIZE {
-        show_image(&content, &icon, vault.asset_path(path));
-    }
-
     let mut details = vec![glib::format_size(asset.size).to_string()];
     if !path.folder().is_empty() {
         details.insert(0, path.folder().to_owned());
     }
     page_card(
-        &page,
+        &asset_page(vault, asset),
         path.name(),
         path.path(),
         Some(&gtk::Label::new(Some(&details.join(" · ")))),
         &gettext("File Menu"),
         &asset_menu(path),
     )
-}
-
-/// Reads the image at `path` in the background, at most as large as a
-/// page, then shows it in `content` instead of `icon`. If the image cannot
-/// be read, the icon stays.
-fn show_image(content: &gtk::Box, icon: &gtk::Image, path: PathBuf) {
-    glib::spawn_future_local(glib::clone!(
-        #[weak]
-        content,
-        #[weak]
-        icon,
-        async move {
-            let image = gio::spawn_blocking(move || read_image(&path))
-                .await
-                .expect("reading an image does not panic");
-            let Some(image) = image else {
-                return;
-            };
-            let texture = gdk::MemoryTexture::new(
-                image.width,
-                image.height,
-                image.format,
-                &image.pixels,
-                image.stride,
-            );
-            icon.set_visible(false);
-            content.append(
-                &gtk::Picture::builder()
-                    .paintable(&texture)
-                    .content_fit(gtk::ContentFit::Cover)
-                    .vexpand(true)
-                    .build(),
-            );
-        }
-    ));
-}
-
-/// An image as read, to be shown in the main thread.
-struct Image {
-    width: i32,
-    height: i32,
-    format: gdk::MemoryFormat,
-    pixels: glib::Bytes,
-    /// The bytes from one row to the next.
-    stride: usize,
-}
-
-/// The image at `path`, upright and at most as large as a page, or `None`
-/// if it cannot be read.
-fn read_image(path: &Path) -> Option<Image> {
-    let size = ASSET_PAGE_SIZE;
-    let pixbuf = gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true).ok()?;
-    let pixbuf = pixbuf.apply_embedded_orientation().unwrap_or(pixbuf);
-    Some(Image {
-        width: pixbuf.width(),
-        height: pixbuf.height(),
-        format: if pixbuf.has_alpha() {
-            gdk::MemoryFormat::R8g8b8a8
-        } else {
-            gdk::MemoryFormat::R8g8b8
-        },
-        pixels: pixbuf.read_pixel_bytes(),
-        stride: usize::try_from(pixbuf.rowstride()).ok()?,
-    })
 }
 
 /// Opening `asset` with another app, showing it in its folder, renaming it
