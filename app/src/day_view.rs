@@ -124,6 +124,7 @@ mod imp {
             klass.install_action("day.new-block", None, |view, _, _| view.new_block());
             klass.install_action("day.standup", None, |view, _, _| view.show_standup());
             klass.install_action("day.delete-block", None, |view, _, _| view.delete_block());
+            klass.install_action("day.delete", None, |view, _, _| view.delete_day());
             klass.install_action("day.set-block-time", None, |view, _, _| {
                 let imp = view.imp();
                 let id = imp
@@ -244,11 +245,13 @@ impl DayView {
             Ok(None) => {
                 imp.file.replace(None);
                 self.action_set_enabled("day.new-block", false);
+                self.action_set_enabled("day.delete", false);
                 imp.stack.set_visible_child_name("empty");
             }
             Err(err) => {
                 imp.file.replace(None);
                 self.action_set_enabled("day.new-block", false);
+                self.action_set_enabled("day.delete", false);
                 imp.error_page
                     .set_description(Some(&glib::markup_escape_text(&err.to_string())));
                 imp.stack.set_visible_child_name("error");
@@ -286,6 +289,7 @@ impl DayView {
     fn show_day(&self, file: DayFile) {
         let imp = self.imp();
         self.action_set_enabled("day.new-block", true);
+        self.action_set_enabled("day.delete", true);
         self.show_details(&file.day);
         let is_today = file.day.date == Local::now().date_naive();
         imp.timeline.set_day(&self.vault(), &file.day, is_today);
@@ -783,6 +787,43 @@ impl DayView {
                         _ => return,
                     };
                     view.update(|day| day.remove_block(&id, text));
+                }
+            ),
+        );
+        dialog.present(Some(self));
+    }
+
+    /// Deletes the file of the day shown, after asking.
+    fn delete_day(&self) {
+        let date = self.date();
+        let dialog = adw::AlertDialog::new(
+            Some(&gettext("Delete Day?")),
+            Some(
+                &gettext("{date} will be permanently deleted, with its blocks and note")
+                    .replace("{date}", &format_full_date(date)),
+            ),
+        );
+        dialog.add_responses(&[
+            ("cancel", &gettext("_Cancel")),
+            ("delete", &gettext("_Delete")),
+        ]);
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        dialog.connect_response(
+            Some("delete"),
+            glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                move |_, _| {
+                    // What is being typed goes with the day.
+                    if let Some(source) = view.imp().text_save.take() {
+                        source.remove();
+                    }
+                    if let Err(err) = view.vault().delete_day(date) {
+                        show_error(&view, &gettext("Cannot Delete Day"), &err.to_string());
+                    }
+                    view.show_date(date);
                 }
             ),
         );

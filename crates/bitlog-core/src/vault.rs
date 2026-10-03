@@ -230,6 +230,18 @@ impl Vault {
         Ok(saved)
     }
 
+    /// Deletes the file of the day `date` for good, if there is one.
+    pub fn delete_day(&self, date: NaiveDate) -> Result<(), SaveError> {
+        let path = self.day_path(date);
+        self.record_write(&path, None);
+        match fs::remove_file(&path) {
+            Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+                Err(SaveError::Write { path, source: err })
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Saves the new project `project` and adds it to the vault.
     pub fn add_project(&mut self, project: Project) -> Result<&Project, SaveError> {
         let path = Project::path(&self.root, &project.slug);
@@ -662,6 +674,15 @@ mod tests {
             vault.load_day(date(2026, 9, 21)).unwrap().unwrap().day,
             again.day
         );
+    }
+
+    #[test]
+    fn delete_day() {
+        let (_dir, vault) = sample_copy();
+        vault.delete_day(date(2026, 9, 21)).unwrap();
+        assert!(vault.load_day(date(2026, 9, 21)).unwrap().is_none());
+        assert!(vault.load_day(date(2026, 9, 22)).unwrap().is_some());
+        vault.delete_day(date(2026, 9, 21)).unwrap();
     }
 
     #[test]

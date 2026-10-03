@@ -73,11 +73,11 @@ pub async fn confirm_create(
     dialog.choose_future(Some(parent)).await == "create"
 }
 
-/// Asks whether the note `note` should be deleted for good.
+/// Asks whether the note `note` should be permanently deleted.
 pub async fn confirm_delete(parent: &impl IsA<gtk::Widget>, note: &NotePath) -> bool {
     let dialog = adw::AlertDialog::builder()
         .heading(gettext("Delete Note?"))
-        .body(gettext("“{name}” will be deleted for good.").replace("{name}", note.name()))
+        .body(gettext("“{name}” will be permanently deleted.").replace("{name}", note.name()))
         .close_response("cancel")
         .default_response("cancel")
         .build();
