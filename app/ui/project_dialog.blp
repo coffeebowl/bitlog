@@ -75,10 +75,9 @@ template $BitLogProjectDialog: Adw.Dialog {
         }
       }
 
-      Adw.PreferencesGroup repo_group {
+      Adw.PreferencesGroup {
         title: _("Git Repository");
         description: _("Only kept on this device");
-        visible: false;
 
         Adw.ActionRow repo_row {
           title: _("Folder");

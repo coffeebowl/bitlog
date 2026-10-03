@@ -49,8 +49,6 @@ mod imp {
         #[template_child]
         pub status_row: TemplateChild<adw::ComboRow>,
         #[template_child]
-        pub repo_group: TemplateChild<adw::PreferencesGroup>,
-        #[template_child]
         pub repo_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub clear_repo_button: TemplateChild<gtk::Button>,
@@ -222,7 +220,6 @@ impl ProjectDialog {
     /// it cannot be read.
     pub fn show_repo(&self, repo: Result<Option<PathBuf>, String>) {
         let imp = self.imp();
-        imp.repo_group.set_visible(true);
         match repo {
             Ok(repo) => self.set_repo(repo),
             Err(err) => {
