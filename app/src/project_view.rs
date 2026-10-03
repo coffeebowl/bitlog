@@ -29,7 +29,7 @@ use crate::search_index::{ProjectData, SearchIndex};
 use crate::window::show_action;
 
 /// Blocks the timeline shows at first and adds with "Load More".
-const BLOCKS_AT_ONCE: u32 = 50;
+const BLOCKS_AT_ONCE: u32 = 10;
 
 /// The days the activity shows, up to today.
 const ACTIVITY_DAYS: u64 = 30;
