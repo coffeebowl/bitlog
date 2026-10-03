@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -9,7 +9,8 @@ use crate::colors::{sea_green, with_alpha};
 use crate::format::format_duration;
 
 const HEIGHT: f32 = 320.0;
-/// Room for the hour labels on the left and the target label on the right.
+/// Room for the hour labels of the days on the left and of the week on the
+/// right.
 const LEFT: f32 = 44.0;
 const RIGHT: f32 = 48.0;
 const TOP: f32 = 12.0;
@@ -24,6 +25,8 @@ pub struct ChartDay {
     pub segments: Vec<(gdk::RGBA, f32)>,
     /// Hours worked, for the running total. `None` for days still to come.
     pub working_hours: Option<f32>,
+    /// The share of the week's target hours that falls on this day.
+    pub target_hours: f32,
 }
 
 mod imp {
@@ -32,7 +35,6 @@ mod imp {
     #[derive(Debug, Default)]
     pub struct WeekChart {
         pub days: RefCell<Vec<ChartDay>>,
-        pub target_hours: Cell<f32>,
     }
 
     #[glib::object_subclass]
@@ -72,25 +74,35 @@ mod imp {
             // Hours per day on the left scale.
             let highest = days
                 .iter()
-                .map(|day| day.segments.iter().map(|(_, hours)| hours).sum::<f32>())
+                .map(|day| {
+                    let worked = day.segments.iter().map(|(_, hours)| hours).sum::<f32>();
+                    worked.max(day.target_hours)
+                })
                 .fold(1.0, f32::max);
-            let (day_max, step) = scale(highest);
+            // Headroom keeps the targets off the top line.
+            let (day_max, day_step) = scale(highest * 1.1);
+            let lines = (day_max / day_step).round();
             let y_day = |hours: f32| plot.y() + plot.height() * (1.0 - hours / day_max);
-            let mut hours = 0.0;
-            while hours <= day_max {
-                let y = y_day(hours);
-                let line = graphene::Rect::new(plot.x(), y, plot.width(), 1.0);
-                snapshot.append_color(&with_alpha(&foreground, 0.12), &line);
-                let text = hours_label(hours);
-                self.append_text(
-                    snapshot,
-                    &text,
-                    LEFT - 6.0,
-                    y,
-                    1.0,
-                    &with_alpha(&foreground, 0.55),
-                );
-                hours += step;
+
+            // The running total and its target on the right scale, which
+            // shares the lines of the left one.
+            let totals = running_totals(days.iter().map(|day| day.working_hours));
+            let targets = running_totals(days.iter().map(|day| Some(day.target_hours)));
+            let week_highest = totals.iter().chain(&targets).copied().fold(1.0, f32::max);
+            let week_step = step_for(week_highest, lines);
+            let week_max = week_step * lines;
+            let y_week = |hours: f32| plot.y() + plot.height() * (1.0 - hours / week_max);
+
+            let label_color = with_alpha(&foreground, 0.55);
+            for line in 0..=lines as u32 {
+                let y = y_day(day_step * line as f32);
+                let rect = graphene::Rect::new(plot.x(), y, plot.width(), 1.0);
+                snapshot.append_color(&with_alpha(&foreground, 0.12), &rect);
+                let text = hours_label(day_step * line as f32);
+                self.append_text(snapshot, &text, LEFT - 6.0, y, 1.0, &label_color);
+                let text = hours_label(week_step * line as f32);
+                let x = plot.x() + plot.width() + 6.0;
+                self.append_text(snapshot, &text, x, y, 0.0, &label_color);
             }
 
             for (index, day) in days.iter().enumerate() {
@@ -104,36 +116,35 @@ mod imp {
                     snapshot.append_color(color, &rect);
                     bottom += hours;
                 }
+                if day.target_hours > 0.0 {
+                    let y = y_day(day.target_hours);
+                    let path = gsk::PathBuilder::new();
+                    path.move_to(center - width / 2.0 - 4.0, y);
+                    path.line_to(center + width / 2.0 + 4.0, y);
+                    snapshot.append_stroke(
+                        &path.to_path(),
+                        &gsk::Stroke::new(2.0),
+                        &with_alpha(&foreground, 0.7),
+                    );
+                }
                 let label_y = plot.y() + plot.height() + BOTTOM / 2.0;
                 self.append_text(snapshot, &day.label, center, label_y, 0.5, &foreground);
             }
 
-            // The running total and the target on the right scale.
-            let target = self.target_hours.get();
-            let totals: Vec<f32> = days
-                .iter()
-                .map_while(|day| day.working_hours)
-                .scan(0.0, |total, hours| {
-                    *total += hours;
-                    Some(*total)
-                })
-                .collect();
-            let reached = totals.last().copied().unwrap_or(0.0);
-            // Headroom keeps the target off the top line of the day scale.
-            let (week_max, _) = scale(target.max(reached).max(1.0) * 1.1);
-            let y_week = |hours: f32| plot.y() + plot.height() * (1.0 - hours / week_max);
-
-            if target > 0.0 {
-                let y = y_week(target);
+            // Where the running total should be at the end of each day.
+            if targets.last().is_some_and(|target| *target > 0.0) {
                 let path = gsk::PathBuilder::new();
-                path.move_to(plot.x(), y);
-                path.line_to(plot.x() + plot.width(), y);
+                for (index, target) in targets.iter().enumerate() {
+                    let point = (plot.x() + column * (index as f32 + 0.5), y_week(*target));
+                    if index == 0 {
+                        path.move_to(point.0, point.1);
+                    } else {
+                        path.line_to(point.0, point.1);
+                    }
+                }
                 let stroke = gsk::Stroke::new(1.5);
                 stroke.set_dash(&[6.0, 4.0]);
                 snapshot.append_stroke(&path.to_path(), &stroke, &with_alpha(&foreground, 0.6));
-                let text = hours_label(target);
-                let x = plot.x() + plot.width() + 6.0;
-                self.append_text(snapshot, &text, x, y, 0.0, &foreground);
             }
 
             let green = sea_green();
@@ -178,29 +189,43 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// Hours per day and project as stacked bars, with the running total of
-    /// the week against its target.
+    /// Hours per day and project as stacked bars against the target of each
+    /// day, with the running total of the week against the running target.
     pub struct WeekChart(ObjectSubclass<imp::WeekChart>)
         @extends gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl WeekChart {
-    pub fn set_week(&self, days: Vec<ChartDay>, target_hours: f32) {
-        let imp = self.imp();
-        imp.days.replace(days);
-        imp.target_hours.set(target_hours);
+    pub fn set_week(&self, days: Vec<ChartDay>) {
+        self.imp().days.replace(days);
         self.queue_draw();
     }
 }
 
 /// The top of a scale that shows `value`, and the step of its lines.
 fn scale(value: f32) -> (f32, f32) {
-    let step = [1.0, 2.0, 4.0, 5.0, 8.0, 10.0, 20.0, 40.0, 50.0]
-        .into_iter()
-        .find(|step| value / step <= 5.0)
-        .unwrap_or(100.0);
+    let step = step_for(value, 5.0);
     ((value / step).ceil() * step, step)
+}
+
+/// The smallest step of lines that shows `value` within `lines` lines.
+fn step_for(value: f32, lines: f32) -> f32 {
+    [1.0, 2.0, 4.0, 5.0, 8.0, 10.0, 20.0, 40.0, 50.0, 100.0]
+        .into_iter()
+        .find(|step| value / step <= lines)
+        .unwrap_or(200.0)
+}
+
+/// The sums of `hours` up to each day, until the first `None`.
+fn running_totals(hours: impl Iterator<Item = Option<f32>>) -> Vec<f32> {
+    hours
+        .map_while(|hours| hours)
+        .scan(0.0, |total, hours| {
+            *total += hours;
+            Some(*total)
+        })
+        .collect()
 }
 
 fn hours_label(hours: f32) -> String {

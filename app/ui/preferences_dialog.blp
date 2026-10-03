@@ -79,9 +79,22 @@ template $BitLogPreferencesDialog: Adw.Dialog {
           title: _("First Day");
         }
 
+        Adw.ActionRow workdays_row {
+          title: _("Workdays");
+
+          [suffix]
+          Box workdays_box {
+            valign: center;
+
+            styles [
+              "linked",
+            ]
+          }
+        }
+
         Adw.SpinRow target_hours_row {
           title: _("Target Hours");
-          subtitle: _("Shown in the week chart");
+          subtitle: _("Shared among the workdays in the week chart");
           digits: 1;
 
           adjustment: Adjustment {

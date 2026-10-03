@@ -40,9 +40,28 @@ pub struct VaultConfig {
 #[serde(default)]
 pub struct WeekConfig {
     pub first_day: Weekday,
+    /// The days `target_hours` are shared among, as read: in any order,
+    /// possibly repeated.
     pub workdays: Vec<Weekday>,
     /// Only shown for orientation, nothing depends on it.
     pub target_hours: f64,
+}
+
+impl WeekConfig {
+    /// The workdays in the order of the week from Monday, each once.
+    pub fn workdays(&self) -> Vec<Weekday> {
+        weekdays_listed(&self.workdays)
+    }
+
+    /// The share of `target_hours` that falls on `weekday`: an even part on
+    /// workdays, nothing on the other days.
+    pub fn target_hours_on(&self, weekday: Weekday) -> f64 {
+        if self.workdays.contains(&weekday) {
+            self.target_hours / self.workdays().len() as f64
+        } else {
+            0.0
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -163,6 +182,27 @@ impl VaultConfig {
             self.week.target_hours.into(),
             self.week.target_hours == week.target_hours,
         );
+        // Only written when other days are meant, so that the file keeps its
+        // spelling and order of the days.
+        let written = doc
+            .get("week")
+            .and_then(|week| week.get("workdays"))
+            .and_then(Item::as_array)
+            .map_or_else(
+                || week.workdays(),
+                |days| {
+                    let days: Vec<Weekday> = days
+                        .iter()
+                        .filter_map(|day| day.as_str()?.parse().ok())
+                        .collect();
+                    weekdays_listed(&days)
+                },
+            );
+        if self.week.workdays() != written {
+            let days: toml_edit::Array =
+                self.week.workdays().into_iter().map(weekday_name).collect();
+            set(section(doc, Some("week")), "workdays", days.into());
+        }
         set_key(
             doc,
             Some("grid"),
@@ -219,6 +259,9 @@ impl VaultConfig {
         check_format(self.format)?;
         if self.week.target_hours < 0.0 {
             return Err("week.target_hours must not be negative".to_owned());
+        }
+        if self.week.workdays.is_empty() {
+            return Err("week.workdays must name at least one day".to_owned());
         }
         // Slots have to line up with full hours, or the grid would drift.
         if self.grid.slot_minutes == 0 || 60 % self.grid.slot_minutes != 0 {
@@ -303,6 +346,14 @@ fn set_optional(document: &mut DocumentMut, table: &str, key: &str, value: Optio
             }
         }
     }
+}
+
+/// The days of `days` in the order of the week from Monday, each once.
+fn weekdays_listed(days: &[Weekday]) -> Vec<Weekday> {
+    (0..7)
+        .map(|n| Weekday::try_from(n).expect("seven weekdays"))
+        .filter(|day| days.contains(day))
+        .collect()
 }
 
 /// The name of `weekday` as `bitlog.toml` writes it, such as `mon`.
@@ -394,6 +445,7 @@ mod tests {
             "format = 1\n[grid]\nday_start = \"07:00\"",
             "format = 1\n[week]\nfirst_day = \"someday\"",
             "format = 1\n[week]\ntarget_hours = -1.0",
+            "format = 1\n[week]\nworkdays = []",
             "format = 1\n[locations]\nHome = \"Home\"",
             "format = 1\n[defaults]\nlocation = \"office\"",
             "format = 1\n[defaults]\nnote_template = \"/etc/passwd\"",
@@ -452,6 +504,40 @@ mod tests {
         assert_eq!(read.week, config.week);
         assert_eq!(read.grid, config.grid);
         assert_eq!(read.defaults, config.defaults);
+    }
+
+    #[test]
+    fn target_hours_shared_among_workdays() {
+        use Weekday::*;
+        let config = VaultConfig::parse(
+            "format = 1\n[week]\nworkdays = [\"thu\", \"Monday\", \"tue\", \"wed\", \"mon\"]\ntarget_hours = 32.0",
+        )
+        .unwrap();
+        assert_eq!(config.week.workdays(), [Mon, Tue, Wed, Thu]);
+        assert_eq!(config.week.target_hours_on(Mon), 8.0);
+        assert_eq!(config.week.target_hours_on(Thu), 8.0);
+        assert_eq!(config.week.target_hours_on(Fri), 0.0);
+    }
+
+    #[test]
+    fn writing_workdays() {
+        use Weekday::*;
+        let text = "format = 1\n[week]\nworkdays = [\"Thursday\", \"mon\", \"tue\", \"wed\"]\n";
+        let mut config = VaultConfig::parse(text).unwrap();
+        config.week.workdays = vec![Mon, Tue, Wed, Thu];
+        assert_eq!(config.to_toml().unwrap(), text);
+        config.week.workdays = vec![Fri, Mon];
+        let text = config.to_toml().unwrap();
+        assert_eq!(text, "format = 1\n[week]\nworkdays = [\"mon\", \"fri\"]\n");
+
+        let mut config = VaultConfig::parse("format = 1\n").unwrap();
+        config.week.workdays = vec![Mon, Tue, Wed, Thu, Fri];
+        assert_eq!(config.to_toml().unwrap(), "format = 1\n");
+        config.week.workdays = vec![Sat, Sun];
+        assert_eq!(
+            config.to_toml().unwrap(),
+            "format = 1\n\n[week]\nworkdays = [\"sat\", \"sun\"]\n"
+        );
     }
 
     #[test]

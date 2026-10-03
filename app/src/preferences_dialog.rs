@@ -34,6 +34,8 @@ mod imp {
         pub slots: RefCell<Vec<u32>>,
         pub day_starts: RefCell<Vec<NaiveTime>>,
         pub day_ends: RefCell<Vec<NaiveTime>>,
+        /// One button per day of `WEEKDAYS`.
+        pub workday_buttons: RefCell<Vec<gtk::ToggleButton>>,
         /// The template as chosen, relative to the vault.
         pub template: RefCell<Option<PathBuf>>,
         #[template_child]
@@ -52,6 +54,10 @@ mod imp {
         pub choose_template_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub first_day_row: TemplateChild<adw::ComboRow>,
+        #[template_child]
+        pub workdays_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub workdays_box: TemplateChild<gtk::Box>,
         #[template_child]
         pub target_hours_row: TemplateChild<adw::SpinRow>,
         #[template_child]
@@ -92,6 +98,23 @@ mod imp {
             let days: Vec<&str> = days.iter().map(String::as_str).collect();
             self.first_day_row
                 .set_model(Some(&gtk::StringList::new(&days)));
+            let buttons: Vec<gtk::ToggleButton> = WEEKDAYS
+                .into_iter()
+                .map(|day| {
+                    let button = gtk::ToggleButton::builder()
+                        .label(weekday_label(day, "%a"))
+                        .tooltip_text(weekday_name(day))
+                        .build();
+                    button.connect_toggled(glib::clone!(
+                        #[weak]
+                        dialog,
+                        move |_| dialog.update_save_button()
+                    ));
+                    self.workdays_box.append(&button);
+                    button
+                })
+                .collect();
+            self.workday_buttons.replace(buttons);
             self.cancel_button.connect_clicked(glib::clone!(
                 #[weak]
                 dialog,
@@ -163,10 +186,24 @@ pub fn changed<T: PartialEq>(field: &mut T, shown: &T, entered: T) {
 
 /// The name of `weekday` in the user's language.
 fn weekday_name(weekday: Weekday) -> String {
+    weekday_label(weekday, "%A")
+}
+
+/// `weekday` in the user's language, written as the strftime `format` says.
+fn weekday_label(weekday: Weekday, format: &str) -> String {
     // September 21, 2026 is a Monday.
     let monday = NaiveDate::from_ymd_opt(2026, 9, 21).expect("valid date");
     let date = monday + TimeDelta::days(weekday.num_days_from_monday().into());
-    format_date(date, "%A")
+    format_date(date, format)
+}
+
+/// Shows `row` as invalid if `error` is set.
+fn mark_error(row: &impl IsA<gtk::Widget>, error: bool) {
+    if error {
+        row.add_css_class("error");
+    } else {
+        row.remove_css_class("error");
+    }
 }
 
 /// The times offered for the day view: every half hour, and `set`.
@@ -232,6 +269,9 @@ impl PreferencesDialog {
             |day| weekday_name(*day),
             &config.week.first_day,
         );
+        for (day, button) in WEEKDAYS.iter().zip(imp.workday_buttons.borrow().iter()) {
+            button.set_active(config.week.workdays.contains(day));
+        }
         imp.target_hours_row.set_value(config.week.target_hours);
 
         let mut slots = SLOT_MINUTES.to_vec();
@@ -300,6 +340,11 @@ impl PreferencesDialog {
             WEEKDAYS[imp.first_day_row.selected() as usize],
         );
         changed(
+            &mut config.week.workdays,
+            &shown.week.workdays(),
+            self.workdays(),
+        );
+        changed(
             &mut config.week.target_hours,
             &shown.week.target_hours,
             imp.target_hours_row.value(),
@@ -317,6 +362,16 @@ impl PreferencesDialog {
 
     fn name(&self) -> String {
         self.imp().name_row.text().trim().to_owned()
+    }
+
+    /// The workdays as chosen, from Monday.
+    fn workdays(&self) -> Vec<Weekday> {
+        WEEKDAYS
+            .into_iter()
+            .zip(self.imp().workday_buttons.borrow().iter())
+            .filter(|(_, button)| button.is_active())
+            .map(|(day, _)| day)
+            .collect()
     }
 
     /// The start and end of the day view as chosen.
@@ -372,7 +427,8 @@ impl PreferencesDialog {
         }
     }
 
-    /// Allows saving once there is a name and the day starts before it ends.
+    /// Allows saving once there is a name, a workday and the day starts
+    /// before it ends.
     fn update_save_button(&self) {
         let imp = self.imp();
         // Called while the rows are filled, before the choices are known.
@@ -381,12 +437,10 @@ impl PreferencesDialog {
         }
         let (start, end) = self.day_range();
         let range_valid = start < end;
-        if range_valid {
-            imp.day_end_row.remove_css_class("error");
-        } else {
-            imp.day_end_row.add_css_class("error");
-        }
+        mark_error(&*imp.day_end_row, !range_valid);
+        let has_workday = !self.workdays().is_empty();
+        mark_error(&*imp.workdays_row, !has_workday);
         imp.save_button
-            .set_sensitive(!self.name().is_empty() && range_valid);
+            .set_sensitive(!self.name().is_empty() && range_valid && has_workday);
     }
 }

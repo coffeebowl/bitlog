@@ -104,7 +104,7 @@ row.drop-after {
   border-bottom-width: 0;
 }
 
-.calendar-month button.calendar-day.weekend {
+.calendar-month button.calendar-day.non-workday {
   background-color: alpha(currentColor, 0.05);
 }
 

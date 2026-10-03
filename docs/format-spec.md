@@ -96,7 +96,7 @@ Only `format` is required. Missing fields take these defaults:
 | --- | --- | --- |
 | `name` | `"BitLog"` | |
 | `week.first_day` | `"mon"` | weekday, short (`mon`) or long (`monday`) |
-| `week.workdays` | `["mon", "tue", "wed", "thu", "fri"]` | weekdays |
+| `week.workdays` | `["mon", "tue", "wed", "thu", "fri"]` | weekdays, at least one; `target_hours` are shared evenly among them |
 | `week.target_hours` | `40.0` | not negative |
 | `grid.slot_minutes` | `15` | divides 60 |
 | `grid.day_start` | `07:00:00` | TOML local time, before `day_end` |

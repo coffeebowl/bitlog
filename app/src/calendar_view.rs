@@ -333,10 +333,11 @@ impl CalendarView {
                     .map(|(slug, time)| (color(slug), hours(*time)))
                     .collect(),
                 working_hours: (date <= today).then(|| hours(working_time)),
+                target_hours: vault.config().week.target_hours_on(date.weekday()) as f32,
             });
         }
         let target = vault.config().week.target_hours as f32;
-        imp.week_chart.set_week(days, target);
+        imp.week_chart.set_week(days);
 
         let target_time = TimeDelta::minutes((target * 60.0).round() as i64);
         imp.week_total.set_label(&if target > 0.0 {
@@ -431,8 +432,8 @@ fn day_cell(
     if density != Density::Full {
         cell.add_css_class("narrow");
     }
-    if matches!(date.weekday(), Weekday::Sat | Weekday::Sun) {
-        cell.add_css_class("weekend");
+    if !vault.config().week.workdays.contains(&date.weekday()) {
+        cell.add_css_class("non-workday");
     }
 
     // The details again for the tooltip, as Pango markup, and for screen readers.
