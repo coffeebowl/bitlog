@@ -314,7 +314,6 @@ fn field_title(name: &str) -> String {
         "location" => gettext("Location"),
         "tags" => gettext("Tags"),
         "energy" => gettext("Energy"),
-        "work" => gettext("Working Hours"),
         _ => name.to_owned(),
     }
 }
@@ -331,10 +330,6 @@ fn field_value(vault: &Vault, day: &Day, name: &str) -> String {
         "tags" if day.tags.is_empty() => none(),
         "tags" => day.tags.join(", "),
         "energy" => day.energy.map_or_else(none, |energy| energy.to_string()),
-        "work" => match (day.work_start, day.work_end) {
-            (Some(start), Some(end)) => format_span(start, end),
-            _ => none(),
-        },
         _ => day
             .unknown_fields
             .get(name)

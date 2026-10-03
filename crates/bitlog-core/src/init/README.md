@@ -26,7 +26,6 @@ format: 1
 date: "2026-09-23"
 kind: "work"
 location: "remote"
-work: { start: "08:30", end: "16:45" }
 blocks:
   - { id: "k7f3", start: "08:30", end: "10:00", project: "project-a" }
   - { id: "b8n2", start: "12:00", end: "12:30", project: "pause" }
@@ -48,8 +47,7 @@ Free text about this block.
 - Times are local. An end before the start means the block runs past
   midnight; it belongs to the day it starts on.
 - Blocks of projects with the category `break` are breaks. Working time is
-  `work.end − work.start` minus the breaks, or the sum of all other blocks if
-  the start or end of work is missing.
+  the sum of all other blocks; time without a block does not count.
 - The text below a heading belongs to the user and is kept as written. Block
   texts and the day note contain no headings of their own.
 

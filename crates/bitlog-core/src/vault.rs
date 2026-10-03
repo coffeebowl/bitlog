@@ -619,11 +619,11 @@ mod tests {
             let day = vault.load_day(date(2026, 9, day)).unwrap().unwrap().day;
             day.working_time(vault.projects())
         };
-        // 08:00 to 16:30 minus a 45 minute break.
+        // Blocks from 08:00 to 16:30 without gaps, minus a 45 minute break.
         assert_eq!(hours(21), TimeDelta::minutes(7 * 60 + 45));
-        // 08:45 to 17:15 minus a 45 minute break.
+        // From 08:45 to 17:15, minus a 45 minute break.
         assert_eq!(hours(22), TimeDelta::minutes(7 * 60 + 45));
-        // No working hours given: all blocks but the break, one past midnight.
+        // All blocks but the break, with gaps and one past midnight.
         assert_eq!(hours(23), TimeDelta::minutes(30 + 15 + 135 + 105 + 120));
     }
 

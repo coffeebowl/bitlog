@@ -19,8 +19,8 @@ use crate::{BlockId, LocationKey, Project, ProjectSlug};
 pub use edit::RemovedText;
 
 /// Front matter fields of format version 1. Everything else is kept as is.
-const KNOWN_FIELDS: [&str; 8] = [
-    "format", "date", "kind", "location", "tags", "energy", "work", "blocks",
+const KNOWN_FIELDS: [&str; 7] = [
+    "format", "date", "kind", "location", "tags", "energy", "blocks",
 ];
 
 const DEFAULT_KIND: &str = "work";
@@ -33,8 +33,6 @@ pub struct Day {
     pub tags: Vec<String>,
     /// 1 to 5.
     pub energy: Option<u8>,
-    pub work_start: Option<NaiveTime>,
-    pub work_end: Option<NaiveTime>,
     /// Sorted by start time.
     pub blocks: Vec<Block>,
     /// The text between the date heading and the first block.
@@ -139,17 +137,7 @@ struct FrontMatter {
     tags: Vec<String>,
     energy: Option<u8>,
     #[serde(default)]
-    work: WorkTime,
-    #[serde(default)]
     blocks: Vec<FrontMatterBlock>,
-}
-
-#[derive(Default, Deserialize)]
-struct WorkTime {
-    #[serde(default, deserialize_with = "optional_time")]
-    start: Option<NaiveTime>,
-    #[serde(default, deserialize_with = "optional_time")]
-    end: Option<NaiveTime>,
 }
 
 #[derive(Deserialize)]
@@ -176,12 +164,6 @@ fn time<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveTime, D::Erro
     })
 }
 
-fn optional_time<'de, D: Deserializer<'de>>(
-    deserializer: D,
-) -> Result<Option<NaiveTime>, D::Error> {
-    time(deserializer).map(Some)
-}
-
 impl Day {
     /// Whether this is a working day, not a day off such as a vacation or a
     /// public holiday.
@@ -197,8 +179,6 @@ impl Day {
             location: None,
             tags: Vec::new(),
             energy: None,
-            work_start: None,
-            work_end: None,
             blocks: Vec::new(),
             note: String::new(),
             unknown_fields: serde_json::Map::new(),
@@ -269,8 +249,6 @@ impl Day {
             location: front_matter.location,
             tags: front_matter.tags,
             energy: front_matter.energy,
-            work_start: front_matter.work.start,
-            work_end: front_matter.work.end,
             blocks,
             note: parsed.note.to_owned(),
             unknown_fields,
@@ -281,19 +259,11 @@ impl Day {
     /// The time worked on this day. Blocks of `break` projects are breaks;
     /// blocks of projects missing from `projects` count as work.
     pub fn working_time(&self, projects: &[Project]) -> TimeDelta {
-        let sum = |blocks: Vec<&Block>| blocks.iter().map(|block| block.duration()).sum();
-        let (breaks, work): (Vec<&Block>, Vec<&Block>) = self
-            .blocks
+        self.blocks
             .iter()
-            .partition(|block| block.is_break(projects));
-        match (self.work_start, self.work_end) {
-            (Some(start), Some(end)) => {
-                let total = TimeDelta::minutes(minutes_until(start, end).into());
-                // Hand-edited files may hold more breaks than working hours.
-                (total - sum(breaks)).max(TimeDelta::zero())
-            }
-            _ => sum(work),
-        }
+            .filter(|block| !block.is_break(projects))
+            .map(Block::duration)
+            .sum()
     }
 
     /// The time of the blocks of each project, breaks left out.
@@ -404,8 +374,6 @@ mod tests {
         assert_eq!(day.location, Some("remote".parse().unwrap()));
         assert_eq!(day.tags, ["planning"]);
         assert_eq!(day.energy, Some(4));
-        assert_eq!(day.work_start, Some(time(8, 0)));
-        assert_eq!(day.work_end, Some(time(16, 30)));
         assert_eq!(day.note, "Back from vacation, catching up. #planning");
         assert!(day.unknown_fields.is_empty());
 
@@ -445,8 +413,6 @@ mod tests {
         assert_eq!(day.kind, "work");
         assert_eq!(day.location, Some("office".parse().unwrap()));
         assert_eq!(day.tags, ["review"]);
-        assert_eq!(day.work_start, Some(time(8, 45)));
-        assert_eq!(day.work_end, Some(time(17, 15)));
         // No date heading, the note starts right after the front matter.
         assert_eq!(day.note, "Office day, lots of reviews.");
         assert_eq!(
@@ -475,7 +441,6 @@ mod tests {
             }]
         );
         assert_eq!(day.location, Some("hybrid".parse().unwrap()));
-        assert_eq!((day.work_start, day.work_end), (None, None));
 
         let deployment = day.blocks.last().unwrap();
         assert_eq!(deployment.id.as_str(), "ff66");
@@ -506,26 +471,16 @@ mod tests {
     #[test]
     fn working_time_edge_cases() {
         let projects = Project::defaults(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
-        let working_time = |work: &str| {
-            let text = format!(
-                "---\nformat: 1\ndate: \"2026-01-05\"\n{work}blocks:\n  \
-                 - {{ id: \"aaaa\", start: \"21:00\", end: \"23:00\", project: \"pause\" }}\n  \
-                 - {{ id: \"bbbb\", start: \"23:00\", end: \"01:00\", project: \"unknown\" }}\n\
-                 ---\n"
-            );
-            Day::parse(&text).unwrap().0.working_time(&projects)
-        };
+        // `work` was the span of working hours once and is now kept as is.
+        let text = "---\nformat: 1\ndate: \"2026-01-05\"\n\
+                    work: { start: \"20:00\", end: \"02:00\" }\nblocks:\n  \
+                    - { id: \"aaaa\", start: \"21:00\", end: \"23:00\", project: \"pause\" }\n  \
+                    - { id: \"bbbb\", start: \"23:00\", end: \"01:00\", project: \"unknown\" }\n\
+                    ---\n";
+        let day = Day::parse(text).unwrap().0;
         // Blocks of unknown projects count as work, also past midnight.
-        assert_eq!(working_time(""), TimeDelta::hours(2));
-        assert_eq!(
-            working_time("work: { start: \"20:00\", end: \"02:00\" }\n"),
-            TimeDelta::hours(4)
-        );
-        // More breaks than working hours.
-        assert_eq!(
-            working_time("work: { start: \"21:00\", end: \"22:00\" }\n"),
-            TimeDelta::zero()
-        );
+        assert_eq!(day.working_time(&projects), TimeDelta::hours(2));
+        assert!(day.unknown_fields.contains_key("work"));
     }
 
     #[test]

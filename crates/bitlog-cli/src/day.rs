@@ -14,11 +14,7 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
     if let Some(key) = &day.location {
         details.push(vault.config().location_name(key).to_owned());
     }
-    let mut working_time = format_duration(day.working_time(vault.projects())) + " worked";
-    if let (Some(start), Some(end)) = (day.work_start, day.work_end) {
-        working_time += &format!(" ({})", format_span(start, end));
-    }
-    details.push(working_time);
+    details.push(format_duration(day.working_time(vault.projects())) + " worked");
 
     let mut lines = vec![heading(day.date), details.join(" · "), String::new()];
     if day.blocks.is_empty() {
@@ -110,15 +106,6 @@ mod tests {
              dd44  12:30–13:15        45 min  Break           Lunch\n\
              ee55  13:15–15:00    1 h 45 min  Webshop         Release notes\n\
              ff66  22:30–00:30+1         2 h  Infrastructure  Release deployment\n"
-        );
-    }
-
-    #[test]
-    fn day_with_working_hours() {
-        let text = sample(21);
-        assert!(
-            text.contains("\nWork · Remote · 7 h 45 min worked (08:00–16:30)\n"),
-            "{text}"
         );
     }
 

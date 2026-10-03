@@ -24,10 +24,6 @@ impl Day {
         );
         merger.value(&mut self.tags, &other.tags, &Vec::new(), field("tags"));
         merger.value(&mut self.energy, &other.energy, &None, field("energy"));
-        let mut work = (self.work_start, self.work_end);
-        let theirs = (other.work_start, other.work_end);
-        merger.value(&mut work, &theirs, &(None, None), field("work"));
-        (self.work_start, self.work_end) = work;
         for (name, value) in &other.unknown_fields {
             let mut ours = self.unknown_fields.get(name).cloned();
             merger.value(&mut ours, &Some(value.clone()), &None, field(name));
@@ -117,8 +113,6 @@ mod tests {
         ours.energy = Some(3);
         let mut theirs = day(Vec::new());
         theirs.location = Some("office".parse().unwrap());
-        theirs.work_start = Some(time("08:00"));
-        theirs.work_end = Some(time("16:00"));
         theirs.note = "From the laptop".to_owned();
         theirs
             .unknown_fields
@@ -126,7 +120,6 @@ mod tests {
         assert_eq!(merge(&mut ours, &theirs, &[]), []);
         assert_eq!(ours.energy, Some(3));
         assert_eq!(ours.location, theirs.location);
-        assert_eq!(ours.work_end, Some(time("16:00")));
         assert_eq!(ours.note, "From the laptop");
         assert_eq!(ours.unknown_fields["mood"], "calm");
     }

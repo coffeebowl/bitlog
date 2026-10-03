@@ -132,7 +132,6 @@ kind: "work"
 location: "remote"
 tags: ["refactoring"]
 energy: 4
-work: { start: "08:30", end: "16:45" }
 blocks:
   - { id: "k7f3", start: "08:30", end: "10:00", project: "project-a" }
   - { id: "m2q8", start: "10:00", end: "10:15", project: "meetings" }
@@ -174,7 +173,7 @@ let token = refresh(&session).await?;
 - **Canonical form:** BitLog rewrites the front matter completely on every
   save, in a fixed field order, with **all strings in double quotes**. This
   avoids the well-known YAML pitfalls (`no` as a boolean, `10:30` as a number).
-  The order is `format`, `date`, `kind`, `location`, `tags`, `energy`, `work`,
+  The order is `format`, `date`, `kind`, `location`, `tags`, `energy`,
   `blocks`, as in the example above. `kind` is always written; the other
   optional fields only when they have a value.
 - **Tolerant reading:** Unquoted values, multi-line lists and other valid YAML
@@ -191,7 +190,6 @@ let token = refresh(&session).await?;
 | `location` | key from `[locations]` | no |
 | `tags` | list | no |
 | `energy` | 1–5 | no |
-| `work.start`, `work.end` | `"HH:MM"` | no |
 | `blocks[].id` | 4 characters `[a-z0-9]`, unique within the day | yes |
 | `blocks[].start`, `.end` | `"HH:MM"`, not equal | yes |
 | `blocks[].project` | project slug | yes |
@@ -269,10 +267,9 @@ outline of the document belongs to BitLog:
 - An `end` earlier than `start` means the next day. The block counts towards
   the day it starts on.
 - **Breaks are blocks** of a project with the category `break`. Working time is
-  `work.end − work.start − sum(break blocks)`. If the start or end of work is
-  missing, working time is the sum of all blocks except breaks. A `work.end`
-  before `work.start` lies on the next day. Blocks of projects that do not
-  exist count as work, and working time is never negative.
+  the sum of all blocks except breaks; time without a block does not count.
+  Loose work such as e-mails or chats goes into blocks of `filler`. Blocks of
+  projects that do not exist count as work.
 
 ### Rationale
 

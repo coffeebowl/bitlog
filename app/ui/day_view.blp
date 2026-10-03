@@ -198,138 +198,33 @@ template $BitLogDayView: Adw.NavigationPage {
                       };
                     }
 
-                    MenuButton {
-                      tooltip-text: _("Change Work Hours");
+                    // Not a button like its neighbours, but in line with
+                    // their labels.
+                    Box {
+                      orientation: vertical;
+                      margin-start: 10;
+                      margin-end: 10;
+                      margin-top: 5;
+                      margin-bottom: 5;
 
-                      styles [
-                        "flat",
-                      ]
+                      Label {
+                        label: _("Working Time");
+                        xalign: 0;
 
-                      popover: Popover work_popover {
-                        default-widget: set_work_button;
+                        styles [
+                          "caption-heading",
+                          "dim-label",
+                        ]
+                      }
 
-                        child: Box {
-                          orientation: vertical;
-                          spacing: 12;
-                          margin-top: 6;
-                          margin-bottom: 6;
-                          margin-start: 6;
-                          margin-end: 6;
+                      Label working_time_label {
+                        xalign: 0;
+                        ellipsize: end;
 
-                          Grid {
-                            column-spacing: 12;
-                            row-spacing: 6;
-
-                            Label {
-                              label: _("_Start");
-                              use-underline: true;
-                              mnemonic-widget: work_start;
-                              xalign: 0;
-
-                              layout {
-                                column: 0;
-                                row: 0;
-                              }
-                            }
-
-                            SpinButton work_start {
-                              adjustment: Adjustment {
-                                upper: 1439;
-                                page-increment: 60;
-                              };
-
-                              wrap: true;
-                              activates-default: true;
-
-                              layout {
-                                column: 1;
-                                row: 0;
-                              }
-                            }
-
-                            Label {
-                              label: _("_End");
-                              use-underline: true;
-                              mnemonic-widget: work_end;
-                              xalign: 0;
-
-                              layout {
-                                column: 0;
-                                row: 1;
-                              }
-                            }
-
-                            SpinButton work_end {
-                              adjustment: Adjustment {
-                                upper: 1439;
-                                page-increment: 60;
-                              };
-
-                              wrap: true;
-                              activates-default: true;
-
-                              layout {
-                                column: 1;
-                                row: 1;
-                              }
-                            }
-                          }
-
-                          Box {
-                            homogeneous: true;
-                            spacing: 6;
-
-                            Button {
-                              label: _("_Remove");
-                              use-underline: true;
-                              action-name: "day.remove-work-hours";
-                            }
-
-                            Button set_work_button {
-                              label: _("_Set");
-                              use-underline: true;
-                              action-name: "day.set-work-hours";
-
-                              styles [
-                                "suggested-action",
-                              ]
-                            }
-                          }
-                        };
-                      };
-
-                      child: Box {
-                        orientation: vertical;
-
-                        Label {
-                          label: _("Working Time");
-                          xalign: 0;
-
-                          styles [
-                            "caption-heading",
-                            "dim-label",
-                          ]
-                        }
-
-                        Label working_time_label {
-                          xalign: 0;
-                          ellipsize: end;
-
-                          styles [
-                            "title-4",
-                          ]
-                        }
-
-                        Label work_hours_label {
-                          xalign: 0;
-                          ellipsize: end;
-
-                          styles [
-                            "caption",
-                            "dim-label",
-                          ]
-                        }
-                      };
+                        styles [
+                          "title-4",
+                        ]
+                      }
                     }
                   }
 

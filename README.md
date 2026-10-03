@@ -118,7 +118,7 @@ bitlog block add 09:00-10:30 webshop "Checkout flow"
 bitlog block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
 bitlog block note k7f3    # edit the block's text in $VISUAL or $EDITOR
 bitlog block rm k7f3 --move-text
-bitlog set --location office --work 08:30-16:45
+bitlog set --location office
 
 bitlog project list
 bitlog project add client-portal --name "Client portal" --color ff7800

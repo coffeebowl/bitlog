@@ -138,7 +138,7 @@ enum Command {
         #[arg(long, requires = "from")]
         to: Option<NaiveDate>,
     },
-    /// Set the kind, location or working hours of a day.
+    /// Set the kind or location of a day.
     #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
     Set {
         /// The kind of day, as in work or vacation
@@ -150,12 +150,6 @@ enum Command {
         /// Remove the location
         #[arg(long, group = "change")]
         no_location: bool,
-        /// The working hours, as in 08:30-16:45
-        #[arg(long, group = "change", value_parser = parse_span, conflicts_with = "no_work")]
-        work: Option<(NaiveTime, NaiveTime)>,
-        /// Remove the working hours
-        #[arg(long, group = "change")]
-        no_work: bool,
         #[command(flatten)]
         date: DateArg,
     },
@@ -400,8 +394,6 @@ fn main() -> Result<()> {
             kind,
             location,
             no_location,
-            work,
-            no_work,
             date,
         } => edit::set_day(
             &vault,
@@ -409,7 +401,6 @@ fn main() -> Result<()> {
             DayChanges {
                 kind,
                 location: (location.is_some() || no_location).then_some(location),
-                work: (work.is_some() || no_work).then_some(work),
             },
         ),
     }

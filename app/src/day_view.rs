@@ -55,14 +55,6 @@ mod imp {
         #[template_child]
         pub working_time_label: TemplateChild<gtk::Label>,
         #[template_child]
-        pub work_hours_label: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub work_popover: TemplateChild<gtk::Popover>,
-        #[template_child]
-        pub work_start: TemplateChild<gtk::SpinButton>,
-        #[template_child]
-        pub work_end: TemplateChild<gtk::SpinButton>,
-        #[template_child]
         pub day_scroll: TemplateChild<gtk::ScrolledWindow>,
         #[template_child]
         pub note_view: TemplateChild<MarkdownView>,
@@ -111,16 +103,6 @@ mod imp {
                 view.imp().split_view.set_show_sidebar(false);
             });
             klass.install_action("day.create", None, |view, _, _| view.create_day());
-            klass.install_action("day.set-work-hours", None, |view, _, _| {
-                let imp = view.imp();
-                let start = spin_time(&imp.work_start);
-                let end = spin_time(&imp.work_end);
-                imp.work_popover.popdown();
-                view.update(|day| {
-                    (day.work_start, day.work_end) = (Some(start), Some(end));
-                    Ok(())
-                });
-            });
             klass.install_action("day.new-block", None, |view, _, _| view.new_block());
             klass.install_action("day.standup", None, |view, _, _| view.show_standup());
             klass.install_action("day.delete-block", None, |view, _, _| view.delete_block());
@@ -136,13 +118,6 @@ mod imp {
                 let end = spin_time(&imp.block_end);
                 imp.block_time_popover.popdown();
                 view.update(|day| day.move_block(&id, start, end));
-            });
-            klass.install_action("day.remove-work-hours", None, |view, _, _| {
-                view.imp().work_popover.popdown();
-                view.update(|day| {
-                    (day.work_start, day.work_end) = (None, None);
-                    Ok(())
-                });
             });
         }
 
@@ -212,12 +187,7 @@ impl DayView {
         imp.location_button
             .set_menu_model(Some(&location_menu(&vault)));
         let slot = vault.config().grid.slot_minutes.into();
-        for spin in [
-            &imp.work_start,
-            &imp.work_end,
-            &imp.block_start,
-            &imp.block_end,
-        ] {
+        for spin in [&imp.block_start, &imp.block_end] {
             spin.adjustment().set_step_increment(slot);
         }
         imp.tasks.set_vault(vault.clone());
@@ -321,12 +291,6 @@ impl DayView {
             .set_state(&location_key.to_variant());
         imp.working_time_label
             .set_label(&format_duration(day.working_time(vault.projects())));
-        let hours = match (day.work_start, day.work_end) {
-            (Some(start), Some(end)) => format_span(start, end),
-            _ => gettext("No work hours"),
-        };
-        imp.work_hours_label.set_label(&hours);
-        self.action_set_enabled("day.remove-work-hours", day.work_start.is_some());
         // Keeps what is being typed.
         if !imp.note_view.shows(&day.note) {
             imp.note_view.set_markdown(&day.note);
@@ -697,7 +661,7 @@ impl DayView {
     }
 
     /// Offers one slot for a new block after the last one, or at the start
-    /// of work or of the grid.
+    /// of the grid.
     fn new_block(&self) {
         let imp = self.imp();
         let anchor = {
@@ -706,9 +670,7 @@ impl DayView {
                 .as_ref()
                 .expect("new blocks need a day with a file")
                 .day;
-            let start = day
-                .work_start
-                .unwrap_or(self.vault().config().grid.day_start);
+            let start = self.vault().config().grid.day_start;
             // A block into the next day leaves no room after it.
             day.blocks
                 .iter()
@@ -903,16 +865,11 @@ impl DayView {
         self.insert_action_group("day", Some(&imp.actions));
     }
 
-    /// Lets the spin buttons of work hours and block times show and take
-    /// times, and fills them when their popover opens.
+    /// Lets the spin buttons of block times show and take times, and fills
+    /// them when their popover opens.
     fn setup_time_popovers(&self) {
         let imp = self.imp();
-        for spin in [
-            &imp.work_start,
-            &imp.work_end,
-            &imp.block_start,
-            &imp.block_end,
-        ] {
+        for spin in [&imp.block_start, &imp.block_end] {
             spin.connect_output(|spin| {
                 spin.set_text(&format_time(spin_time(spin)));
                 glib::Propagation::Stop
@@ -925,28 +882,6 @@ impl DayView {
                 )
             });
         }
-        // Without work hours, the popover suggests those of the blocks.
-        imp.work_popover.connect_show(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_| {
-                let imp = view.imp();
-                let file = imp.file.borrow();
-                let day = &file.as_ref().expect("the popover belongs to a day").day;
-                let vault = view.vault();
-                let grid = &vault.config().grid;
-                let start = day
-                    .work_start
-                    .or(day.blocks.first().map(|block| block.start))
-                    .unwrap_or(grid.day_start);
-                let end = day
-                    .work_end
-                    .or(day.blocks.last().map(|block| block.end))
-                    .unwrap_or(grid.day_end);
-                set_spin_time(&imp.work_start, start);
-                set_spin_time(&imp.work_end, end);
-            }
-        ));
         imp.block_time_popover.connect_show(glib::clone!(
             #[weak(rename_to = view)]
             self,

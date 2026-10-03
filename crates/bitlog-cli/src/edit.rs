@@ -157,8 +157,6 @@ pub struct DayChanges {
     pub kind: Option<String>,
     /// `Some(None)` removes the location.
     pub location: Option<Option<LocationKey>>,
-    /// `Some(None)` removes the working hours.
-    pub work: Option<Option<(NaiveTime, NaiveTime)>>,
 }
 
 pub fn set_day(vault: &Vault, date: NaiveDate, changes: DayChanges) -> Result<()> {
@@ -168,9 +166,6 @@ pub fn set_day(vault: &Vault, date: NaiveDate, changes: DayChanges) -> Result<()
         }
         if let Some(location) = changes.location {
             day.set_location(location, vault.config())?;
-        }
-        if let Some(work) = changes.work {
-            (day.work_start, day.work_end) = work.unzip();
         }
         Ok(())
     })?;

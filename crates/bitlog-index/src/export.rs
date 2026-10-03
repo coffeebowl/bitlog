@@ -108,16 +108,10 @@ pub fn week_report(vault: &Vault, first: NaiveDate) -> Result<String, ReadError>
         if let Some(key) = &day.location {
             details.push(vault.config().location_name(key).to_owned());
         }
-        let mut worked = format!("{} worked", hours(day.working_time(vault.projects())));
-        if let (Some(start), Some(end)) = (day.work_start, day.work_end) {
-            let _ = write!(
-                worked,
-                " ({}–{})",
-                start.format("%H:%M"),
-                end.format("%H:%M")
-            );
-        }
-        details.push(worked);
+        details.push(format!(
+            "{} worked",
+            hours(day.working_time(vault.projects()))
+        ));
         let _ = writeln!(report, "{}", details.join(" · "));
         if !day.note.is_empty() {
             let _ = write!(report, "\n{}\n", day.note);
@@ -264,7 +258,7 @@ mod tests {
         assert!(report.contains("| Webshop | 10:45 |\n"), "{report}");
         assert!(report.contains("| **Total** | **22:15** |\n"), "{report}");
         assert!(
-            report.contains("## Monday, 2026-09-21\n\nWork · Remote · 7:45 worked (08:00–16:30)\n"),
+            report.contains("## Monday, 2026-09-21\n\nWork · Remote · 7:45 worked\n"),
             "{report}"
         );
         assert!(

@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use bitlog_core::{Day, NotePath, ProjectSlug, TaskList, Vault, minute_of_day, wiki_links};
+use bitlog_core::{Day, NotePath, ProjectSlug, TaskList, Vault, wiki_links};
 use rusqlite::{Transaction, params};
 
 use crate::{Found, IndexError, IndexFile};
@@ -81,18 +81,13 @@ pub(crate) fn remove(tx: &Transaction, file: &IndexFile) -> rusqlite::Result<()>
 }
 
 fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
-    tx.prepare_cached(
-        "INSERT INTO days (date, kind, location, work_start, work_end, note)
-         VALUES (?, ?, ?, ?, ?, ?)",
-    )?
-    .execute(params![
-        day.date,
-        day.kind,
-        day.location.as_ref().map(|key| key.as_str()),
-        day.work_start.map(minute_of_day),
-        day.work_end.map(minute_of_day),
-        day.note,
-    ])?;
+    tx.prepare_cached("INSERT INTO days (date, kind, location, note) VALUES (?, ?, ?, ?)")?
+        .execute(params![
+            day.date,
+            day.kind,
+            day.location.as_ref().map(|key| key.as_str()),
+            day.note,
+        ])?;
     let mut insert_block = tx.prepare_cached(
         "INSERT INTO blocks (date, id, project, start_minute, end_minute, title, text)
          VALUES (?, ?, ?, ?, ?, ?, ?)",

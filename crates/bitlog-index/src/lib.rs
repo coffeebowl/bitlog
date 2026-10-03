@@ -35,6 +35,7 @@ const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/03-search.sql")),
     M::up(include_str!("migrations/04-links.sql")),
     M::up(include_str!("migrations/05-no-pinned.sql")),
+    M::up(include_str!("migrations/06-no-work-hours.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 

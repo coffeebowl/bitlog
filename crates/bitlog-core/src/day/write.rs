@@ -42,13 +42,6 @@ impl Day {
         if let Some(energy) = self.energy {
             lines.push(format!("energy: {energy}"));
         }
-        let work: Vec<String> = [("start", self.work_start), ("end", self.work_end)]
-            .into_iter()
-            .filter_map(|(key, time)| Some(format!("{key}: {}", quote_time(time?))))
-            .collect();
-        if !work.is_empty() {
-            lines.push(format!("work: {{ {} }}", work.join(", ")));
-        }
         if !self.blocks.is_empty() {
             lines.push("blocks:".to_owned());
         }
@@ -157,7 +150,6 @@ mod tests {
              kind: \"work\"\n\
              location: \"office\"\n\
              tags: [\"review\"]\n\
-             work: { start: \"08:45\", end: \"17:15\" }\n\
              blocks:\n  \
              - { id: \"p1q2\", start: \"08:45\", end: \"10:00\", project: \"webshop\" }\n  \
              - { id: \"r3s4\", start: \"10:00\", end: \"10:15\", project: \"meetings\" }\n  \
@@ -183,14 +175,10 @@ mod tests {
     #[test]
     fn unknown_fields_and_odd_strings_survive() {
         let text = "---\nformat: 1\ndate: \"2026-01-05\"\nkind: \"say \\\"no\\\"\"\n\
-                    tags: [\"a: b\", \"#x\"]\nwork: { start: \"09:00\" }\n\
+                    tags: [\"a: b\", \"#x\"]\n\
                     \"yes\": 1\nnested: { list: [1, \"two\", null], flag: true }\n---\n";
         let day = parse(text);
         let written = day.to_markdown();
-        assert!(
-            written.contains("work: { start: \"09:00\" }\n"),
-            "{written}"
-        );
         assert!(written.contains("\"yes\": 1\n"), "{written}");
         assert_eq!(parse(&written), day);
     }
