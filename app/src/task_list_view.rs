@@ -18,10 +18,6 @@ mod imp {
     #[template(resource = "/dev/bitlog/BitLog/task_list_view.ui")]
     #[properties(wrapper_type = super::TaskListView)]
     pub struct TaskListView {
-        /// Whether tasks can be edited and sorted, as on the task page, or
-        /// only ticked off, as in the day view.
-        #[property(get, set = Self::set_full)]
-        pub full: Cell<bool>,
         /// Whether done and dropped tasks are shown below the open ones.
         #[property(get, set = Self::set_show_finished)]
         pub show_finished: Cell<bool>,
@@ -32,6 +28,15 @@ mod imp {
         pub rows: RefCell<Vec<(TaskId, gtk::ListBoxRow)>>,
         /// Whether rows are being replaced.
         pub showing: Cell<bool>,
+        /// Whether the heading is shown; not on the task page, which has it
+        /// as its title.
+        #[property(
+            name = "show-heading",
+            type = bool,
+            get = |imp: &Self| imp.heading.is_visible(),
+            set = |imp: &Self, show| imp.heading.set_visible(show),
+            default = true
+        )]
         #[template_child]
         pub heading: TemplateChild<gtk::Label>,
         #[template_child]
@@ -47,13 +52,6 @@ mod imp {
     }
 
     impl TaskListView {
-        fn set_full(&self, full: bool) {
-            self.full.set(full);
-            // The task page has the heading as its title.
-            self.heading.set_visible(!full);
-            self.obj().show_again();
-        }
-
         fn set_show_finished(&self, show: bool) {
             self.show_finished.set(show);
             self.obj().show_again();
@@ -90,11 +88,19 @@ mod imp {
     impl ObjectImpl for TaskListView {
         fn constructed(&self) {
             self.parent_constructed();
-            self.new_task.connect_entry_activated(glib::clone!(
+            // On Enter and on the apply button.
+            self.new_task.connect_apply(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
                 move |_| view.add_task()
             ));
+            // A blank title is nothing to apply, though it is a change.
+            self.new_task.connect_changed(|row| {
+                if row.text().trim().is_empty() {
+                    row.set_show_apply_button(false);
+                    row.set_show_apply_button(true);
+                }
+            });
         }
     }
     impl WidgetImpl for TaskListView {}
@@ -102,9 +108,8 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// The tasks of the global task list: the open ones to tick off and add
-    /// to, and on the task page also to edit and sort, with the finished
-    /// ones below.
+    /// The tasks of the global task list: the open ones to tick off, edit,
+    /// sort and add to, with the finished ones below.
     pub struct TaskListView(ObjectSubclass<imp::TaskListView>)
         @extends adw::Bin, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -174,11 +179,7 @@ impl TaskListView {
         let today = today();
         let mut rows = Vec::new();
         for task in tasks.tasks().iter().filter(|task| task.is_open()) {
-            let row = if self.full() {
-                self.editable_row(task, today)
-            } else {
-                self.compact_row(task, today).upcast()
-            };
+            let row = self.task_row(task, today);
             let index =
                 i32::try_from(rows.len()).expect("a task list is far shorter than i32::MAX");
             imp.list.insert(&row, index);
@@ -242,29 +243,9 @@ impl TaskListView {
         check
     }
 
-    /// An open task in the day view: tick it off, see when it is due.
-    fn compact_row(&self, task: &Task, today: NaiveDate) -> adw::ActionRow {
-        let check = self.check_button(task);
-        let row = adw::ActionRow::builder()
-            .title(&task.title)
-            .use_markup(false)
-            .activatable_widget(&check)
-            .build();
-        row.add_prefix(&check);
-        if let Some(due) = task.due {
-            let label = gtk::Label::builder()
-                .label(format_short_date(due))
-                .tooltip_text(gettext("Due Date"))
-                .build();
-            label.add_css_class(if due < today { "error" } else { "dim-label" });
-            row.add_suffix(&label);
-        }
-        row
-    }
-
-    /// An open task on the task page: drag it, tick it off, edit its title
-    /// and due date, move or drop it.
-    fn editable_row(&self, task: &Task, today: NaiveDate) -> gtk::ListBoxRow {
+    /// An open task: drag it, tick it off, edit its title and due date, move
+    /// or drop it.
+    fn task_row(&self, task: &Task, today: NaiveDate) -> gtk::ListBoxRow {
         let handle = gtk::Image::builder()
             .icon_name("list-drag-handle-symbolic")
             .tooltip_text(gettext("Drag to Move"))
