@@ -188,7 +188,9 @@ pub fn file_title(vault: &Vault, of: &VaultChange) -> String {
         VaultChange::Note(note) => {
             format!("{} / {}", vault.project_name(note.project()), note.name())
         }
-        VaultChange::Project(slug) => vault.project_name(slug).to_owned(),
+        VaultChange::Project(slug) | VaultChange::Assets(slug) => {
+            vault.project_name(slug).to_owned()
+        }
         VaultChange::Config => gettext("Vault Settings"),
     }
 }

@@ -1,18 +1,19 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    Branch, Branches, Commit, GitLogError, NotePath, Period, Project, ProjectSlug, RepoWatcher,
-    Uncommitted, Upstream, Vault, git_branches, git_commit, git_log, git_uncommitted, git_upstream,
-    watch_repo,
+    Asset, AssetPath, Branch, Branches, Commit, GitLogError, NotePath, Period, Project,
+    ProjectSlug, RepoWatcher, Uncommitted, Upstream, Vault, git_branches, git_commit, git_log,
+    git_uncommitted, git_upstream, watch_repo,
 };
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, gdk_pixbuf, gio, glib};
 
 use crate::alert::show_error;
 use crate::commit_dialog::CommitDialog;
@@ -22,6 +23,7 @@ use crate::format::{
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::miniature::Miniature;
+use crate::note_dialogs::ask_name;
 use crate::search_index::{ProjectData, SearchIndex};
 use crate::window::show_action;
 
@@ -37,6 +39,16 @@ const COMMITS_AT_ONCE: usize = 50;
 /// The lines of a note its miniature formats at most, more than fit.
 const PREVIEW_LINES: usize = 50;
 
+/// The size of the icon on the page of an asset.
+const ASSET_ICON_SIZE: i32 = 48;
+
+/// The size an image is read at for its miniature, enough to cover a page.
+const ASSET_PAGE_SIZE: i32 = 720;
+
+/// The largest image, in bytes, that its miniature shows. Larger ones show
+/// the icon of their type, as reading them would take too long.
+const MAX_IMAGE_PREVIEW_SIZE: u64 = 50_000_000;
+
 mod imp {
     use super::*;
 
@@ -47,6 +59,8 @@ mod imp {
         pub slug: RefCell<Option<ProjectSlug>>,
         /// The notes in the grid, in its order, with their previews.
         pub notes: RefCell<Vec<(NotePath, MarkdownView)>>,
+        /// The assets in the grid, in its order.
+        pub assets: RefCell<Vec<AssetPath>>,
         pub vault: RefCell<Option<Vault>>,
         pub index: RefCell<SearchIndex>,
         /// Counts the lookups in the index, so that one finishing after a
@@ -111,6 +125,14 @@ mod imp {
         #[template_child]
         pub notes_error_row: TemplateChild<adw::ActionRow>,
         #[template_child]
+        pub add_assets_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub assets_stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub assets_grid: TemplateChild<gtk::FlowBox>,
+        #[template_child]
+        pub assets_error_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
         pub timeline_list: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub more_button: TemplateChild<gtk::Button>,
@@ -143,6 +165,47 @@ mod imp {
         fn class_init(klass: &mut Self::Class) {
             Heatmap::ensure_type();
             klass.bind_template();
+            klass.install_action_async("assets.add", None, |view, _, _| async move {
+                view.choose_assets().await;
+            });
+            klass.install_action_async("assets.open-folder", None, |view, _, _| async move {
+                view.open_assets_folder().await;
+            });
+            klass.install_action_async(
+                "assets.open",
+                Some(glib::VariantTy::STRING),
+                |view, _, asset| async move {
+                    view.open_asset(asset_param(asset.as_ref()), false).await;
+                },
+            );
+            klass.install_action_async(
+                "assets.open-with",
+                Some(glib::VariantTy::STRING),
+                |view, _, asset| async move {
+                    view.open_asset(asset_param(asset.as_ref()), true).await;
+                },
+            );
+            klass.install_action_async(
+                "assets.show",
+                Some(glib::VariantTy::STRING),
+                |view, _, asset| async move {
+                    view.show_asset_in_folder(asset_param(asset.as_ref())).await;
+                },
+            );
+            klass.install_action_async(
+                "assets.rename",
+                Some(glib::VariantTy::STRING),
+                |view, _, asset| async move {
+                    view.rename_asset(asset_param(asset.as_ref())).await;
+                },
+            );
+            klass.install_action_async(
+                "assets.trash",
+                Some(glib::VariantTy::STRING),
+                |view, _, asset| async move {
+                    view.trash_asset(asset_param(asset.as_ref())).await;
+                },
+            );
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -197,6 +260,31 @@ mod imp {
                     window.disconnect(handler);
                 }
             });
+            let drop = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
+            drop.connect_drop(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                #[upgrade_or]
+                false,
+                move |_, value, _, _| {
+                    let Ok(files) = value.get::<gdk::FileList>() else {
+                        return false;
+                    };
+                    let files = files.files();
+                    glib::spawn_future_local(async move { view.add_assets(&files).await });
+                    true
+                }
+            ));
+            self.assets_stack.add_controller(drop);
+            self.assets_grid.connect_child_activated(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                move |_, card| {
+                    let index = usize::try_from(card.index()).expect("cards are in the grid");
+                    let target = view.imp().assets.borrow()[index].to_string().to_variant();
+                    let _ = WidgetExt::activate_action(&view, "assets.open", Some(&target));
+                }
+            ));
             self.notes_grid.connect_child_activated(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
@@ -213,7 +301,7 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// One project with its notes.
+    /// One project with its notes and assets.
     pub struct ProjectView(ObjectSubclass<imp::ProjectView>)
         @extends adw::NavigationPage, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -270,6 +358,8 @@ impl ProjectView {
         imp.empty_new_note_button
             .set_action_target_value(Some(&target));
 
+        self.show_assets();
+
         imp.notes_grid.remove_all();
         imp.notes.take();
         let notes = match vault.notes(&project.slug) {
@@ -294,6 +384,33 @@ impl ProjectView {
             .set_visible_child_name(if notes.is_empty() { "empty" } else { "list" });
         imp.new_note_button.set_visible(!notes.is_empty());
         imp.notes.replace(notes);
+    }
+
+    /// Shows the assets of the project as they are now.
+    pub fn show_assets(&self) {
+        let imp = self.imp();
+        let (Some(slug), Some(vault)) = (self.slug(), imp.vault.borrow().clone()) else {
+            return;
+        };
+        imp.assets_grid.remove_all();
+        imp.assets.take();
+        match vault.assets(&slug) {
+            Ok(assets) => {
+                for asset in &assets {
+                    imp.assets_grid.append(&asset_card(&vault, asset));
+                }
+                imp.assets_stack
+                    .set_visible_child_name(if assets.is_empty() { "empty" } else { "list" });
+                imp.add_assets_button.set_visible(!assets.is_empty());
+                imp.assets
+                    .replace(assets.into_iter().map(|asset| asset.path).collect());
+            }
+            Err(err) => {
+                imp.assets_error_row.set_subtitle(&err.to_string());
+                imp.assets_stack.set_visible_child_name("error");
+                imp.add_assets_button.set_visible(true);
+            }
+        }
     }
 
     /// Shows the notes in the grid as they are now, as after editing one.
@@ -476,6 +593,135 @@ impl ProjectView {
                 }
             }
         ));
+    }
+}
+
+impl ProjectView {
+    /// The vault shown, which the actions on assets need.
+    fn vault(&self) -> Vault {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("assets are only shown with a vault")
+    }
+
+    async fn choose_assets(&self) {
+        let dialog = gtk::FileDialog::builder()
+            .title(gettext("Add Files"))
+            .modal(true)
+            .build();
+        let window = self.root().and_downcast::<gtk::Window>();
+        // Dismissing the dialog is reported as an error, too.
+        let Ok(files) = dialog.open_multiple_future(window.as_ref()).await else {
+            return;
+        };
+        let files: Vec<gio::File> = files.iter().filter_map(Result::ok).collect();
+        self.add_assets(&files).await;
+    }
+
+    /// Copies `files` into the assets of the project in the background, then
+    /// shows them. Files that cannot be added are named in one message.
+    async fn add_assets(&self, files: &[gio::File]) {
+        let Some(slug) = self.slug() else {
+            return;
+        };
+        let vault = self.vault();
+        let paths: Vec<Option<PathBuf>> = files.iter().map(|file| file.path()).collect();
+        let errors = gio::spawn_blocking(move || {
+            paths
+                .iter()
+                .filter_map(|path| match path {
+                    Some(path) => vault
+                        .add_asset(&slug, path)
+                        .err()
+                        .map(|err| err.to_string()),
+                    None => Some(not_local()),
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .expect("copying files does not panic");
+        self.show_assets();
+        if !errors.is_empty() {
+            show_error(self, &gettext("Cannot Add Files"), &errors.join("\n"));
+        }
+    }
+
+    /// Opens the assets folder of the project in the file manager, creating
+    /// it first, so that files can be put there.
+    async fn open_assets_folder(&self) {
+        let Some(slug) = self.slug() else {
+            return;
+        };
+        let folder = self.vault().assets_folder(&slug);
+        if let Err(err) = fs::create_dir_all(&folder) {
+            let message = format!("{}: {err}", folder.display());
+            show_error(self, &gettext("Cannot Open Folder"), &message);
+            return;
+        }
+        let window = self.root().and_downcast::<gtk::Window>();
+        let launched = gtk::FileLauncher::new(Some(&gio::File::for_path(folder)))
+            .launch_future(window.as_ref())
+            .await;
+        self.show_launch_error(&gettext("Cannot Open Folder"), launched);
+    }
+
+    /// Opens `asset` with the app the system chooses for it, or, if
+    /// `choose`, with one the user chooses.
+    async fn open_asset(&self, asset: AssetPath, choose: bool) {
+        let file = gio::File::for_path(self.vault().asset_path(&asset));
+        let launcher = gtk::FileLauncher::new(Some(&file));
+        launcher.set_always_ask(choose);
+        let window = self.root().and_downcast::<gtk::Window>();
+        let launched = launcher.launch_future(window.as_ref()).await;
+        self.show_launch_error(&gettext("Cannot Open File"), launched);
+    }
+
+    async fn show_asset_in_folder(&self, asset: AssetPath) {
+        let file = gio::File::for_path(self.vault().asset_path(&asset));
+        let window = self.root().and_downcast::<gtk::Window>();
+        let launched = gtk::FileLauncher::new(Some(&file))
+            .open_containing_folder_future(window.as_ref())
+            .await;
+        self.show_launch_error(&gettext("Cannot Show File"), launched);
+    }
+
+    /// Shows the error of launching an app, unless the user dismissed it.
+    fn show_launch_error(&self, heading: &str, launched: Result<(), glib::Error>) {
+        if let Err(err) = launched
+            && !err.matches(gtk::DialogError::Dismissed)
+            && !err.matches(gtk::DialogError::Cancelled)
+        {
+            show_error(self, heading, err.message());
+        }
+    }
+
+    async fn rename_asset(&self, asset: AssetPath) {
+        let valid = asset.clone();
+        let Some(name) = ask_name(
+            self,
+            &gettext("Rename File"),
+            &gettext("_Rename"),
+            asset.name(),
+            move |name| valid.with_name(name).is_ok(),
+        )
+        .await
+        else {
+            return;
+        };
+        if let Err(err) = self.vault().rename_asset(&asset, &name) {
+            show_error(self, &gettext("Cannot Rename File"), &err.to_string());
+        }
+        self.show_assets();
+    }
+
+    async fn trash_asset(&self, asset: AssetPath) {
+        let file = gio::File::for_path(self.vault().asset_path(&asset));
+        if let Err(err) = file.trash_future(glib::Priority::DEFAULT).await {
+            show_error(self, &gettext("Cannot Move File to Trash"), err.message());
+        }
+        self.show_assets();
     }
 }
 
@@ -877,6 +1123,139 @@ fn commit_row(commit: &Commit) -> adw::ActionRow {
     row
 }
 
+fn asset_param(param: Option<&glib::Variant>) -> AssetPath {
+    param
+        .and_then(|param| param.str()?.parse().ok())
+        .expect("asset actions take an asset path")
+}
+
+/// The message for a file chosen or dropped that has no local path.
+fn not_local() -> String {
+    gettext("The file is not on a local file system.")
+}
+
+/// An asset in the grid: the miniature of a square page with an icon for
+/// its type or, for an image, the image, above its name, folder and size,
+/// and menu. The grid opens it when activated.
+fn asset_card(vault: &Vault, asset: &Asset) -> gtk::FlowBoxChild {
+    let path = &asset.path;
+    let (content_type, _) = gio::content_type_guess(Some(path.name()), None);
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    // Above the page, not on it, so that it is not scaled down with it.
+    let icon = gtk::Image::builder()
+        .gicon(&gio::content_type_get_symbolic_icon(&content_type))
+        .pixel_size(ASSET_ICON_SIZE)
+        .halign(gtk::Align::Center)
+        .valign(gtk::Align::Center)
+        .css_classes(["dim-label"])
+        .build();
+    let page = gtk::Overlay::builder()
+        .child(&Miniature::square(&content))
+        .overflow(gtk::Overflow::Hidden)
+        .build();
+    page.add_overlay(&icon);
+    let is_image = gio::content_type_get_mime_type(&content_type)
+        .is_some_and(|mime_type| mime_type.starts_with("image/"));
+    if is_image && asset.size <= MAX_IMAGE_PREVIEW_SIZE {
+        show_image(&content, &icon, vault.asset_path(path));
+    }
+
+    let mut details = vec![glib::format_size(asset.size).to_string()];
+    if !path.folder().is_empty() {
+        details.insert(0, path.folder().to_owned());
+    }
+    page_card(
+        &page,
+        path.name(),
+        path.path(),
+        Some(&gtk::Label::new(Some(&details.join(" · ")))),
+        &gettext("File Menu"),
+        &asset_menu(path),
+    )
+}
+
+/// Reads the image at `path` in the background, at most as large as a
+/// page, then shows it in `content` instead of `icon`. If the image cannot
+/// be read, the icon stays.
+fn show_image(content: &gtk::Box, icon: &gtk::Image, path: PathBuf) {
+    glib::spawn_future_local(glib::clone!(
+        #[weak]
+        content,
+        #[weak]
+        icon,
+        async move {
+            let image = gio::spawn_blocking(move || read_image(&path))
+                .await
+                .expect("reading an image does not panic");
+            let Some(image) = image else {
+                return;
+            };
+            let texture = gdk::MemoryTexture::new(
+                image.width,
+                image.height,
+                image.format,
+                &image.pixels,
+                image.stride,
+            );
+            icon.set_visible(false);
+            content.append(
+                &gtk::Picture::builder()
+                    .paintable(&texture)
+                    .content_fit(gtk::ContentFit::Cover)
+                    .vexpand(true)
+                    .build(),
+            );
+        }
+    ));
+}
+
+/// An image as read, to be shown in the main thread.
+struct Image {
+    width: i32,
+    height: i32,
+    format: gdk::MemoryFormat,
+    pixels: glib::Bytes,
+    /// The bytes from one row to the next.
+    stride: usize,
+}
+
+/// The image at `path`, upright and at most as large as a page, or `None`
+/// if it cannot be read.
+fn read_image(path: &Path) -> Option<Image> {
+    let size = ASSET_PAGE_SIZE;
+    let pixbuf = gdk_pixbuf::Pixbuf::from_file_at_scale(path, size, size, true).ok()?;
+    let pixbuf = pixbuf.apply_embedded_orientation().unwrap_or(pixbuf);
+    Some(Image {
+        width: pixbuf.width(),
+        height: pixbuf.height(),
+        format: if pixbuf.has_alpha() {
+            gdk::MemoryFormat::R8g8b8a8
+        } else {
+            gdk::MemoryFormat::R8g8b8
+        },
+        pixels: pixbuf.read_pixel_bytes(),
+        stride: usize::try_from(pixbuf.rowstride()).ok()?,
+    })
+}
+
+/// Opening `asset` with another app, showing it in its folder, renaming it
+/// and moving it to the trash.
+fn asset_menu(asset: &AssetPath) -> gio::Menu {
+    let target = asset.to_string().to_variant();
+    let menu = gio::Menu::new();
+    for (label, action) in [
+        (gettext("Open _With…"), "assets.open-with"),
+        (gettext("_Show in Folder"), "assets.show"),
+        (gettext("_Rename…"), "assets.rename"),
+        (gettext("Move to _Trash"), "assets.trash"),
+    ] {
+        let item = gio::MenuItem::new(Some(&label), None);
+        item.set_action_and_target_value(Some(action), Some(&target));
+        menu.append_item(&item);
+    }
+    menu
+}
+
 /// The window action that shows `block`, with its target.
 fn block_action(block: &ProjectBlock) -> (&'static str, glib::Variant) {
     show_action(&Found::Block {
@@ -959,8 +1338,27 @@ pub fn note_card(
     preview: &MarkdownView,
     details: Option<&gtk::Label>,
 ) -> gtk::FlowBoxChild {
-    let page = Miniature::new(preview);
-    page.add_css_class("note-page");
+    page_card(
+        &Miniature::new(preview),
+        note.name(),
+        note.name(),
+        details,
+        &gettext("Note Menu"),
+        &note_menu(note),
+    )
+}
+
+/// A card in a grid of notes or assets: `page`, the miniature of a page,
+/// above `name`, with `tooltip`, `details` if given, and `menu`.
+fn page_card(
+    page: &impl IsA<gtk::Widget>,
+    name: &str,
+    tooltip: &str,
+    details: Option<&gtk::Label>,
+    menu_tooltip: &str,
+    menu: &gio::Menu,
+) -> gtk::FlowBoxChild {
+    page.add_css_class("miniature-page");
     // Takes up rounding, so that the names line up.
     page.set_vexpand(true);
 
@@ -971,8 +1369,8 @@ pub fn note_card(
         .build();
     labels.append(
         &gtk::Label::builder()
-            .label(note.name())
-            .tooltip_text(note.name())
+            .label(name)
+            .tooltip_text(tooltip)
             .xalign(0.0)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             // Leaves the width of the card to the page.
@@ -994,8 +1392,8 @@ pub fn note_card(
     footer.append(
         &gtk::MenuButton::builder()
             .icon_name("view-more-symbolic")
-            .tooltip_text(gettext("Note Menu"))
-            .menu_model(&note_menu(note))
+            .tooltip_text(menu_tooltip)
+            .menu_model(menu)
             .valign(gtk::Align::Center)
             .css_classes(["flat", "circular"])
             .build(),
@@ -1005,12 +1403,12 @@ pub fn note_card(
         .orientation(gtk::Orientation::Vertical)
         .spacing(6)
         .build();
-    content.append(&page);
+    content.append(page);
     content.append(&footer);
     gtk::FlowBoxChild::builder()
         .child(&content)
         .width_request(120)
-        .css_classes(["note-card"])
+        .css_classes(["page-card"])
         .build()
 }
 

@@ -1,5 +1,6 @@
 //! Data model, file format and vault I/O for BitLog.
 
+mod assets;
 mod check;
 mod config;
 mod conflict;
@@ -20,6 +21,7 @@ mod toml_values;
 mod vault;
 mod watch;
 
+pub use assets::Asset;
 pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, ProjectsConfig, VaultConfig, WeekConfig};
 pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};
@@ -31,7 +33,7 @@ pub use git_log::{
     Branch, Branches, ChangedFile, Commit, CommitDetails, FileChange, GitLogError, Uncommitted,
     Upstream, git_branches, git_commit, git_file_diff, git_log, git_uncommitted, git_upstream,
 };
-pub use id::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
+pub use id::{AssetPath, BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 pub use init::CreateError;
 pub use markdown::{
     Callout, CalloutKind, CodeBlock, Continuation, Formatting, InlineMarkup, ListIndent,

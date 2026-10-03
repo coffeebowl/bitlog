@@ -702,6 +702,16 @@ impl Window {
                 imp.notes_page.reload();
             }
         }
+        let assets: Vec<ProjectSlug> = changes
+            .iter()
+            .filter_map(|change| match change {
+                VaultChange::Assets(slug) => Some(slug.clone()),
+                _ => None,
+            })
+            .collect();
+        if !assets.is_empty() {
+            imp.projects_page.assets_changed(&assets);
+        }
         let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
         if self.shows(&imp.calendar_view) && changes.iter().any(changes_day) {
             imp.calendar_view.reload();

@@ -1,11 +1,13 @@
+use std::cell::Cell;
+
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{glib, gsk};
 
 /// The width the child is laid out at, as the width of a page.
 const PAGE_WIDTH: f32 = 480.0;
-/// Of a page in portrait, as A4 has.
-const PAGE_RATIO: f32 = std::f32::consts::SQRT_2;
+/// The height of a page in portrait to its width, as A4 has.
+const PORTRAIT: f32 = std::f32::consts::SQRT_2;
 /// The width a miniature asks for.
 const NATURAL_WIDTH: i32 = 150;
 
@@ -13,7 +15,10 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default)]
-    pub struct Miniature;
+    pub struct Miniature {
+        /// The height of the page to its width.
+        pub ratio: Cell<f32>,
+    }
 
     #[glib::object_subclass]
     impl ObjectSubclass for Miniature {
@@ -50,7 +55,7 @@ mod imp {
             } else {
                 for_size
             };
-            let height = (width as f32 * PAGE_RATIO).round() as i32;
+            let height = (width as f32 * self.ratio.get()).round() as i32;
             (height, height, -1, -1)
         }
 
@@ -71,16 +76,27 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// Its child as on a page in portrait, scaled down to a miniature of
-    /// the page, as documents show in file managers.
+    /// Its child as on a page, in portrait or square, scaled down to a
+    /// miniature of the page, as documents show in file managers.
     pub struct Miniature(ObjectSubclass<imp::Miniature>)
         @extends gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl Miniature {
+    /// On a page in portrait.
     pub fn new(child: &impl IsA<gtk::Widget>) -> Self {
+        Self::with_ratio(child, PORTRAIT)
+    }
+
+    /// On a square page.
+    pub fn square(child: &impl IsA<gtk::Widget>) -> Self {
+        Self::with_ratio(child, 1.0)
+    }
+
+    fn with_ratio(child: &impl IsA<gtk::Widget>, ratio: f32) -> Self {
         let miniature: Self = glib::Object::new();
+        miniature.imp().ratio.set(ratio);
         child.set_parent(&miniature);
         miniature
     }

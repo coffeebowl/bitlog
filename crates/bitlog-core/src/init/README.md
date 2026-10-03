@@ -9,7 +9,7 @@ to work with them.
 - `bitlog.toml` – settings of the vault: week, time grid and locations.
 - `daily/YYYY/MM/YYYY-MM-DD.md` – one Markdown file per day.
 - `projects/<slug>/project.toml` – one folder per project, with Markdown notes
-  in `notes/`.
+  in `notes/` and any other files, such as PDFs or images, in `assets/`.
 - `tasks.toml` – a global list of small tasks, once there are any.
 - `templates/note.md` – the template for new project notes.
 - `.bitlog/` – local data of this device, such as the search index. It can

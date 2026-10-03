@@ -246,9 +246,10 @@ impl Vault {
                 TaskList::read(&original, &ours)?,
                 TaskList::read(&copy_path, &theirs)?,
             ),
-            VaultChange::Config | VaultChange::Project(_) | VaultChange::Note(_) => {
-                Versions::Texts(ours, theirs)
-            }
+            VaultChange::Config
+            | VaultChange::Project(_)
+            | VaultChange::Note(_)
+            | VaultChange::Assets(_) => Versions::Texts(ours, theirs),
         })
     }
 
@@ -325,7 +326,9 @@ pub(crate) fn original_name(name: &str) -> Option<String> {
 /// conflict copy of, if it is one.
 pub(crate) fn copy_of(relative: &Path) -> Option<VaultChange> {
     let original = original_name(relative.file_name()?.to_str()?)?;
+    // Copies of assets are assets of their own.
     VaultChange::from_path(&relative.with_file_name(original))
+        .filter(|change| !matches!(change, VaultChange::Assets(_)))
 }
 
 /// Makes `ours` the value both sides agree on, where `empty` on one side
@@ -411,6 +414,13 @@ mod tests {
         fs::create_dir_all(root.join(".git")).unwrap();
         fs::write(root.join(".git/tasks (conflicted copy).toml"), "").unwrap();
         fs::write(root.join("exports/week (conflicted copy).md"), "").ok();
+        let assets = root.join("projects/infra/assets");
+        fs::create_dir_all(&assets).unwrap();
+        fs::write(
+            assets.join("plan.sync-conflict-20260922-181530-KNOTBK7.pdf"),
+            "",
+        )
+        .unwrap();
         let copies = vault.conflict_copies().unwrap();
         assert_eq!(
             copies,

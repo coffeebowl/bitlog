@@ -1,4 +1,5 @@
-//! The questions around notes that the project and note pages share.
+//! The questions around notes that the project and note pages share, and
+//! asking for a name, which assets use as well.
 
 use adw::prelude::*;
 use bitlog_core::{NotePath, ProjectSlug, Vault};
@@ -18,6 +19,22 @@ pub async fn ask_note_name(
     project: &ProjectSlug,
     name: &str,
 ) -> Option<String> {
+    let project = project.clone();
+    ask_name(parent, heading, accept, name, move |text| {
+        NotePath::new(project.clone(), text).is_ok()
+    })
+    .await
+}
+
+/// Asks for a new name instead of `name` that `is_valid` accepts, as for
+/// a note or an asset. Returns `None` if the user cancels.
+pub async fn ask_name(
+    parent: &impl IsA<gtk::Widget>,
+    heading: &str,
+    accept: &str,
+    name: &str,
+    is_valid: impl Fn(&str) -> bool + 'static,
+) -> Option<String> {
     let entry = gtk::Entry::builder()
         .text(name)
         .activates_default(true)
@@ -32,10 +49,10 @@ pub async fn ask_note_name(
     dialog.add_responses(&[("cancel", &gettext("_Cancel")), ("accept", accept)]);
     dialog.set_response_appearance("accept", adw::ResponseAppearance::Suggested);
     let is_new_name = {
-        let (project, name) = (project.clone(), name.to_owned());
+        let name = name.to_owned();
         move |text: &str| {
             let text = text.trim();
-            text != name && NotePath::new(project.clone(), text).is_ok()
+            text != name && is_valid(text)
         }
     };
     dialog.set_response_enabled("accept", false);

@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::conflict::copy_of;
 use crate::file::content_hash;
 use crate::vault::{day_file, day_file_date};
-use crate::{NotePath, ProjectSlug};
+use crate::{AssetPath, NotePath, ProjectSlug};
 
 /// Long enough to see a sync tool's burst of writes as one change.
 const DEBOUNCE: Duration = Duration::from_millis(300);
@@ -27,6 +27,8 @@ pub enum VaultChange {
     Tasks,
     Project(ProjectSlug),
     Note(NotePath),
+    /// An asset of the project, or a subfolder of its assets.
+    Assets(ProjectSlug),
     Day(NaiveDate),
 }
 
@@ -112,6 +114,11 @@ pub(crate) fn watch(
                     // A conflict copy changes what there is to merge into
                     // its original.
                     let change = VaultChange::from_path(relative).or_else(|| copy_of(relative))?;
+                    // This program never writes assets as text, and reading
+                    // one may mean reading a large file.
+                    if let VaultChange::Assets(_) = change {
+                        return Some(change);
+                    }
                     let text = fs::read_to_string(path).ok();
                     (!own_writes.is_own(relative, text.as_deref())).then_some(change)
                 })
@@ -251,6 +258,11 @@ impl VaultChange {
                     .ok()
                     .map(VaultChange::Note)
             }
+            ["projects", slug, "assets", path @ ..] if !path.is_empty() => {
+                AssetPath::new(slug.parse().ok()?, &path.join("/"))
+                    .ok()
+                    .map(|asset| VaultChange::Assets(asset.project().clone()))
+            }
             ["daily", _, _, name] => day_file_date(name)
                 .filter(|date| relative == day_file(*date))
                 .map(VaultChange::Day),
@@ -295,6 +307,14 @@ mod tests {
             ))
         );
         assert_eq!(
+            change("projects/infra/assets/scans/Offer 2026.pdf"),
+            Some(VaultChange::Assets("infra".parse().unwrap()))
+        );
+        assert_eq!(
+            change("projects/infra/assets/scans"),
+            Some(VaultChange::Assets("infra".parse().unwrap()))
+        );
+        assert_eq!(
             change("daily/2026/09/2026-09-21.md"),
             Some(VaultChange::Day(
                 NaiveDate::from_ymd_opt(2026, 9, 21).unwrap()
@@ -310,6 +330,9 @@ mod tests {
             "projects/infra/notes/.deployment.md.0badf00d.tmp",
             "projects/infra/notes/deployment.txt",
             "projects/infra/notes/drafts/deployment.md",
+            "projects/infra/assets",
+            "projects/infra/assets/.plan.pdf.0badf00d.tmp",
+            "projects/infra/assets/.cache/thumb.png",
             "tasks-archive-2026.toml",
             ".tasks.toml.0badf00d.tmp",
             ".git/index",

@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::{BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
+use crate::{AssetPath, BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
 
 /// A vault file that cannot be read or does not follow the format.
 #[derive(Debug, Error)]
@@ -43,6 +43,12 @@ pub enum EditError {
     UnknownNote(NotePath),
     #[error("the note {0} exists already")]
     NoteExists(NotePath),
+    #[error("there is no file {0}")]
+    UnknownAsset(AssetPath),
+    #[error("the file {0} exists already")]
+    AssetExists(AssetPath),
+    #[error("{} is no file", .0.display())]
+    NotAFile(PathBuf),
     #[error("a repository path has to be absolute, found {}", .0.display())]
     InvalidRepoPath(PathBuf),
     #[error("{} is not a Git repository", .0.display())]

@@ -4,13 +4,13 @@
   background: none;
 }
 
-/* Notes in a project show as miniatures of pages. */
-flowboxchild.note-card {
+/* Notes and files of a project show as miniatures of pages. */
+flowboxchild.page-card {
   padding: 6px;
   border-radius: 12px;
 }
 
-.note-page {
+.miniature-page {
   background-color: var(--card-bg-color);
   border-radius: 4px;
   box-shadow:
@@ -63,6 +63,19 @@ flowboxchild.note-card {
   -gtk-icon-source: -gtk-icontheme("object-select-symbolic");
   background-color: var(--accent-bg-color);
   color: var(--accent-fg-color);
+}
+
+/* Files dragged over a project's files show where they will be added, as
+   libadwaita's tab overview shows where a tab goes. */
+.assets-drop {
+  border-radius: 12px;
+}
+
+.assets-drop:drop(active) {
+  outline: 2px solid color-mix(in srgb, var(--accent-bg-color) 50%, transparent);
+  outline-offset: 2px;
+  box-shadow: none;
+  background-color: color-mix(in srgb, var(--accent-bg-color) 10%, transparent);
 }
 
 /* Projects are moved in their list by dragging them: the row taken away is

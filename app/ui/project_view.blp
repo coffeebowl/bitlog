@@ -174,6 +174,99 @@ template $BitLogProjectView: Adw.NavigationPage {
               }
 
               Adw.PreferencesGroup {
+                title: _("Files");
+
+                header-suffix: Box {
+                  valign: center;
+
+                  Button {
+                    icon-name: "folder-open-symbolic";
+                    tooltip-text: _("Open Folder");
+                    action-name: "assets.open-folder";
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+
+                  // Without files, the row in their place adds them.
+                  Button add_assets_button {
+                    icon-name: "list-add-symbolic";
+                    tooltip-text: _("Add Files");
+                    action-name: "assets.add";
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+                };
+
+                // Files dropped onto it are added.
+                Stack assets_stack {
+                  vhomogeneous: false;
+
+                  StackPage {
+                    name: "list";
+
+                    child: FlowBox assets_grid {
+                      valign: start;
+                      homogeneous: true;
+                      selection-mode: none;
+                      max-children-per-line: 8;
+                      column-spacing: 12;
+                      row-spacing: 18;
+                    };
+                  }
+
+                  StackPage {
+                    name: "empty";
+
+                    child: ListBox {
+                      valign: start;
+                      selection-mode: none;
+
+                      Adw.ButtonRow {
+                        title: _("_Add Files…");
+                        use-underline: true;
+                        start-icon-name: "list-add-symbolic";
+                        action-name: "assets.add";
+                      }
+
+                      styles [
+                        "boxed-list",
+                      ]
+                    };
+                  }
+
+                  StackPage {
+                    name: "error";
+
+                    child: ListBox {
+                      valign: start;
+                      selection-mode: none;
+
+                      Adw.ActionRow assets_error_row {
+                        title: _("Cannot Read Files");
+
+                        [prefix]
+                        Image {
+                          icon-name: "dialog-error-symbolic";
+                        }
+                      }
+
+                      styles [
+                        "boxed-list",
+                      ]
+                    };
+                  }
+
+                  styles [
+                    "assets-drop",
+                  ]
+                }
+              }
+
+              Adw.PreferencesGroup {
                 title: _("Timeline");
 
                 Box {

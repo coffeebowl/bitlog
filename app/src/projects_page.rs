@@ -585,6 +585,16 @@ impl ProjectsPage {
         }
     }
 
+    /// Shows the assets of the project open as they are now, if they are
+    /// among the assets of `projects`, which were changed elsewhere.
+    pub fn assets_changed(&self, projects: &[ProjectSlug]) {
+        let imp = self.imp();
+        let shown = imp.project_view.slug();
+        if self.shows("project") && shown.is_some_and(|slug| projects.contains(&slug)) {
+            imp.project_view.show_assets();
+        }
+    }
+
     /// Whether the page with `tag` is in the navigation view.
     fn shows(&self, tag: &str) -> bool {
         self.imp().nav.find_page(tag).is_some()

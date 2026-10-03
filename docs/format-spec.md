@@ -20,6 +20,7 @@ at any time.
 | Block text | Free text about one block | Day file, below the block heading |
 | Project | Something time is spent on | `projects/<slug>/project.toml` |
 | Project note | A Markdown note belonging to a project | `projects/<slug>/notes/*.md` |
+| Project asset | Any other file kept with a project, such as a PDF or an image | `projects/<slug>/assets/**` |
 | Task | An item on the global task list | `tasks.toml` |
 
 A block refers to its project by slug. A project note belongs to its project
@@ -35,7 +36,10 @@ and project notes.
 | Note name | the file name without `.md`; not empty, no `/` or `\`, not starting with `.`, not a sync conflict copy | `Auth middleware` |
 
 A project note is identified by its path relative to the vault,
-`projects/<slug>/notes/<name>.md`, always written with `/`.
+`projects/<slug>/notes/<name>.md`, always written with `/`. So is a project
+asset, `projects/<slug>/assets/<path>`, where every part of `<path>` is a
+file or folder name that is not empty, holds no `\` and does not start
+with `.`.
 
 ## Folder structure
 
@@ -48,6 +52,7 @@ my-vault/
   daily/2026/09/2026-09-23.md        # one day: front matter, day note, blocks with text
   projects/project-a/project.toml
   projects/project-a/notes/auth-middleware.md
+  projects/project-a/assets/scans/offer.pdf  # any files, in any subfolders
   templates/note.md
   exports/                           # generated, may be overwritten
   .bitlog/                         # local, never sync
@@ -440,6 +445,18 @@ Without a template, or if the file is missing, a new note is empty.
 **Renaming** a note changes only its file name. BitLog offers to change the
 wiki links to it in all notes, day notes and block texts as well; it then
 replaces only the link targets and keeps the rest of each link.
+
+## Project assets
+
+- Live in `projects/<slug>/assets/` and its subfolders, and belong to the
+  project only through this folder. They may be files of any kind.
+- BitLog never reads them; it lists them and leaves opening them to other
+  apps.
+- Hidden files and folders, whose names start with `.`, are no assets, nor
+  is anything in them. Sync conflict copies are assets of their own.
+- An asset added under a name that is taken gets a number before its
+  extension, as in `offer (2).pdf`.
+- Nothing links to assets. Renaming or removing one changes nothing else.
 
 ## Exports: `exports/`
 

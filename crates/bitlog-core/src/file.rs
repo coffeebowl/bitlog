@@ -91,6 +91,23 @@ pub fn content_hash(text: &str) -> u64 {
 /// Writes `text` to `path` so that readers, sync tools included, see either
 /// the old or the new content, never a part of it. Creates missing folders.
 pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), SaveError> {
+    replace_atomic(path, |file| file.write_all(text.as_bytes()))
+}
+
+/// Copies the file `source` to `path` the way [`write_atomic`] writes.
+pub(crate) fn copy_atomic(source: &Path, path: &Path) -> Result<(), SaveError> {
+    replace_atomic(path, |file| {
+        io::copy(&mut File::open(source)?, file)?;
+        Ok(())
+    })
+}
+
+/// Fills a temporary file next to `path` with `fill`, then puts it in the
+/// place of `path`.
+fn replace_atomic(
+    path: &Path,
+    fill: impl FnOnce(&mut File) -> io::Result<()>,
+) -> Result<(), SaveError> {
     let folder = path.parent().expect("vault files lie in a folder");
     let name = path
         .file_name()
@@ -101,7 +118,7 @@ pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), SaveError> {
     let result = fs::create_dir_all(folder)
         .and_then(|()| {
             let mut file = File::create_new(&temporary)?;
-            file.write_all(text.as_bytes())?;
+            fill(&mut file)?;
             file.sync_all()
         })
         .and_then(|()| fs::rename(&temporary, path));

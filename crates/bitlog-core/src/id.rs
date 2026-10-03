@@ -33,6 +33,10 @@ const SHORT_ID_ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
 const SHORT_ID_LEN: usize = 4;
 const NOTE_NAME_RULE: &str = "a file name without \"/\" or \"\\\" that does not start with \".\" and is no sync conflict copy";
 const NOTE_PATH_RULE: &str = "projects/<slug>/notes/<name>.md";
+const ASSET_NAME_RULE: &str = "a file name without \"/\" or \"\\\" that does not start with \".\"";
+const ASSET_FILE_RULE: &str =
+    "file names without \"\\\" that do not start with \".\", joined by \"/\"";
+const ASSET_PATH_RULE: &str = "projects/<slug>/assets/<path>";
 
 fn is_slug(value: &str) -> bool {
     !value.is_empty()
@@ -278,12 +282,16 @@ impl NotePath {
 }
 
 fn is_note_name(name: &str) -> bool {
+    is_file_name(name) && original_name(name).is_none()
+}
+
+/// Whether `name` is a file name that is not hidden.
+fn is_file_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('.')
         && !name
             .chars()
             .any(|c| c == '/' || c == '\\' || c.is_control())
-        && original_name(name).is_none()
 }
 
 impl FromStr for NotePath {
@@ -302,6 +310,79 @@ impl FromStr for NotePath {
 impl fmt::Display for NotePath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "projects/{}/notes/{}.md", self.project, self.name)
+    }
+}
+
+/// Identifies a project asset, a file in `projects/<slug>/assets/` or one of
+/// its subfolders, by its path relative to the vault,
+/// `projects/<slug>/assets/<path>`, always with `/` as separator.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AssetPath {
+    project: ProjectSlug,
+    path: String,
+}
+
+impl AssetPath {
+    /// Creates the path of the asset at `path`, relative to the assets
+    /// folder of `project`.
+    pub fn new(project: ProjectSlug, path: &str) -> Result<Self, InvalidId> {
+        if path.split('/').all(is_file_name) {
+            Ok(Self {
+                project,
+                path: path.to_owned(),
+            })
+        } else {
+            Err(InvalidId::new("asset file", path, ASSET_FILE_RULE))
+        }
+    }
+
+    pub fn project(&self) -> &ProjectSlug {
+        &self.project
+    }
+
+    /// The path relative to the assets folder.
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    /// The file name, without the folder.
+    pub fn name(&self) -> &str {
+        self.path.rsplit('/').next().unwrap_or_default()
+    }
+
+    /// The subfolder of the assets folder the asset lies in, or `""`.
+    pub fn folder(&self) -> &str {
+        self.path.rsplit_once('/').map_or("", |(folder, _)| folder)
+    }
+
+    /// The asset `name` in the same folder.
+    pub fn with_name(&self, name: &str) -> Result<Self, InvalidId> {
+        if !is_file_name(name) {
+            return Err(InvalidId::new("asset name", name, ASSET_NAME_RULE));
+        }
+        let path = match self.folder() {
+            "" => name.to_owned(),
+            folder => format!("{folder}/{name}"),
+        };
+        Self::new(self.project.clone(), &path)
+    }
+}
+
+impl FromStr for AssetPath {
+    type Err = InvalidId;
+
+    fn from_str(value: &str) -> Result<Self, InvalidId> {
+        let invalid = || InvalidId::new("asset path", value, ASSET_PATH_RULE);
+        let rest = value.strip_prefix("projects/").ok_or_else(invalid)?;
+        let (project, path) = rest.split_once("/assets/").ok_or_else(invalid)?;
+        let project = project.parse().map_err(|_| invalid())?;
+        Self::new(project, path).map_err(|_| invalid())
+    }
+}
+
+impl fmt::Display for AssetPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "projects/{}/assets/{}", self.project, self.path)
     }
 }
 
@@ -385,6 +466,53 @@ mod tests {
             "projects\\webshop\\notes\\a.md",
         ] {
             assert!(invalid.parse::<NotePath>().is_err(), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn asset_paths() {
+        let path: AssetPath = "projects/webshop/assets/scans/Offer 2026.pdf"
+            .parse()
+            .unwrap();
+        assert_eq!(path.project().as_str(), "webshop");
+        assert_eq!(path.path(), "scans/Offer 2026.pdf");
+        assert_eq!(path.name(), "Offer 2026.pdf");
+        assert_eq!(path.folder(), "scans");
+        assert_eq!(
+            path.to_string(),
+            "projects/webshop/assets/scans/Offer 2026.pdf"
+        );
+
+        let top: AssetPath = "projects/webshop/assets/logo.png".parse().unwrap();
+        assert_eq!(top.folder(), "");
+        // Sync conflict copies are assets like any other file.
+        let copy = "projects/webshop/assets/a.sync-conflict-20260922-181530-KNOTBK7.png";
+        assert!(copy.parse::<AssetPath>().is_ok());
+
+        for invalid in [
+            "",
+            "projects/webshop/assets/",
+            "projects/webshop/notes/a.md",
+            "projects/webshop/assets/.hidden",
+            "projects/webshop/assets/scans/../a.pdf",
+            "projects/webshop/assets/scans//a.pdf",
+            "projects/webshop/assets/scans/",
+            "projects/Web/assets/a.pdf",
+            "projects/webshop/assets/a\\b.pdf",
+        ] {
+            assert!(invalid.parse::<AssetPath>().is_err(), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn renamed_assets_stay_in_their_folder() {
+        let path: AssetPath = "projects/webshop/assets/scans/a.pdf".parse().unwrap();
+        assert_eq!(
+            path.with_name("b.pdf").unwrap().to_string(),
+            "projects/webshop/assets/scans/b.pdf"
+        );
+        for invalid in ["", ".b.pdf", "other/b.pdf", ".."] {
+            assert!(path.with_name(invalid).is_err(), "{invalid:?}");
         }
     }
 
