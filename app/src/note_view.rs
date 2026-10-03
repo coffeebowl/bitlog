@@ -345,20 +345,26 @@ fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
 
 /// A row naming the note, block or day note of `backlink`.
 fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
+    let escaped = |text: &str| glib::markup_escape_text(text).to_string();
     let (title, subtitle) = match &backlink.found {
         Found::Note(note) => (
-            note.name().to_owned(),
+            escaped(note.name()),
             vault.project_name(note.project()).to_owned(),
         ),
+        // Without a title, the project's name stands in for it, in italics.
         Found::Block { date, .. } => (
-            backlink.title.clone().unwrap_or_else(|| gettext("Block")),
+            match (&backlink.title, &backlink.project) {
+                (Some(title), _) => escaped(title),
+                (None, Some(project)) => format!("<i>{}</i>", escaped(vault.project_name(project))),
+                (None, None) => escaped(&gettext("Block")),
+            },
             format_full_date(*date),
         ),
-        Found::DayNote(date) => (gettext("Day Note"), format_full_date(*date)),
+        Found::DayNote(date) => (escaped(&gettext("Day Note")), format_full_date(*date)),
         Found::Task(_) => unreachable!("tasks hold no links"),
     };
     adw::ActionRow::builder()
-        .title(glib::markup_escape_text(&title))
+        .title(title)
         .subtitle(glib::markup_escape_text(&subtitle))
         .activatable(true)
         .build()

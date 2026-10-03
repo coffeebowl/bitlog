@@ -160,3 +160,9 @@ row.drop-after {
   color: var(--accent-color);
   background-color: alpha(var(--accent-bg-color), 0.15);
 }
+
+/* A block's title that stands in for a missing one, such as its project's
+   name. */
+.stand-in-title {
+  font-style: italic;
+}

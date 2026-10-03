@@ -706,10 +706,12 @@ mod tests {
                 Backlink {
                     found: Found::Note(note_path("webshop", "checkout-flow")),
                     title: None,
+                    project: None,
                 },
                 Backlink {
                     found: block(23, "cc33"),
                     title: Some("Prepare release deployment".to_owned()),
+                    project: Some("infra".parse().unwrap()),
                 },
             ]
         );

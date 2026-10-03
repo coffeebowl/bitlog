@@ -42,6 +42,8 @@ pub struct Backlink {
     pub found: Found,
     /// The title of the block the link lies in, if it has one.
     pub title: Option<String>,
+    /// The project of the block the link lies in.
+    pub project: Option<ProjectSlug>,
 }
 
 const PROJECT_BLOCK_COLUMNS: &str = "date, id, start_minute, end_minute, title, text";
@@ -187,7 +189,8 @@ impl Index {
     /// block texts. A place with more than one link to `target` comes once.
     pub fn backlinks(&self, target: &NotePath) -> Result<Vec<Backlink>, IndexError> {
         let mut statement = self.connection.prepare_cached(
-            "SELECT DISTINCT l.note_project, l.note_name, l.date, l.block, b.title FROM links l
+            "SELECT DISTINCT l.note_project, l.note_name, l.date, l.block, b.title, b.project
+             FROM links l
              LEFT JOIN blocks b ON b.date = l.date AND b.id = l.block
              WHERE l.target_project = ? AND l.target_name = ?
              ORDER BY l.note_project IS NULL, l.note_project, l.note_name, l.date DESC, l.block",
@@ -208,9 +211,14 @@ impl Index {
                     (None, None, _) => unreachable!("a link lies in a note or a day"),
                 };
                 let title: Option<String> = row.get(4)?;
+                let project = match found {
+                    Found::Block { .. } => Some(parsed(row, 5)?),
+                    _ => None,
+                };
                 Ok(Backlink {
                     found,
                     title: title.filter(|title| !title.is_empty()),
+                    project,
                 })
             })?
             .collect::<Result<_, _>>()?;

@@ -552,8 +552,11 @@ impl ProjectView {
     fn add_blocks(&self, blocks: Vec<ProjectBlock>, today: NaiveDate) {
         let imp = self.imp();
         let added = u32::try_from(blocks.len()).expect("at most BLOCKS_AT_ONCE blocks come");
+        // The page is titled with the project's name.
+        let project_name = self.title();
         for block in &blocks {
-            imp.timeline_list.append(&block_row(block, today));
+            imp.timeline_list
+                .append(&block_row(block, &project_name, today));
         }
         imp.blocks_shown.set(imp.blocks_shown.get() + added);
         // A full batch may have more behind it.
@@ -1169,24 +1172,24 @@ fn block_action(block: &ProjectBlock) -> (&'static str, glib::Variant) {
     })
 }
 
-/// A block in the timeline: its title, its day and time and how long it
-/// took, opening it when activated.
-fn block_row(block: &ProjectBlock, today: NaiveDate) -> adw::ActionRow {
+/// A block in the timeline: its title, or else the name of its project,
+/// its day and time and how long it took, opening it when activated.
+fn block_row(block: &ProjectBlock, project_name: &str, today: NaiveDate) -> adw::ActionRow {
+    // A stand-in title is in italics, as in the day's timeline.
     let title = if block.title.is_empty() {
-        gettext("Untitled Block")
+        format!("<i>{}</i>", glib::markup_escape_text(project_name))
     } else {
-        block.title.clone()
+        glib::markup_escape_text(&block.title).to_string()
     };
     let minute = |minute: u32| format!("{:02}:{:02}", minute / 60 % 24, minute % 60);
     let row = adw::ActionRow::builder()
-        .title(&title)
-        .subtitle(format!(
+        .title(title)
+        .subtitle(glib::markup_escape_text(&format!(
             "{} · {}–{}",
             format_weekday_date(block.date, today),
             minute(block.start_minute),
             minute(block.end_minute)
-        ))
-        .use_markup(false)
+        )))
         .activatable(true)
         .build();
     row.add_suffix(

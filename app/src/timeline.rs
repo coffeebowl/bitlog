@@ -742,6 +742,7 @@ impl Timeline {
 }
 
 /// Title, project and text of `block`, and the labels of its lines of text.
+/// Without a title, the project's name stands in for it as well, in italics.
 fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::Label>) {
     let label = |text: &str, classes: &[&str]| {
         gtk::Label::builder()
@@ -753,7 +754,9 @@ fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::La
             .build()
     };
     let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    if !block.title.is_empty() {
+    if block.title.is_empty() {
+        heading.append(&label(project_name, &["heading", "stand-in-title"]));
+    } else {
         heading.append(&label(&block.title, &["heading"]));
     }
     heading.append(&label(project_name, &["dim-label"]));
