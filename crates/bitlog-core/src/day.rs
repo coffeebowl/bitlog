@@ -183,6 +183,12 @@ fn optional_time<'de, D: Deserializer<'de>>(
 }
 
 impl Day {
+    /// Whether this is a working day, not a day off such as a vacation or a
+    /// public holiday.
+    pub fn is_work(&self) -> bool {
+        self.kind == DEFAULT_KIND
+    }
+
     /// A day without any entries.
     pub fn new(date: NaiveDate) -> Self {
         Self {

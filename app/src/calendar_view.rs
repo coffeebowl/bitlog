@@ -309,6 +309,7 @@ impl CalendarView {
         };
         let today = Local::now().date_naive();
         let mut worked = TimeDelta::zero();
+        let mut target = 0.0;
         let mut per_project = BTreeMap::new();
         let mut days = Vec::new();
         for offset in 0..7 {
@@ -323,6 +324,12 @@ impl CalendarView {
                 .as_ref()
                 .map_or(TimeDelta::zero(), |day| day.working_time(vault.projects()));
             worked += working_time;
+            // Days off take their share off the target.
+            let target_hours = match &day {
+                Some(day) if !day.is_work() => 0.0,
+                _ => vault.config().week.target_hours_on(date.weekday()) as f32,
+            };
+            target += target_hours;
             for (slug, time) in &times {
                 *per_project.entry(slug.clone()).or_insert(TimeDelta::zero()) += *time;
             }
@@ -333,10 +340,9 @@ impl CalendarView {
                     .map(|(slug, time)| (color(slug), hours(*time)))
                     .collect(),
                 working_hours: (date <= today).then(|| hours(working_time)),
-                target_hours: vault.config().week.target_hours_on(date.weekday()) as f32,
+                target_hours,
             });
         }
-        let target = vault.config().week.target_hours as f32;
         imp.week_chart.set_week(days);
 
         let target_time = TimeDelta::minutes((target * 60.0).round() as i64);
@@ -510,7 +516,7 @@ fn day_cell(
             if let Some(key) = &day.location {
                 facts.push(vault.config().location_name(key).to_owned());
             }
-            if day.kind != "work" {
+            if !day.is_work() {
                 facts.push(kind_name(&day.kind));
                 cell.add_css_class("day-off");
             }

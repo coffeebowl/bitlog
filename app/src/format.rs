@@ -115,7 +115,7 @@ pub fn kind_name(kind: &str) -> String {
         "work" => gettext("Work"),
         "vacation" => gettext("Vacation"),
         "sick" => gettext("Sick"),
-        "holiday" => gettext("Holiday"),
+        "holiday" => gettext("Public Holiday"),
         _ => capitalize(kind),
     }
 }
