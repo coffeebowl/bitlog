@@ -16,7 +16,7 @@ use crate::colors::color_dot;
 use crate::format::{
     PROJECT_STATUSES, format_duration, format_full_date, format_short_date, status_name,
 };
-use crate::note_dialogs::{self, ask_note_name, confirm_create, confirm_delete};
+use crate::note_dialogs::{self, ask_note_name, note_param};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
@@ -195,12 +195,6 @@ fn slug_param(param: Option<&glib::Variant>) -> ProjectSlug {
     param
         .and_then(|param| param.str()?.parse().ok())
         .expect("project actions take a slug")
-}
-
-fn note_param(param: Option<&glib::Variant>) -> NotePath {
-    param
-        .and_then(|param| param.str()?.parse().ok())
-        .expect("note actions take a note path")
 }
 
 impl ProjectsPage {
@@ -694,20 +688,10 @@ impl ProjectsPage {
 
     /// Opens the note a wiki link points to, or offers to create it.
     async fn follow_link(&self, note: NotePath) {
-        let vault = self.vault();
-        if vault.note_path(&note).is_file() {
+        if let Some(note) = note_dialogs::follow_link(self, &self.vault(), &note).await {
+            // It may be new.
+            self.show_project_again();
             self.open_note(&note);
-            return;
-        }
-        if !confirm_create(self, &vault, &note).await {
-            return;
-        }
-        match vault.create_note(note.project(), note.name(), Local::now().date_naive()) {
-            Ok(note) => {
-                self.show_project_again();
-                self.open_note(&note);
-            }
-            Err(err) => show_error(self, &gettext("Cannot Create Note"), &err.to_string()),
         }
     }
 
@@ -735,16 +719,11 @@ impl ProjectsPage {
     }
 
     async fn delete_note(&self, note: NotePath) {
-        let imp = self.imp();
-        if !confirm_delete(self, &note).await {
+        if !note_dialogs::delete_note(self, &self.vault(), &note).await {
             return;
         }
-        let shown = imp.note_view.note() == Some(note.clone());
-        if shown {
+        if self.imp().note_view.note() == Some(note) {
             self.close_note();
-        }
-        if let Err(err) = self.vault().delete_note(&note) {
-            show_error(self, &gettext("Cannot Delete Note"), &err.to_string());
         }
         self.show_project_again();
     }

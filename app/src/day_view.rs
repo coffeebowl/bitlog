@@ -18,6 +18,7 @@ use crate::format::{
     DAY_KINDS, format_date, format_duration, format_full_date, format_span, format_time, kind_name,
 };
 use crate::markdown_view::MarkdownView;
+use crate::note_dialogs::confirm_delete;
 use crate::project_picker::{project_markup, project_popover};
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
@@ -105,8 +106,12 @@ mod imp {
             klass.install_action("day.create", None, |view, _, _| view.create_day());
             klass.install_action("day.new-block", None, |view, _, _| view.new_block());
             klass.install_action("day.standup", None, |view, _, _| view.show_standup());
-            klass.install_action("day.delete-block", None, |view, _, _| view.delete_block());
-            klass.install_action("day.delete", None, |view, _, _| view.delete_day());
+            klass.install_action_async("day.delete-block", None, |view, _, _| async move {
+                view.delete_block().await;
+            });
+            klass.install_action_async("day.delete", None, |view, _, _| async move {
+                view.delete_day().await;
+            });
             klass.install_action("day.set-block-time", None, |view, _, _| {
                 let imp = view.imp();
                 let id = imp
@@ -708,7 +713,7 @@ impl DayView {
     }
 
     /// Deletes the block shown, asking what happens to its text.
-    fn delete_block(&self) {
+    async fn delete_block(&self) {
         let imp = self.imp();
         let id = imp
             .shown_block
@@ -740,59 +745,30 @@ impl DayView {
         dialog.set_response_appearance("move", adw::ResponseAppearance::Suggested);
         dialog.set_default_response(Some("move"));
         dialog.set_close_response("cancel");
-        dialog.connect_response(
-            None,
-            glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move |_, response| {
-                    let text = match response {
-                        "discard" => RemovedText::Discard,
-                        "move" => RemovedText::MoveToNote,
-                        _ => return,
-                    };
-                    view.update(|day| day.remove_block(&id, text));
-                }
-            ),
-        );
-        dialog.present(Some(self));
+        let text = match dialog.choose_future(Some(self)).await.as_str() {
+            "discard" => RemovedText::Discard,
+            "move" => RemovedText::MoveToNote,
+            _ => return,
+        };
+        self.update(|day| day.remove_block(&id, text));
     }
 
     /// Deletes the file of the day shown, after asking.
-    fn delete_day(&self) {
+    async fn delete_day(&self) {
         let date = self.date();
-        let dialog = adw::AlertDialog::new(
-            Some(&gettext("Delete Day?")),
-            Some(
-                &gettext("{date} will be permanently deleted, with its blocks and note")
-                    .replace("{date}", &format_full_date(date)),
-            ),
-        );
-        dialog.add_responses(&[
-            ("cancel", &gettext("_Cancel")),
-            ("delete", &gettext("_Delete")),
-        ]);
-        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-        dialog.set_default_response(Some("cancel"));
-        dialog.set_close_response("cancel");
-        dialog.connect_response(
-            Some("delete"),
-            glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move |_, _| {
-                    // What is being typed goes with the day.
-                    if let Some(source) = view.imp().text_save.take() {
-                        source.remove();
-                    }
-                    if let Err(err) = view.vault().delete_day(date) {
-                        show_error(&view, &gettext("Cannot Delete Day"), &err.to_string());
-                    }
-                    view.show_date(date);
-                }
-            ),
-        );
-        dialog.present(Some(self));
+        let body = gettext("{date} will be permanently deleted, with its blocks and note")
+            .replace("{date}", &format_full_date(date));
+        if !confirm_delete(self, &gettext("Delete Day?"), &body).await {
+            return;
+        }
+        // What is being typed goes with the day.
+        if let Some(source) = self.imp().text_save.take() {
+            source.remove();
+        }
+        if let Err(err) = self.vault().delete_day(date) {
+            show_error(self, &gettext("Cannot Delete Day"), &err.to_string());
+        }
+        self.show_date(date);
     }
 
     fn block_id(&self, index: usize) -> BlockId {

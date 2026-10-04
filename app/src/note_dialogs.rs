@@ -1,14 +1,23 @@
-//! The questions around notes that the project and note pages share, and
-//! asking for a name, which assets use as well.
+//! The questions around notes that the project and note pages share, asking
+//! for a name, which assets use as well, and asking whether to delete
+//! something, which days use as well.
 
 use adw::prelude::*;
 use bitlog_core::{NotePath, ProjectSlug, Vault};
 use bitlog_index::Found;
+use chrono::Local;
 use gettextrs::{gettext, ngettext};
 use gtk::glib;
 
 use crate::alert::show_error;
 use crate::search_index::SearchIndex;
+
+/// The note an action of the group `notes` is about.
+pub fn note_param(param: Option<&glib::Variant>) -> NotePath {
+    param
+        .and_then(|param| param.str()?.parse().ok())
+        .expect("note actions take a note path")
+}
 
 /// Asks for the name of a note in `project`, starting with `name`.
 /// Returns `None` if the user cancels.
@@ -65,12 +74,28 @@ pub async fn ask_name(
     (response == "accept").then(|| entry.text().trim().to_owned())
 }
 
-/// Asks whether the note `note`, which a link points to, should be created.
-pub async fn confirm_create(
+/// The note `note` that a wiki link points to, created after asking if it
+/// does not exist yet. Returns `None` if the user cancels or creating it
+/// fails, which is shown.
+pub async fn follow_link(
     parent: &impl IsA<gtk::Widget>,
     vault: &Vault,
     note: &NotePath,
-) -> bool {
+) -> Option<NotePath> {
+    if vault.note_path(note).is_file() {
+        return Some(note.clone());
+    }
+    if !confirm_create(parent, vault, note).await {
+        return None;
+    }
+    vault
+        .create_note(note.project(), note.name(), Local::now().date_naive())
+        .inspect_err(|err| show_error(parent, &gettext("Cannot Create Note"), &err.to_string()))
+        .ok()
+}
+
+/// Asks whether the note `note`, which a link points to, should be created.
+async fn confirm_create(parent: &impl IsA<gtk::Widget>, vault: &Vault, note: &NotePath) -> bool {
     let project = vault.project_name(note.project());
     let dialog = adw::AlertDialog::builder()
         .heading(gettext("Create Note?"))
@@ -90,11 +115,24 @@ pub async fn confirm_create(
     dialog.choose_future(Some(parent)).await == "create"
 }
 
-/// Asks whether the note `note` should be permanently deleted.
-pub async fn confirm_delete(parent: &impl IsA<gtk::Widget>, note: &NotePath) -> bool {
+/// Deletes the note `note` after asking. Returns whether it is gone;
+/// failing to delete it is shown.
+pub async fn delete_note(parent: &impl IsA<gtk::Widget>, vault: &Vault, note: &NotePath) -> bool {
+    let body = gettext("“{name}” will be permanently deleted.").replace("{name}", note.name());
+    if !confirm_delete(parent, &gettext("Delete Note?"), &body).await {
+        return false;
+    }
+    vault
+        .delete_note(note)
+        .inspect_err(|err| show_error(parent, &gettext("Cannot Delete Note"), &err.to_string()))
+        .is_ok()
+}
+
+/// Asks whether to delete something, with `heading` and `body` saying what.
+pub async fn confirm_delete(parent: &impl IsA<gtk::Widget>, heading: &str, body: &str) -> bool {
     let dialog = adw::AlertDialog::builder()
-        .heading(gettext("Delete Note?"))
-        .body(gettext("“{name}” will be permanently deleted.").replace("{name}", note.name()))
+        .heading(heading)
+        .body(body)
         .close_response("cancel")
         .default_response("cancel")
         .build();

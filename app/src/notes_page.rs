@@ -18,7 +18,7 @@ use crate::format::{
     PROJECT_STATUSES, format_full_date, format_short_date, format_time, format_weekday_date,
 };
 use crate::markdown_view::MarkdownView;
-use crate::note_dialogs::{self, confirm_create, confirm_delete};
+use crate::note_dialogs::{self, note_param};
 use crate::note_view::NoteView;
 use crate::project_view::{note_card, note_preview, note_text, show_preview};
 use crate::projects_page::shows;
@@ -201,12 +201,6 @@ glib::wrapper! {
     pub struct NotesPage(ObjectSubclass<imp::NotesPage>)
         @extends adw::NavigationPage, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
-}
-
-fn note_param(param: Option<&glib::Variant>) -> NotePath {
-    param
-        .and_then(|param| param.str()?.parse().ok())
-        .expect("note actions take a note path")
 }
 
 impl NotesPage {
@@ -498,17 +492,8 @@ impl NotesPage {
 
     /// Opens the note a wiki link points to, or offers to create it.
     async fn follow_link(&self, note: NotePath) {
-        let vault = self.vault();
-        if vault.note_path(&note).is_file() {
+        if let Some(note) = note_dialogs::follow_link(self, &self.vault(), &note).await {
             self.open_note(&note);
-            return;
-        }
-        if !confirm_create(self, &vault, &note).await {
-            return;
-        }
-        match vault.create_note(note.project(), note.name(), Local::now().date_naive()) {
-            Ok(note) => self.open_note(&note),
-            Err(err) => show_error(self, &gettext("Cannot Create Note"), &err.to_string()),
         }
     }
 
@@ -536,15 +521,11 @@ impl NotesPage {
     }
 
     async fn delete_note(&self, note: NotePath) {
-        let imp = self.imp();
-        if !confirm_delete(self, &note).await {
+        if !note_dialogs::delete_note(self, &self.vault(), &note).await {
             return;
         }
-        if imp.note_view.note() == Some(note.clone()) {
+        if self.imp().note_view.note() == Some(note) {
             self.close_note();
-        }
-        if let Err(err) = self.vault().delete_note(&note) {
-            show_error(self, &gettext("Cannot Delete Note"), &err.to_string());
         }
         self.show_notes();
     }
