@@ -12,7 +12,8 @@ use gtk::{glib, pango};
 
 use crate::colors::{color_dot, project_color, project_hex};
 use crate::format::{
-    format_date, format_duration, format_full_date, format_short_duration, kind_name,
+    format_date, format_duration, format_full_date, format_month, format_month_year, format_range,
+    format_short_date, format_short_duration, format_weekday_day, kind_name,
 };
 use crate::share_bar::ShareBar;
 use crate::week_chart::{ChartDay, WeekChart};
@@ -188,9 +189,9 @@ impl CalendarView {
         let vault = &*vault;
         let first_day = vault.config().week.first_day;
         let (first, last) = Period::Month.range(date, first_day);
-        imp.window_title.set_title(&format_date(first, "%B"));
-        imp.window_title.set_subtitle(&format_date(first, "%Y"));
-        self.set_title(&format_date(first, "%B %Y"));
+        imp.window_title.set_title(&format_month(first));
+        imp.window_title.set_subtitle(&first.year().to_string());
+        self.set_title(&format_month_year(first));
 
         let month = &imp.month;
         while let Some(child) = month.first_child() {
@@ -286,15 +287,12 @@ impl CalendarView {
         let imp = self.imp();
         let vault = self.vault();
         let (first, last) = Period::Week.range(date, vault.config().week.first_day);
-        // Translators: A range of dates, as in "September 21 – 27".
-        let title = gettext("{first} – {last}")
-            .replace("{first}", &format_date(first, "%B %-d"))
-            .replace("{last}", &format_date(last, "%B %-d"));
+        let title = format_range(&format_short_date(first), &format_short_date(last));
         imp.window_title.set_title(&title);
         // Translators: The number of a week and its year, as in "Week 40 · 2026".
         let subtitle = gettext("Week {number} · {year}")
             .replace("{number}", &week_number(first).to_string())
-            .replace("{year}", &format_date(last, "%Y"));
+            .replace("{year}", &last.year().to_string());
         imp.window_title.set_subtitle(&subtitle);
         self.set_title(&title);
 
@@ -325,7 +323,7 @@ impl CalendarView {
                 *per_project.entry(slug.clone()).or_insert(TimeDelta::zero()) += *time;
             }
             days.push(ChartDay {
-                label: format_date(date, "%a %-d"),
+                label: format_weekday_day(date),
                 segments: times
                     .iter()
                     .map(|(slug, time)| (project_color(&vault, slug), hours(*time)))

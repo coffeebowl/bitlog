@@ -66,6 +66,60 @@ pub fn format_full_date(date: NaiveDate) -> String {
     format_date(date, &gettext("%B %-d, %Y"))
 }
 
+/// `date` without the year if it is the year of `today`, as in "Sep 22",
+/// else as in "September 22, 2025".
+pub fn format_recent_date(date: NaiveDate, today: NaiveDate) -> String {
+    if date.year() == today.year() {
+        format_short_date(date)
+    } else {
+        format_full_date(date)
+    }
+}
+
+/// "Today", "Yesterday", or `date` as `format_recent_date` writes it, as
+/// seen `today`.
+pub fn format_relative_day(date: NaiveDate, today: NaiveDate) -> String {
+    if date == today {
+        gettext("Today")
+    } else if today.pred_opt() == Some(date) {
+        gettext("Yesterday")
+    } else {
+        format_recent_date(date, today)
+    }
+}
+
+/// The month of `date`, as in "September".
+pub fn format_month(date: NaiveDate) -> String {
+    // Translators: The name of a month, as in "September". See the GLib
+    // documentation of g_date_time_format() for the codes.
+    format_date(date, &gettext("%B"))
+}
+
+/// The month of `date` and its year, as in "September 2026".
+pub fn format_month_year(date: NaiveDate) -> String {
+    // Translators: A month and its year, as in "September 2026". See the
+    // GLib documentation of g_date_time_format() for the codes.
+    format_date(date, &gettext("%B %Y"))
+}
+
+/// From the date `first` to the date `last`, both formatted, as in
+/// "Sep 21 – Sep 27".
+pub fn format_range(first: &str, last: &str) -> String {
+    // Translators: A range of dates, as in "Sep 21 – Sep 27".
+    gettext("{first} – {last}")
+        .replace("{first}", first)
+        .replace("{last}", last)
+}
+
+/// The weekday and day of the month of `date`, where there is little
+/// room, as in "Mon 21".
+pub fn format_weekday_day(date: NaiveDate) -> String {
+    // Translators: A short weekday and the day of the month, as in
+    // "Mon 21". See the GLib documentation of g_date_time_format() for the
+    // codes.
+    format_date(date, &gettext("%a %-d"))
+}
+
 /// A date with the weekday, as in "Tue, Sep 22", and the year unless it is
 /// the year of `today`.
 pub fn format_weekday_date(date: NaiveDate, today: NaiveDate) -> String {
@@ -168,6 +222,18 @@ mod tests {
     fn stand_in_titles_are_italic() {
         assert_eq!(title_markup("Fix <b>", "Webshop"), "Fix &lt;b&gt;");
         assert_eq!(title_markup("", "R&D"), "<i>R&amp;D</i>");
+    }
+
+    #[test]
+    fn relative_days() {
+        let date = |year, month, day| NaiveDate::from_ymd_opt(year, month, day).unwrap();
+        let today = date(2026, 10, 4);
+        assert_eq!(format_relative_day(today, today), "Today");
+        assert_eq!(format_relative_day(date(2026, 10, 3), today), "Yesterday");
+        // The year only for other years.
+        assert!(!format_relative_day(date(2026, 9, 22), today).contains("2026"));
+        assert!(format_relative_day(date(2025, 9, 22), today).contains("2025"));
+        assert!(format_recent_date(date(2025, 12, 31), date(2026, 1, 1)).contains("2025"));
     }
 
     #[test]

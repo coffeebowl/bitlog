@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{NotePath, Project, ProjectSlug, Vault};
-use chrono::{DateTime, Datelike, Local, NaiveDate};
+use chrono::{DateTime, Local, NaiveDate};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gio, glib};
@@ -14,9 +14,7 @@ use gtk::{gio, glib};
 use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::config;
-use crate::format::{
-    PROJECT_STATUSES, format_full_date, format_short_date, format_time, format_weekday_date,
-};
+use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs;
 use crate::note_view::NoteView;
@@ -564,7 +562,9 @@ fn show_details(
         short.push(glib::markup_escape_text(&name).to_string());
     }
     if let Some(modified) = listed.modified {
-        short.push(glib::markup_escape_text(&edited_day(modified.date_naive(), today)).into());
+        short.push(
+            glib::markup_escape_text(&format_relative_day(modified.date_naive(), today)).into(),
+        );
         long.push(edited_text(modified, today));
     }
     let short = short.join(" · ");
@@ -574,20 +574,6 @@ fn show_details(
     };
     details.set_label(&short);
     details.set_tooltip_text(Some(&long.join(" · ")));
-}
-
-/// The day a note was last edited, short enough for a card, as seen
-/// `today`.
-fn edited_day(date: NaiveDate, today: NaiveDate) -> String {
-    if date == today {
-        gettext("Today")
-    } else if today.pred_opt() == Some(date) {
-        gettext("Yesterday")
-    } else if date.year() == today.year() {
-        format_short_date(date)
-    } else {
-        format_full_date(date)
-    }
 }
 
 /// When a note was last edited, as in "edited today at 14:05" or "edited

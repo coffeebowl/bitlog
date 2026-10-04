@@ -6,16 +6,14 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
-use chrono::{Datelike, Local, NaiveDate, TimeDelta};
+use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gdk, glib};
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
-use crate::format::{
-    PROJECT_STATUSES, format_duration, format_full_date, format_short_date, status_name,
-};
+use crate::format::{PROJECT_STATUSES, format_duration, format_recent_date, status_name};
 use crate::note_dialogs::{self, ask_note_name};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
@@ -809,8 +807,12 @@ fn project_row(
     let mut subtitle = vec![project.category.clone()];
     match last_day {
         Some(date) if date == today => subtitle.push(gettext("last worked today")),
-        Some(date) => subtitle
-            .push(gettext("last worked on {date}").replace("{date}", &format_day(date, today))),
+        Some(date) if today.pred_opt() == Some(date) => {
+            subtitle.push(gettext("last worked yesterday"));
+        }
+        Some(date) => subtitle.push(
+            gettext("last worked on {date}").replace("{date}", &format_recent_date(date, today)),
+        ),
         None => {}
     }
     subtitle.retain(|part| !part.is_empty());
@@ -836,13 +838,4 @@ fn project_row(
         row.add_suffix(&time);
     }
     row
-}
-
-/// `date` without the year if it is the year of `today`.
-fn format_day(date: NaiveDate, today: NaiveDate) -> String {
-    if date.year() == today.year() {
-        format_short_date(date)
-    } else {
-        format_full_date(date)
-    }
 }

@@ -21,8 +21,8 @@ use crate::asset_preview::asset_page;
 use crate::colors;
 use crate::commit_dialog::CommitDialog;
 use crate::format::{
-    format_duration, format_full_date, format_share, format_time, format_weekday_date, plural,
-    title_markup,
+    format_duration, format_full_date, format_range, format_relative_day, format_share,
+    format_time, format_weekday_date, plural, title_markup,
 };
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
@@ -532,7 +532,7 @@ impl ProjectView {
         imp.span_row
             .set_subtitle(&match (activity.first(), activity.last()) {
                 (Some((first, _)), Some((last, _))) if first != last => {
-                    format!("{} – {}", format_full_date(*first), format_full_date(*last))
+                    format_range(&format_full_date(*first), &format_full_date(*last))
                 }
                 (Some((first, _)), _) => format_full_date(*first),
                 _ => none(),
@@ -986,14 +986,9 @@ impl ProjectView {
     /// The group of the commits made on `date`. It tells the time spent
     /// on the project that day, if any.
     fn day_group(&self, date: NaiveDate, today: NaiveDate) -> adw::PreferencesGroup {
-        let title = if date == today {
-            gettext("Today")
-        } else if today.pred_opt() == Some(date) {
-            gettext("Yesterday")
-        } else {
-            format_full_date(date)
-        };
-        let group = adw::PreferencesGroup::builder().title(title).build();
+        let group = adw::PreferencesGroup::builder()
+            .title(format_relative_day(date, today))
+            .build();
         if let Some(time) = self.imp().activity.borrow().get(&date) {
             // Translators: The time spent on a project on a day, as in
             // "2 h 30 min in blocks".

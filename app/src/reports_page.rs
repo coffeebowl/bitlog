@@ -12,7 +12,9 @@ use gtk::{gdk, gio, glib};
 
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
-use crate::format::{capitalize, format_date, format_duration, format_share, format_short_date};
+use crate::format::{
+    capitalize, format_duration, format_month, format_range, format_share, format_short_date,
+};
 use crate::heatmap::Heatmap;
 use crate::search_index::{ReportData, SearchIndex};
 use crate::share_bar::ShareBar;
@@ -267,17 +269,14 @@ impl ReportsPage {
         let year = last.year().to_string();
         match self.period() {
             Period::Week => {
-                title.set_title(&format!(
-                    "{} – {}",
-                    format_short_date(first),
-                    format_short_date(last)
+                title.set_title(&format_range(
+                    &format_short_date(first),
+                    &format_short_date(last),
                 ));
                 title.set_subtitle(&year);
             }
             Period::Month => {
-                // Translators: The name of a month, see the GLib
-                // documentation of g_date_time_format() for the codes.
-                title.set_title(&format_date(first, &gettext("%B")));
+                title.set_title(&format_month(first));
                 title.set_subtitle(&year);
             }
             Period::Year => {
