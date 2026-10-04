@@ -1,8 +1,8 @@
 # BitLog file format
 
-**Status:** Draft of format version 1. This document describes the target
-format. BitLog implements it step by step, so parts of it may not be
-supported by the current code yet.
+**Status:** Format version 1. BitLog implements all of it, except for two
+parts marked below: tags are defined but not evaluated yet, and project tasks
+are reserved for a later extension.
 
 A BitLog vault is an ordinary folder of plain text files. Every file can be
 read and corrected by hand, in any text editor, without BitLog. The files are
@@ -33,7 +33,7 @@ and project notes.
 | --- | --- | --- |
 | Project slug, location key | lowercase letters `a-z`, digits and single hyphens, not at the start or end | `project-a` |
 | Block ID, task ID | exactly 4 characters from `a-z` and `0-9` | `k7f3` |
-| Note name | the file name without `.md`; not empty, no `/` or `\`, not starting with `.`, not a sync conflict copy | `Auth middleware` |
+| Note name | the file name without `.md`; not empty, no `/`, `\` or control characters, not starting with `.`, not a sync conflict copy | `Auth middleware` |
 
 A project note is identified by its path relative to the vault,
 `projects/<slug>/notes/<name>.md`, always written with `/`. So is a project
@@ -317,9 +317,8 @@ Only `format` is required. Missing fields take these defaults:
 | `created` | none | TOML local date |
 
 BitLog writes all fields except a missing `created`. Comments, formatting,
-unchanged values and unknown fields are kept as they are. `pinned` of earlier
-versions is such an unknown field now; the order of projects is set in
-`bitlog.toml`.
+unchanged values and unknown fields are kept as they are. The order of
+projects is set in `bitlog.toml`.
 
 The path to a project's local Git repository differs on every machine, so it
 is stored per device in `.bitlog/device.toml`:
@@ -334,6 +333,11 @@ repository. A missing file or table means no repositories. Entries of
 unknown projects are ignored and, like comments and other tables, kept when
 BitLog writes the file. BitLog only sets paths of folders that hold
 `.git`.
+
+**Renaming** a project changes its slug, which must not be taken. BitLog
+renames its folder, sets the new slug in all its blocks, in `projects.order`
+and in `.bitlog/device.toml`, and changes the targets of wiki links to its
+notes in all notes, day notes and block texts.
 
 **Default projects of a new vault:**
 
@@ -483,8 +487,8 @@ their texts.
 | `bitlog.toml`, `tasks.toml`, `project.toml` | BitLog | any time, preserving formatting and comments |
 | `tasks-archive-YYYY.toml` | BitLog | when archiving, preserving formatting and comments |
 | Day file: front matter, date heading and block headings | BitLog | any time |
-| Day file: day note and block texts | user | always; BitLog keeps them unchanged, except, if the user agrees, for wiki links to a renamed note |
-| Project notes | user | always; BitLog only when creating them from the template and, if the user agrees, in wiki links to a renamed note |
+| Day file: day note and block texts | user | always; BitLog keeps them unchanged, except for wiki links to a renamed note, if the user agrees, or to the notes of a renamed project |
+| Project notes | user | always; BitLog only when creating them from the template, in wiki links to a renamed note, if the user agrees, and in wiki links to the notes of a renamed project |
 | `exports/*` | BitLog | may be overwritten completely |
 | `.bitlog/*` | BitLog | local |
 
@@ -537,5 +541,3 @@ Every write:
   all known versions and writes the current one.
 - New optional fields do not increase the version; only renames or changes in
   meaning do, each with a migration.
-- This document and JSON schemas for the TOML files (for Taplo) and the day
-  front matter are part of the BitLog repository.
