@@ -92,8 +92,8 @@ mod imp {
         pub revealed: RefCell<Vec<i32>>,
         /// Whether `MarkdownView::queue_reveal` is waiting to run.
         pub reveal_queued: Cell<bool>,
-        /// Whether the text is to be formatted again when idle, as the
-        /// view changed its width.
+        /// Whether the text is to be formatted again when idle, as it
+        /// changed or the view changed its width.
         pub restyle_queued: Cell<bool>,
         pub(super) diagrams: Diagrams,
         pub highlighter: CodeHighlighter,
@@ -180,8 +180,11 @@ mod imp {
                 #[weak]
                 view,
                 move |_| {
-                    view.restyle();
-                    if !view.imp().loading.get() {
+                    if view.imp().loading.get() {
+                        // A note just opened shows formatted right away.
+                        view.restyle();
+                    } else {
+                        view.queue_restyle();
                         view.emit_by_name::<()>("edited", &[]);
                     }
                 }
@@ -231,17 +234,8 @@ mod imp {
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
             self.parent_size_allocate(width, height, baseline);
             let view = self.obj();
-            if self.decorations.borrow().misfit(view.upcast_ref())
-                && !self.restyle_queued.replace(true)
-            {
-                glib::idle_add_local_once(glib::clone!(
-                    #[weak]
-                    view,
-                    move || {
-                        view.imp().restyle_queued.set(false);
-                        view.restyle();
-                    }
-                ));
+            if self.decorations.borrow().misfit(view.upcast_ref()) {
+                view.queue_restyle();
             }
         }
 
@@ -377,9 +371,10 @@ impl MarkdownView {
         }
     }
 
-    /// Formats the whole text again, after every change, and after notes
-    /// that wiki links point to were added or removed.
+    /// Formats the whole text again, after changes, and after notes that
+    /// wiki links point to were added or removed.
     fn restyle(&self) {
+        self.imp().restyle_queued.set(false);
         let buffer = self.buffer();
         let (start, end) = buffer.bounds();
         // The buffer has no other tags: it has no language and no search.
@@ -425,6 +420,37 @@ impl MarkdownView {
         self.queue_draw();
         for request in missing {
             self.render_diagram(request);
+        }
+    }
+
+    /// Formats the text again once the changes to it are done: one edit,
+    /// like nesting a list item or undoing, often changes the buffer several
+    /// times. Before the next frame is drawn, so that what was typed never
+    /// shows unformatted.
+    fn queue_restyle(&self) {
+        if self.imp().restyle_queued.replace(true) {
+            return;
+        }
+        glib::idle_add_local_full(
+            glib::Priority::HIGH_IDLE,
+            glib::clone!(
+                #[weak(rename_to = view)]
+                self,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move || {
+                    view.restyle_if_queued();
+                    glib::ControlFlow::Break
+                }
+            ),
+        );
+    }
+
+    /// Formats the text now if that is queued, for what reads where the
+    /// links and check boxes are.
+    fn restyle_if_queued(&self) {
+        if self.imp().restyle_queued.get() {
+            self.restyle();
         }
     }
 
@@ -485,6 +511,7 @@ impl MarkdownView {
 
     /// Where the link at `iter` leads, if there is one.
     fn link_at(&self, iter: &gtk::TextIter) -> Option<Target> {
+        self.restyle_if_queued();
         self.imp()
             .links
             .borrow()
@@ -592,6 +619,7 @@ impl MarkdownView {
     /// What a click on the check box at `x`, `y` in widget coordinates
     /// replaces, and with what, if there is one.
     fn check_box_at(&self, x: f64, y: f64) -> Option<(Range<i32>, String)> {
+        self.restyle_if_queued();
         let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
         let decorations = self.imp().decorations.borrow();
         decorations

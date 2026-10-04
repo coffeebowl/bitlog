@@ -1,6 +1,8 @@
 //! The text of a view while it is styled, which the modules that style its
 //! parts share.
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 
 use gtk::pango;
@@ -20,6 +22,9 @@ pub(super) struct Styling<'a> {
     /// Where the cursor is, as a character offset, while the user may be
     /// editing.
     pub(super) cursor: Option<i32>,
+    /// How wide parts of the text are shown, as measured: list markers and
+    /// indents are mostly the same few.
+    widths: RefCell<HashMap<String, i32>>,
 }
 
 impl<'a> Styling<'a> {
@@ -35,6 +40,7 @@ impl<'a> Styling<'a> {
             text,
             offsets,
             cursor,
+            widths: RefCell::default(),
         }
     }
 
@@ -65,7 +71,12 @@ impl<'a> Styling<'a> {
 
     /// How wide `part` is shown in the font of the view, in pixels.
     pub(super) fn width(&self, part: &str) -> i32 {
-        self.layout(part).pixel_size().0
+        if let Some(width) = self.widths.borrow().get(part) {
+            return *width;
+        }
+        let width = self.layout(part).pixel_size().0;
+        self.widths.borrow_mut().insert(part.to_owned(), width);
+        width
     }
 }
 
