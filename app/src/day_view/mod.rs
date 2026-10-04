@@ -1,28 +1,32 @@
+//! One day: its details, timeline, day note and tasks, with the block
+//! chosen shown in a panel beside them.
+
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    Block, BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, SaveError,
-    Vault, minute_of_day, time_at_minute,
+    BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, SaveError, Vault, minute_of_day,
+    time_at_minute,
 };
-use chrono::{Local, NaiveDate, NaiveTime};
+use chrono::{Local, NaiveDate};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
-use crate::config;
-use crate::format::{
-    DAY_KINDS, format_date, format_duration, format_full_date, format_span, format_time, kind_name,
-};
+use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs::confirm_delete;
-use crate::project_picker::{project_markup, project_popover};
+use crate::project_picker::project_popover;
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
 use crate::widgets::SaveTimer;
+use block_panel::spin_time;
+
+mod block_panel;
+mod editing;
 
 mod imp {
     use super::*;
@@ -384,222 +388,6 @@ impl DayView {
         }
     }
 
-    /// Saves the texts a second after the last change, or when they are left.
-    /// Makes the block panel as wide as dragged at its edge, and remembers
-    /// that width.
-    fn setup_panel_resizing(&self) {
-        let imp = self.imp();
-        let settings = gio::Settings::new(config::app_id());
-        imp.split_view
-            .set_max_sidebar_width(settings.int("block-panel-width").into());
-        imp.panel_handle.set_cursor_from_name(Some("ew-resize"));
-
-        // The view takes the drag, as the pointer soon leaves the thin edge.
-        let drag = gtk::GestureDrag::new();
-        drag.set_propagation_phase(gtk::PropagationPhase::Capture);
-        drag.connect_drag_begin(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |drag, x, y| {
-                let imp = view.imp();
-                let at_edge = imp.split_view.shows_sidebar()
-                    && imp
-                        .split_view
-                        .compute_point(
-                            &*imp.panel_handle,
-                            &gtk::graphene::Point::new(x as f32, y as f32),
-                        )
-                        .is_some_and(|point| {
-                            imp.panel_handle
-                                .contains(point.x().into(), point.y().into())
-                        });
-                drag.set_state(if at_edge {
-                    gtk::EventSequenceState::Claimed
-                } else {
-                    gtk::EventSequenceState::Denied
-                });
-            }
-        ));
-        drag.connect_drag_update(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |drag, offset, _| {
-                let split_view = &view.imp().split_view;
-                let Some((start, _)) = drag.start_point() else {
-                    return;
-                };
-                // The panel is at the end, so it grows towards the start.
-                let total = f64::from(split_view.width());
-                let width = match view.direction() {
-                    gtk::TextDirection::Rtl => start + offset,
-                    _ => total - start - offset,
-                };
-                let width = width
-                    .min(total * split_view.sidebar_width_fraction())
-                    .max(split_view.min_sidebar_width());
-                split_view.set_max_sidebar_width(width.round());
-            }
-        ));
-        drag.connect_drag_end(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_, _, _| {
-                let width = view.imp().split_view.max_sidebar_width();
-                if let Err(err) = settings.set_int("block-panel-width", width as i32) {
-                    glib::g_warning!("bitlog", "Cannot save the width of the block panel: {err}");
-                }
-            }
-        ));
-        imp.split_view.add_controller(drag);
-    }
-
-    fn setup_text_editing(&self) {
-        let imp = self.imp();
-        for view in [&*imp.note_view, &*imp.block_text] {
-            view.connect_edited(glib::clone!(
-                #[weak(rename_to = day_view)]
-                self,
-                move |_| day_view.save_texts_later()
-            ));
-        }
-        imp.block_title.connect_changed(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |entry| {
-                // Filling in the title of the block shown is no edit.
-                if view
-                    .shown_block()
-                    .is_some_and(|block| block.title != entry.text())
-                {
-                    view.save_texts_later();
-                }
-            }
-        ));
-        // Enter finishes the title, leaving it saves it.
-        imp.block_title.connect_activate(|entry| {
-            if let Some(root) = entry.root() {
-                root.set_focus(None::<&gtk::Widget>);
-            }
-        });
-        let editors: [&gtk::Widget; 3] = [
-            imp.note_view.upcast_ref(),
-            imp.block_text.upcast_ref(),
-            imp.block_title.upcast_ref(),
-        ];
-        for editor in editors {
-            let focus = gtk::EventControllerFocus::new();
-            focus.connect_leave(glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move |_| view.save_texts_now()
-            ));
-            editor.add_controller(focus);
-        }
-        // A title left with its text selected would stay grey behind it.
-        let focus = gtk::EventControllerFocus::new();
-        focus.connect_leave(glib::clone!(
-            #[weak(rename_to = entry)]
-            imp.block_title,
-            move |_| entry.select_region(0, 0)
-        ));
-        imp.block_title.add_controller(focus);
-
-        // Clicking beside the editor being typed into leaves it, even where
-        // nothing takes the focus, like the background or a label.
-        let click = gtk::GestureClick::new();
-        click.set_propagation_phase(gtk::PropagationPhase::Capture);
-        click.connect_pressed(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |click, _, x, y| {
-                // Clicks into popovers arrive here too, with coordinates
-                // that do not belong to this page.
-                let surface = click.current_event().and_then(|event| event.surface());
-                if view.native().and_then(|native| native.surface()) != surface {
-                    return;
-                }
-                let Some(root) = view.root() else { return };
-                let Some(focus) = root.focus() else { return };
-                let imp = view.imp();
-                let editors: [&gtk::Widget; 3] = [
-                    imp.note_view.upcast_ref(),
-                    imp.block_text.upcast_ref(),
-                    imp.block_title.upcast_ref(),
-                ];
-                let Some(editor) = editors
-                    .into_iter()
-                    .find(|editor| focus == **editor || focus.is_ancestor(*editor))
-                else {
-                    return;
-                };
-                let inside = view
-                    .pick(x, y, gtk::PickFlags::DEFAULT)
-                    .is_some_and(|picked| picked == *editor || picked.is_ancestor(editor));
-                if !inside {
-                    root.set_focus(None::<&gtk::Widget>);
-                }
-            }
-        ));
-        self.add_controller(click);
-    }
-
-    fn save_texts_later(&self) {
-        self.imp().text_save.schedule(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move || view.save_texts()
-        ));
-    }
-
-    /// Saves the texts being typed, if there are unsaved changes.
-    pub fn save_texts_now(&self) {
-        if self.imp().text_save.cancel() {
-            self.save_texts();
-        }
-    }
-
-    /// Saves day note, title and text of the block shown as they are typed.
-    /// Texts that were not edited are left alone, with any headings written
-    /// outside the app.
-    ///
-    /// On failure the typed texts stay, so that nothing gets lost.
-    fn save_texts(&self) {
-        let imp = self.imp();
-        let Some(note) = imp.file.borrow().as_ref().map(|file| file.day.note.clone()) else {
-            return;
-        };
-        let edited =
-            |view: &MarkdownView, saved: &str| (!view.shows(saved)).then(|| view.markdown());
-        let note = edited(&imp.note_view, &note);
-        let block = self.shown_block().map(|block| {
-            let title = imp.block_title.text().to_string();
-            (block.id, title, edited(&imp.block_text, &block.text))
-        });
-        let result = self.save(|day| {
-            if let Some(note) = note {
-                day.note = note;
-            }
-            if let Some((id, title, text)) = block {
-                day.set_block_title(&id, &title)?;
-                if let Some(text) = text {
-                    day.set_block_text(&id, &text)?;
-                }
-            }
-            Ok(())
-        });
-        if let Err(err) = result {
-            self.show_save_error(&err);
-        }
-    }
-
-    /// The block shown in the panel, as saved.
-    fn shown_block(&self) -> Option<Block> {
-        let imp = self.imp();
-        let id = imp.shown_block.borrow().clone()?;
-        let file = imp.file.borrow();
-        file.as_ref()?.day.block(&id).cloned()
-    }
-
     /// Adds a block of `project` from `start` to `end`, in minutes of the
     /// day, and shows it in the panel.
     fn add_block(&self, start: u32, end: u32, project: ProjectSlug) {
@@ -700,47 +488,6 @@ impl DayView {
         ));
     }
 
-    /// Deletes the block shown, asking what happens to its text.
-    async fn delete_block(&self) {
-        let imp = self.imp();
-        let id = imp
-            .shown_block
-            .borrow()
-            .clone()
-            .expect("the delete button belongs to the block shown");
-        let has_text = imp
-            .file
-            .borrow()
-            .as_ref()
-            .and_then(|file| file.day.block(&id))
-            .is_some_and(|block| !block.text.is_empty());
-        if !has_text {
-            self.update(|day| day.remove_block(&id, RemovedText::Discard));
-            return;
-        }
-        let dialog = adw::AlertDialog::new(
-            Some(&gettext("Delete Block?")),
-            Some(&gettext(
-                "The text of the block can be moved to the end of the day note",
-            )),
-        );
-        dialog.add_responses(&[
-            ("cancel", &gettext("_Cancel")),
-            ("discard", &gettext("_Delete Text")),
-            ("move", &gettext("_Move to Note")),
-        ]);
-        dialog.set_response_appearance("discard", adw::ResponseAppearance::Destructive);
-        dialog.set_response_appearance("move", adw::ResponseAppearance::Suggested);
-        dialog.set_default_response(Some("move"));
-        dialog.set_close_response("cancel");
-        let text = match dialog.choose_future(Some(self)).await.as_str() {
-            "discard" => RemovedText::Discard,
-            "move" => RemovedText::MoveToNote,
-            _ => return,
-        };
-        self.update(|day| day.remove_block(&id, text));
-    }
-
     /// Deletes the file of the day shown, after asking.
     async fn delete_day(&self) {
         let date = self.date();
@@ -755,30 +502,6 @@ impl DayView {
             show_error(self, &gettext("Cannot Delete Day"), &err.to_string());
         }
         self.show_date(date);
-    }
-
-    fn block_id(&self, index: usize) -> BlockId {
-        let file = self.imp().file.borrow();
-        let day = &file
-            .as_ref()
-            .expect("blocks are only shown with their day")
-            .day;
-        day.blocks[index].id.clone()
-    }
-
-    /// Shows the block `id` in the panel, or closes the panel if the day
-    /// has no such block.
-    pub fn show_block_by_id(&self, id: &BlockId) {
-        let imp = self.imp();
-        let index = imp
-            .file
-            .borrow()
-            .as_ref()
-            .and_then(|file| file.day.blocks.iter().position(|block| block.id == *id));
-        match index {
-            Some(index) => self.show_block(index),
-            None => imp.split_view.set_show_sidebar(false),
-        }
     }
 
     fn show_save_error(&self, err: &SaveError) {
@@ -829,86 +552,6 @@ impl DayView {
         imp.actions.add_action(&location);
         self.insert_action_group("day", Some(&imp.actions));
     }
-
-    /// Lets the spin buttons of block times show and take times, and fills
-    /// them when their popover opens.
-    fn setup_time_popovers(&self) {
-        let imp = self.imp();
-        for spin in [&imp.block_start, &imp.block_end] {
-            spin.connect_output(|spin| {
-                spin.set_text(&format_time(spin_time(spin)));
-                glib::Propagation::Stop
-            });
-            spin.connect_input(|spin| {
-                Some(
-                    NaiveTime::parse_from_str(spin.text().trim(), "%H:%M")
-                        .map(|time| f64::from(minute_of_day(time)))
-                        .map_err(|_| ()),
-                )
-            });
-        }
-        imp.block_time_popover.connect_show(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_| {
-                let imp = view.imp();
-                let id = imp.shown_block.borrow().clone();
-                let file = imp.file.borrow();
-                let day = &file.as_ref().expect("the popover belongs to a day").day;
-                let block = id
-                    .and_then(|id| day.block(&id))
-                    .expect("the popover belongs to the block shown");
-                set_spin_time(&imp.block_start, block.start);
-                set_spin_time(&imp.block_end, block.end);
-            }
-        ));
-    }
-
-    /// Shows title, time, project and text of the block `index` in the panel.
-    fn show_block(&self, index: usize) {
-        let imp = self.imp();
-        // Saving texts does not reorder the blocks, so `index` stays valid.
-        self.save_texts_now();
-        imp.timeline.select(Some(index));
-        let vault = self.vault();
-        let file = imp.file.borrow();
-        let block = &file
-            .as_ref()
-            .expect("blocks are only shown with their day")
-            .day
-            .blocks[index];
-        let is_other = imp.shown_block.borrow().as_ref() != Some(&block.id);
-        imp.shown_block.replace(Some(block.id.clone()));
-        let project = vault.project(&block.project);
-        let project_name = vault.project_name(&block.project);
-        // Keeps what is being typed into the same block, see `show_details`.
-        if is_other || imp.block_title.text() != block.title {
-            imp.block_title.set_text(&block.title);
-        }
-        imp.block_title.set_placeholder_text(Some(project_name));
-        imp.block_time_button
-            .set_label(&format_span(block.start, block.end));
-        imp.block_project_label.set_label(&project.map_or_else(
-            || glib::markup_escape_text(project_name).to_string(),
-            project_markup,
-        ));
-        let id = block.id.clone();
-        imp.block_project_button.set_popover(Some(&project_popover(
-            &vault,
-            glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move |project| {
-                    let vault = view.vault();
-                    view.update(|day| day.set_block_project(&id, project, vault.projects()));
-                }
-            ),
-        )));
-        if is_other || !imp.block_text.shows(&block.text) {
-            imp.block_text.set_markdown(&block.text);
-        }
-        imp.split_view.set_show_sidebar(true);
-    }
 }
 
 /// The kinds of day to choose from, with `current` among them.
@@ -943,15 +586,6 @@ fn variant_string(value: Option<&glib::Variant>) -> String {
     value
         .and_then(glib::Variant::get)
         .expect("the menus pass strings")
-}
-
-/// The time of `spin`, whose value counts the minutes of the day.
-fn spin_time(spin: &gtk::SpinButton) -> NaiveTime {
-    time_at_minute(spin.value() as u32)
-}
-
-fn set_spin_time(spin: &gtk::SpinButton, time: NaiveTime) {
-    spin.set_value(f64::from(minute_of_day(time)));
 }
 
 /// The weekday and the full date of `date`, in the user's language.
