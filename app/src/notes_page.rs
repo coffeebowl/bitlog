@@ -287,13 +287,10 @@ impl NotesPage {
     fn show_notes(&self) {
         let vault = self.vault();
         let notes: Vec<Listed> = vault
-            .projects()
-            .iter()
-            .flat_map(|project| {
-                vault.notes(&project.slug).unwrap_or_else(|err| {
-                    glib::g_warning!("bitlog", "{err}");
-                    Vec::new()
-                })
+            .all_notes()
+            .filter_map(|note| {
+                note.inspect_err(|err| glib::g_warning!("bitlog", "{err}"))
+                    .ok()
             })
             .map(|note| {
                 let modified = vault.note_modified(&note).map_or_else(

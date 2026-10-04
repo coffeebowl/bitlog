@@ -6,12 +6,10 @@
 
 use std::collections::HashSet;
 use std::fmt;
-use std::fs;
-use std::io;
 use std::path::{Path, PathBuf};
 
 use crate::error::{ReadError, SaveError};
-use crate::file::{parse_text, read_optional, read_text};
+use crate::file::{parse_text, read_folder, read_optional, read_text};
 use crate::vault::EXPORTS;
 use crate::{BlockId, Day, DayFile, TaskId, TaskList, Vault, VaultChange};
 
@@ -137,8 +135,7 @@ impl Vault {
             path: path.clone(),
             source,
         };
-        for entry in fs::read_dir(&path).map_err(io_error)? {
-            let entry = entry.map_err(io_error)?;
+        for entry in read_folder(&path)? {
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
@@ -206,13 +203,8 @@ impl Vault {
             Merged::Replaced(text) => self.write(&self.original_path(copy), &text)?,
         }
         // Only now, so that nothing of the copy is lost if saving fails.
-        let path = self.root().join(&copy.path);
-        self.record_write(&path, None);
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(SaveError::Write { path, source }),
-        }
+        self.remove(&self.root().join(&copy.path))?;
+        Ok(())
     }
 
     fn original_path(&self, copy: &ConflictCopy) -> PathBuf {
@@ -295,11 +287,7 @@ impl Vault {
     /// The ids of all archived tasks.
     fn archived_task_ids(&self) -> Result<HashSet<TaskId>, ReadError> {
         let mut ids = HashSet::new();
-        let entries = fs::read_dir(self.root()).map_err(|source| ReadError::Io {
-            path: self.root().to_owned(),
-            source,
-        })?;
-        for entry in entries.flatten() {
+        for entry in read_folder(self.root())? {
             let path = entry.path();
             let is_archive = entry.file_name().to_str().is_some_and(|name| {
                 name.starts_with("tasks-archive-")
@@ -358,6 +346,8 @@ pub(crate) fn has_git_markers(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use chrono::NaiveDate;
 
     use super::*;

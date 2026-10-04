@@ -282,9 +282,7 @@ fn task<'a>(tasks: &'a TaskList, id: &TaskId) -> &'a Task {
 }
 
 fn block<'a>(day: &'a Day, id: &BlockId) -> &'a Block {
-    day.blocks
-        .iter()
-        .find(|block| block.id == *id)
+    day.block(id)
         .expect("the contradiction names a block of this side")
 }
 

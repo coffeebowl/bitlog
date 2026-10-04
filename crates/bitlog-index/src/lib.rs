@@ -144,8 +144,8 @@ fn refresh(tx: &Transaction, vault: &Vault) -> Result<Vec<ReadError>, IndexError
     sync_projects(tx, vault)?;
     let mut files = vec![IndexFile::Tasks];
     files.extend(vault.all_days()?.into_iter().map(IndexFile::Day));
-    for project in vault.projects() {
-        files.extend(vault.notes(&project.slug)?.into_iter().map(IndexFile::Note));
+    for note in vault.all_notes() {
+        files.push(IndexFile::Note(note?));
     }
     // Files read before that are gone now.
     let current: HashSet<String> = files.iter().map(|file| file.key(vault)).collect();

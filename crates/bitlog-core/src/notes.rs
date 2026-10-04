@@ -2,7 +2,6 @@
 //! renaming and deleting them.
 
 use std::fs;
-use std::io;
 use std::ops::Range;
 use std::path::PathBuf;
 use std::time::SystemTime;
@@ -13,6 +12,7 @@ use pulldown_cmark::{Event, LinkType, Options, Parser, Tag};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_folder, read_optional, read_text};
+use crate::project::project_folder;
 use crate::{Day, EditError, NotePath, ProjectSlug, Vault};
 
 /// A project note as read, remembering the file's content to notice
@@ -191,10 +191,7 @@ impl Vault {
 
     /// Where the notes of the project `project` live.
     fn notes_folder(&self, project: &ProjectSlug) -> PathBuf {
-        self.root()
-            .join("projects")
-            .join(project.as_str())
-            .join("notes")
+        project_folder(self.root(), project).join("notes")
     }
 
     /// The notes of the project `project`, sorted by name.
@@ -214,6 +211,18 @@ impl Vault {
         }
         notes.sort();
         Ok(notes)
+    }
+
+    /// The notes of all projects, by project in the order of
+    /// [`Vault::projects`], then by name. A project whose notes cannot be
+    /// listed gives an error in their place.
+    pub fn all_notes(&self) -> impl Iterator<Item = Result<NotePath, ReadError>> + '_ {
+        self.projects()
+            .iter()
+            .flat_map(|project| match self.notes(&project.slug) {
+                Ok(notes) => notes.into_iter().map(Ok).collect(),
+                Err(err) => vec![Err(err)],
+            })
     }
 
     /// When the note `note` was last changed, here or elsewhere.
@@ -315,13 +324,12 @@ impl Vault {
         target: &impl Fn(&NotePath) -> Option<NotePath>,
     ) -> Result<usize, SaveError> {
         let mut changed = 0;
-        for project in self.projects() {
-            for note in self.notes(&project.slug)? {
-                let text = self.load_note(&note)?.text;
-                if let Some(text) = relinked(&text, Some(&project.slug), target) {
-                    self.write(&self.note_path(&note), &text)?;
-                    changed += 1;
-                }
+        for note in self.all_notes() {
+            let note = note?;
+            let text = self.load_note(&note)?.text;
+            if let Some(text) = relinked(&text, Some(note.project()), target) {
+                self.write(&self.note_path(&note), &text)?;
+                changed += 1;
             }
         }
         Ok(changed)
@@ -352,14 +360,10 @@ impl Vault {
 
     /// Deletes the note `note` for good.
     pub fn delete_note(&self, note: &NotePath) -> Result<(), SaveError> {
-        let path = self.note_path(note);
-        self.record_write(&path, None);
-        match fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(err) if err.kind() == io::ErrorKind::NotFound => {
-                Err(EditError::UnknownNote(note.clone()).into())
-            }
-            Err(source) => Err(SaveError::Write { path, source }),
+        if self.remove(&self.note_path(note))? {
+            Ok(())
+        } else {
+            Err(EditError::UnknownNote(note.clone()).into())
         }
     }
 }
@@ -392,6 +396,32 @@ mod tests {
             ]
         );
         assert!(vault.notes(&slug("pause")).unwrap().is_empty());
+    }
+
+    #[test]
+    fn list_all_notes() {
+        let (_dir, vault) = sample_copy();
+        let all: Vec<_> = vault.all_notes().map(Result::unwrap).collect();
+        // In the order of the settings, not by slug.
+        assert_eq!(
+            all,
+            [
+                note("projects/webshop/notes/checkout-flow.md"),
+                note("projects/webshop/notes/payment-provider.md"),
+                note("projects/infra/notes/deployment.md"),
+            ]
+        );
+        // A project whose notes cannot be listed gives one error.
+        let folder = vault.root().join("projects/webshop/notes");
+        fs::remove_dir_all(&folder).unwrap();
+        fs::write(&folder, "").unwrap();
+        let all: Vec<_> = vault.all_notes().collect();
+        assert_eq!(all.len(), 2);
+        assert!(all[0].is_err());
+        assert_eq!(
+            all[1].as_ref().ok(),
+            Some(&note("projects/infra/notes/deployment.md"))
+        );
     }
 
     #[test]

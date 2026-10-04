@@ -6,9 +6,9 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
     Block, BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, SaveError,
-    Vault,
+    Vault, minute_of_day, time_at_minute,
 };
-use chrono::{Local, NaiveDate, NaiveTime, Timelike};
+use chrono::{Local, NaiveDate, NaiveTime};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
@@ -145,7 +145,9 @@ mod imp {
                 view,
                 move |_, index, start, end| {
                     let id = view.block_id(index);
-                    view.update(|day| day.move_block(&id, time_of(start), time_of(end)));
+                    view.update(|day| {
+                        day.move_block(&id, time_at_minute(start), time_at_minute(end))
+                    });
                 }
             ));
             // In the narrow layout the panel also closes by tapping beside it.
@@ -600,13 +602,9 @@ impl DayView {
     /// The block shown in the panel, as saved.
     fn shown_block(&self) -> Option<Block> {
         let imp = self.imp();
-        let id = imp.shown_block.borrow();
+        let id = imp.shown_block.borrow().clone()?;
         let file = imp.file.borrow();
-        let blocks = &file.as_ref()?.day.blocks;
-        blocks
-            .iter()
-            .find(|block| Some(&block.id) == id.as_ref())
-            .cloned()
+        file.as_ref()?.day.block(&id).cloned()
     }
 
     /// Adds a block of `project` from `start` to `end`, in minutes of the
@@ -615,8 +613,13 @@ impl DayView {
         let vault = self.vault();
         let mut id = None;
         self.update(|day| {
-            id =
-                Some(day.add_block(time_of(start), time_of(end), project, "", vault.projects())?);
+            id = Some(day.add_block(
+                time_at_minute(start),
+                time_at_minute(end),
+                project,
+                "",
+                vault.projects(),
+            )?);
             Ok(())
         });
         if let Some(id) = id {
@@ -677,7 +680,7 @@ impl DayView {
                 .map(|block| block.span().1)
                 .filter(|&end| end < 24 * 60)
                 .max()
-                .unwrap_or(start.num_seconds_from_midnight() / 60)
+                .unwrap_or(minute_of_day(start))
         };
         let Some((start, end)) = imp.timeline.select_free_span(anchor) else {
             self.error_bell();
@@ -716,7 +719,7 @@ impl DayView {
             .file
             .borrow()
             .as_ref()
-            .and_then(|file| file.day.blocks.iter().find(|block| block.id == id))
+            .and_then(|file| file.day.block(&id))
             .is_some_and(|block| !block.text.is_empty());
         if !has_text {
             self.update(|day| day.remove_block(&id, RemovedText::Discard));
@@ -877,7 +880,7 @@ impl DayView {
             spin.connect_input(|spin| {
                 Some(
                     NaiveTime::parse_from_str(spin.text().trim(), "%H:%M")
-                        .map(|time| f64::from(time.num_seconds_from_midnight() / 60))
+                        .map(|time| f64::from(minute_of_day(time)))
                         .map_err(|_| ()),
                 )
             });
@@ -890,10 +893,8 @@ impl DayView {
                 let id = imp.shown_block.borrow().clone();
                 let file = imp.file.borrow();
                 let day = &file.as_ref().expect("the popover belongs to a day").day;
-                let block = day
-                    .blocks
-                    .iter()
-                    .find(|block| Some(&block.id) == id.as_ref())
+                let block = id
+                    .and_then(|id| day.block(&id))
                     .expect("the popover belongs to the block shown");
                 set_spin_time(&imp.block_start, block.start);
                 set_spin_time(&imp.block_end, block.end);
@@ -982,21 +983,13 @@ fn variant_string(value: Option<&glib::Variant>) -> String {
         .expect("the menus pass strings")
 }
 
-/// The time `minute` minutes after midnight; the end of the day is midnight.
-fn time_of(minute: u32) -> NaiveTime {
-    NaiveTime::from_hms_opt(minute / 60 % 24, minute % 60, 0)
-        .expect("the timeline stays within a day")
-}
-
 /// The time of `spin`, whose value counts the minutes of the day.
 fn spin_time(spin: &gtk::SpinButton) -> NaiveTime {
-    let minutes = spin.value() as u32;
-    NaiveTime::from_hms_opt(minutes / 60, minutes % 60, 0)
-        .expect("the spin button stays within a day")
+    time_at_minute(spin.value() as u32)
 }
 
 fn set_spin_time(spin: &gtk::SpinButton, time: NaiveTime) {
-    spin.set_value(f64::from(time.num_seconds_from_midnight() / 60));
+    spin.set_value(f64::from(minute_of_day(time)));
 }
 
 /// The weekday and the full date of `date`, in the user's language.

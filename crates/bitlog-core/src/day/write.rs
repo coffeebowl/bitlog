@@ -14,7 +14,7 @@ impl Day {
         let ids: Vec<BlockId> = self.blocks.iter().map(|block| block.id.clone()).collect();
         let mut parts = vec![
             format!("---\n{}---", self.front_matter()),
-            format!("# {}", self.date.format("%Y-%m-%d")),
+            format!("# {}", self.date),
         ];
         if !self.note.is_empty() {
             parts.push(escape_block_headings(&self.note, &ids));
@@ -29,7 +29,7 @@ impl Day {
     fn front_matter(&self) -> String {
         let mut lines = vec![
             format!("format: {FORMAT}"),
-            format!("date: {}", quote(&self.date.format("%Y-%m-%d").to_string())),
+            format!("date: {}", quote(&self.date.to_string())),
             format!("kind: {}", quote(&self.kind)),
         ];
         if let Some(location) = &self.location {

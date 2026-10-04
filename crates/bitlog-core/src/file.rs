@@ -5,6 +5,9 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{self, Write};
 use std::path::Path;
 
+use serde::de::DeserializeOwned;
+use toml_edit::DocumentMut;
+
 use crate::conflict::has_git_markers;
 use crate::error::{ReadError, SaveError};
 
@@ -86,6 +89,17 @@ pub fn content_hash(text: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     text.hash(&mut hasher);
     hasher.finish()
+}
+
+/// Parses the TOML file content `text`, and a second time into a document
+/// that keeps comments and formatting for writing. Also gives the hash of
+/// `text`.
+pub(crate) fn parse_toml<T: DeserializeOwned>(text: &str) -> Result<(T, DocumentMut, u64), String> {
+    let value = toml::from_str(text).map_err(|err| err.to_string())?;
+    let document = text
+        .parse()
+        .map_err(|err: toml_edit::TomlError| err.to_string())?;
+    Ok((value, document, content_hash(text)))
 }
 
 /// Writes `text` to `path` so that readers, sync tools included, see either

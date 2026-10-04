@@ -116,6 +116,13 @@ pub fn minute_of_day(time: NaiveTime) -> u32 {
     time.hour() * 60 + time.minute()
 }
 
+/// The time `minute` minutes after midnight, the other way round than
+/// [`minute_of_day`]. The end of the day, minute 1440, is midnight again.
+pub fn time_at_minute(minute: u32) -> NaiveTime {
+    NaiveTime::from_hms_opt(minute / 60 % 24, minute % 60, 0)
+        .expect("hours and minutes stay in range")
+}
+
 /// Minutes from `start` to `end`, where an `end` before `start` lies on the next day.
 fn minutes_until(start: NaiveTime, end: NaiveTime) -> u32 {
     let (start, end) = (minute_of_day(start), minute_of_day(end));
@@ -185,13 +192,18 @@ impl Day {
         }
     }
 
+    /// The block `id` of this day.
+    pub fn block(&self, id: &BlockId) -> Option<&Block> {
+        self.blocks.iter().find(|block| block.id == *id)
+    }
+
     /// Reads the content `text` of the day file `path`. Its date has to match
     /// the file name.
     pub(crate) fn read(path: &Path, text: &str) -> Result<(Self, Vec<DayWarning>), ReadError> {
         parse_text(path, text, |text| {
             let (day, warnings) = Self::parse(text)?;
             let file_date = path.file_stem().and_then(|stem| stem.to_str());
-            if file_date != Some(day.date.format("%Y-%m-%d").to_string().as_str()) {
+            if file_date != Some(day.date.to_string().as_str()) {
                 return Err(format!("date {} does not match the file name", day.date));
             }
             Ok((day, warnings))
@@ -276,16 +288,26 @@ impl Day {
     }
 }
 
-/// Splits a day file into its front matter and the Markdown below it.
+/// `text` without the front matter it starts with, if any, as in notes.
+pub fn without_front_matter(text: &str) -> &str {
+    split_front_matter(text).map_or(text, |(_, body)| body)
+}
+
+/// Splits a file into its front matter, between two lines `---`, and the
+/// Markdown below it.
 ///
 /// The front matter slice starts with the newline of the opening `---`, so
 /// line numbers in YAML errors match the lines of the file.
 fn split_front_matter(text: &str) -> Result<(&str, &str), String> {
-    let Some(rest) = text.strip_prefix("---") else {
+    let Some(opening) = text
+        .split_inclusive('\n')
+        .next()
+        .filter(|line| line.trim_end() == "---")
+    else {
         return Err("the file has to start with a front matter, a line \"---\"".to_owned());
     };
-    let mut end = text.len() - rest.len();
-    for line in rest.split_inclusive('\n').skip(1) {
+    let mut end = opening.len();
+    for line in text[end..].split_inclusive('\n') {
         if line.trim_end() == "---" {
             return Ok((&text[3..end], &text[end + line.len()..]));
         }
@@ -355,14 +377,26 @@ mod tests {
     }
 
     fn block<'a>(day: &'a Day, id: &str) -> &'a Block {
-        day.blocks
-            .iter()
-            .find(|block| block.id.as_str() == id)
-            .unwrap()
+        day.block(&id.parse().unwrap()).unwrap()
     }
 
     fn parse_error(text: &str) -> String {
         Day::parse(text).unwrap_err()
+    }
+
+    #[test]
+    fn times_at_minutes() {
+        assert_eq!(time_at_minute(9 * 60 + 15), time(9, 15));
+        assert_eq!(time_at_minute(24 * 60), time(0, 0));
+        assert_eq!(minute_of_day(time_at_minute(23 * 60 + 59)), 23 * 60 + 59);
+    }
+
+    #[test]
+    fn find_block() {
+        let (day, _) = sample_day("2026-09-21");
+        let first = &day.blocks[0];
+        assert_eq!(day.block(&first.id), Some(first));
+        assert_eq!(day.block(&"zz99".parse().unwrap()), None);
     }
 
     #[test]
@@ -537,6 +571,21 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn front_matter_of_notes() {
+        assert_eq!(
+            without_front_matter("---\ntags: [a]\n---\n\nText\n"),
+            "\nText\n"
+        );
+        assert_eq!(
+            without_front_matter("--- \r\ntags: [a]\r\n---\r\nText"),
+            "Text"
+        );
+        for text in ["Text\n---\n", "---\nNot closed\n", "-----\nRule\n---\n", ""] {
+            assert_eq!(without_front_matter(text), text);
+        }
     }
 
     #[test]

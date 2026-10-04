@@ -9,7 +9,7 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use crate::conflict::Merger;
 use crate::error::ReadError;
-use crate::file::{FORMAT, check_format, content_hash, parse_text, read_optional};
+use crate::file::{FORMAT, check_format, content_hash, parse_text, parse_toml, read_optional};
 use crate::toml_values::{local_date, same_item, set, set_date};
 use crate::{Contradiction, EditError, TaskId};
 
@@ -116,6 +116,11 @@ impl TaskList {
         self.tasks.iter().find(|task| task.id == *id)
     }
 
+    /// Where the task `id` is in [`TaskList::tasks`].
+    pub fn position(&self, id: &TaskId) -> Option<usize> {
+        self.tasks.iter().position(|task| task.id == *id)
+    }
+
     /// Adds an open task after the other open tasks and returns its id.
     pub fn add(&mut self, title: &str, today: NaiveDate) -> Result<TaskId, EditError> {
         let title = task_title(title)?;
@@ -203,9 +208,7 @@ impl TaskList {
     }
 
     fn index(&self, id: &TaskId) -> Result<usize, EditError> {
-        self.tasks
-            .iter()
-            .position(|task| task.id == *id)
+        self.position(id)
             .ok_or_else(|| EditError::UnknownTask(id.clone()))
     }
 
@@ -287,12 +290,7 @@ impl TaskList {
     }
 
     fn parse(text: &str) -> Result<Self, String> {
-        let file: TasksFile = toml::from_str(text).map_err(|err| err.to_string())?;
-        // Read a second time, keeping comments and formatting for writing.
-        let document: DocumentMut = text
-            .parse()
-            .map_err(|err: toml_edit::TomlError| err.to_string())?;
-
+        let (file, document, hash): (TasksFile, _, _) = parse_toml(text)?;
         check_format(file.format)?;
         let mut ids = HashSet::new();
         if let Some(task) = file.task.iter().find(|task| !ids.insert(&task.id)) {
@@ -328,7 +326,7 @@ impl TaskList {
         Ok(Self {
             tasks,
             document,
-            hash: Some(content_hash(text)),
+            hash: Some(hash),
         })
     }
 
@@ -391,6 +389,8 @@ mod tests {
     fn sample_tasks() {
         let list = sample();
         assert_eq!(ids(&list), ["t9x2", "h4c8", "r3m7", "w5d1"]);
+        assert_eq!(list.position(&id("r3m7")), Some(2));
+        assert_eq!(list.position(&id("zzzz")), None);
         let renew = list.task(&id("h4c8")).unwrap();
         assert_eq!(renew.title, "Renew the TLS certificate for staging");
         assert_eq!(renew.status, TaskStatus::Open);

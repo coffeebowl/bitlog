@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{EditError, LocationKey, Vault, VaultConfig};
+use bitlog_core::{EditError, LocationKey, Vault, VaultConfig, time_at_minute};
 use chrono::{NaiveDate, NaiveTime, TimeDelta, Weekday};
 use gettextrs::gettext;
 use glib::subclass::Signal;
@@ -210,9 +210,7 @@ fn mark_error(row: &impl IsA<gtk::Widget>, error: bool) {
 fn day_times(set: NaiveTime) -> Vec<NaiveTime> {
     let mut times: Vec<NaiveTime> = (0..24 * 60)
         .step_by(TIME_STEP_MINUTES as usize)
-        .map(|minute| {
-            NaiveTime::from_hms_opt(minute / 60, minute % 60, 0).expect("minutes of a day")
-        })
+        .map(time_at_minute)
         .collect();
     if let Err(index) = times.binary_search(&set) {
         times.insert(index, set);

@@ -8,7 +8,7 @@ use adw::subclass::prelude::*;
 use bitlog_core::{
     Asset, AssetPath, Branch, Branches, Commit, GitLogError, NotePath, Period, Project,
     ProjectSlug, RepoWatcher, Uncommitted, Upstream, Vault, git_branches, git_commit, git_log,
-    git_uncommitted, git_upstream, watch_repo,
+    git_uncommitted, git_upstream, watch_repo, without_front_matter,
 };
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
@@ -1251,7 +1251,7 @@ pub fn note_preview() -> MarkdownView {
 
 /// Shows the start of `text` in `preview`, unless it shows it already.
 pub fn show_preview(preview: &MarkdownView, text: &str) {
-    let text = preview_text(without_front_matter(text));
+    let text = preview_text(without_front_matter(text).trim_start_matches(['\r', '\n']));
     if !preview.shows(text) {
         preview.set_markdown(text);
     }
@@ -1336,21 +1336,6 @@ fn page_card(
         .width_request(120)
         .css_classes(["page-card"])
         .build()
-}
-
-/// `text` without its front matter, if it starts with one.
-fn without_front_matter(text: &str) -> &str {
-    let Some(rest) = text.strip_prefix("---\n") else {
-        return text;
-    };
-    let mut end = 0;
-    for line in rest.split_inclusive('\n') {
-        end += line.len();
-        if line.trim_end() == "---" {
-            return rest[end..].trim_start();
-        }
-    }
-    text
 }
 
 /// The start of `text`, as much as a preview formats.

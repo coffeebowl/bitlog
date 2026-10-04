@@ -48,7 +48,7 @@ impl Day {
         start: NaiveTime,
         end: NaiveTime,
     ) -> Result<(), EditError> {
-        let mut block = self.block(id)?.clone();
+        let mut block = self.blocks[self.index(id)?].clone();
         block.start = start;
         block.end = end;
         self.check_times(&block)?;
@@ -135,10 +135,6 @@ impl Day {
             .iter()
             .position(|block| block.id == *id)
             .ok_or_else(|| EditError::UnknownBlock(id.clone()))
-    }
-
-    fn block(&self, id: &BlockId) -> Result<&Block, EditError> {
-        Ok(&self.blocks[self.index(id)?])
     }
 
     fn block_mut(&mut self, id: &BlockId) -> Result<&mut Block, EditError> {

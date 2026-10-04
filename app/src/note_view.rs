@@ -332,13 +332,10 @@ impl NoteView {
 /// one. Projects whose notes cannot be listed count as having none.
 fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
     vault
-        .projects()
-        .iter()
-        .flat_map(|project| {
-            vault.notes(&project.slug).unwrap_or_else(|err| {
-                glib::g_warning!("bitlog", "{err}");
-                Vec::new()
-            })
+        .all_notes()
+        .filter_map(|note| {
+            note.inspect_err(|err| glib::g_warning!("bitlog", "{err}"))
+                .ok()
         })
         .collect()
 }

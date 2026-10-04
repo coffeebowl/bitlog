@@ -8,7 +8,7 @@ use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::error::ReadError;
-use crate::file::{FORMAT, check_format, content_hash, parse_text, read_file};
+use crate::file::{FORMAT, check_format, content_hash, parse_text, parse_toml, read_file};
 use crate::toml_values::{local_time, set, toml_time};
 use crate::{LocationKey, ProjectSlug};
 
@@ -140,12 +140,10 @@ impl VaultConfig {
     }
 
     fn parse(text: &str) -> Result<Self, String> {
-        let mut config: Self = toml::from_str(text).map_err(|err| err.to_string())?;
+        let (mut config, document, hash): (Self, _, _) = parse_toml(text)?;
         config.validate()?;
-        config.document = text
-            .parse()
-            .map_err(|err: toml_edit::TomlError| err.to_string())?;
-        config.hash = Some(content_hash(text));
+        config.document = document;
+        config.hash = Some(hash);
         Ok(config)
     }
 

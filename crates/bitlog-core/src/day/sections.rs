@@ -125,7 +125,7 @@ fn parse_heading(line: &str) -> Option<(&str, &str)> {
 }
 
 fn strip_date_heading(text: &str, date: NaiveDate) -> &str {
-    let heading = format!("# {}", date.format("%Y-%m-%d"));
+    let heading = format!("# {date}");
     let text = text.trim_start_matches(['\n', '\r']);
     match text.split_once('\n') {
         Some((first, rest)) if first.trim_end() == heading => rest,

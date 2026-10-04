@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use chrono::{Datelike, Months, NaiveDate};
@@ -9,6 +10,7 @@ use chrono::{Datelike, Months, NaiveDate};
 use crate::error::{ReadError, SaveError};
 use crate::file::{content_hash, read_folder, read_optional, read_text, write_atomic};
 use crate::notes::relink_day;
+use crate::project::project_folder;
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
 use crate::{Day, DayWarning, EditError, NotePath, Project, ProjectSlug, TaskList, VaultConfig};
 
@@ -235,14 +237,8 @@ impl Vault {
 
     /// Deletes the file of the day `date` for good, if there is one.
     pub fn delete_day(&self, date: NaiveDate) -> Result<(), SaveError> {
-        let path = self.day_path(date);
-        self.record_write(&path, None);
-        match fs::remove_file(&path) {
-            Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
-                Err(SaveError::Write { path, source: err })
-            }
-            _ => Ok(()),
-        }
+        self.remove(&self.day_path(date))?;
+        Ok(())
     }
 
     /// Saves the new project `project` and adds it to the vault.
@@ -312,8 +308,10 @@ impl Vault {
         if self.project(from).is_none() {
             return Err(EditError::UnknownProject(from.clone()).into());
         }
-        let folder = |slug: &ProjectSlug| self.root.join("projects").join(slug.as_str());
-        let (old, new) = (folder(from), folder(to));
+        let (old, new) = (
+            project_folder(&self.root, from),
+            project_folder(&self.root, to),
+        );
         if self.project(to).is_some() || new.exists() {
             return Err(EditError::ProjectExists(to.clone()).into());
         }
@@ -470,6 +468,19 @@ impl Vault {
         write_atomic(path, text)
     }
 
+    /// Removes the file at `path`. Returns whether there was one.
+    pub(crate) fn remove(&self, path: &Path) -> Result<bool, SaveError> {
+        self.record_write(path, None);
+        match fs::remove_file(path) {
+            Ok(()) => Ok(true),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(false),
+            Err(source) => Err(SaveError::Write {
+                path: path.to_owned(),
+                source,
+            }),
+        }
+    }
+
     /// Notes that this program is about to write `text` to `path`, or with
     /// `None` remove it, so that watching leaves the change out. Call it
     /// before changing the file, so that watching never sees it first.
@@ -526,7 +537,7 @@ pub(crate) fn day_file(date: NaiveDate) -> PathBuf {
     Path::new("daily")
         .join(format!("{:04}", date.year()))
         .join(format!("{:02}", date.month()))
-        .join(format!("{}.md", date.format("%Y-%m-%d")))
+        .join(format!("{date}.md"))
 }
 
 /// The date of a day file named `name`. Only names of the exact form
@@ -536,7 +547,7 @@ pub(crate) fn day_file_date(name: &str) -> Option<NaiveDate> {
     // Parsing alone would also accept `2026-9-1`.
     NaiveDate::parse_from_str(stem, "%Y-%m-%d")
         .ok()
-        .filter(|date| date.format("%Y-%m-%d").to_string() == stem)
+        .filter(|date| date.to_string() == stem)
 }
 
 /// The dates of the day files in the month folder `folder`.

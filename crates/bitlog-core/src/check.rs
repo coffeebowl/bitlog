@@ -131,15 +131,14 @@ impl Vault {
                 Err(err) => problems.push(Problem::Unreadable(err)),
             }
         }
-        for project in self.projects() {
-            for note in self.notes(&project.slug)? {
-                match self.load_note(&note) {
-                    Ok(file) if has_git_markers(&file.text) => {
-                        problems.push(Problem::GitMarkers(note));
-                    }
-                    Ok(file) => problems.extend(self.broken_links(&note, &file.text)),
-                    Err(err) => problems.push(Problem::Unreadable(err)),
+        for note in self.all_notes() {
+            let note = note?;
+            match self.load_note(&note) {
+                Ok(file) if has_git_markers(&file.text) => {
+                    problems.push(Problem::GitMarkers(note));
                 }
+                Ok(file) => problems.extend(self.broken_links(&note, &file.text)),
+                Err(err) => problems.push(Problem::Unreadable(err)),
             }
         }
         Ok(problems)

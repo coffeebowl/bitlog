@@ -7,6 +7,7 @@ use std::time::SystemTime;
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{copy_atomic, read_folder};
+use crate::project::project_folder;
 use crate::{AssetPath, EditError, ProjectSlug, Vault};
 
 /// A file in the assets folder of a project or one of its subfolders.
@@ -22,10 +23,7 @@ impl Vault {
     /// Where the assets of the project `project` live, a folder that may
     /// not exist yet.
     pub fn assets_folder(&self, project: &ProjectSlug) -> PathBuf {
-        self.root()
-            .join("projects")
-            .join(project.as_str())
-            .join("assets")
+        project_folder(self.root(), project).join("assets")
     }
 
     /// Where the asset `asset` lives.

@@ -492,10 +492,12 @@ impl TaskListView {
 
     /// Moves the task `dragged` above or below the task `target`.
     fn drop_task(&self, dragged: &TaskId, target: &TaskId, below: bool) {
-        let positions = self.imp().tasks.borrow().as_ref().and_then(|tasks| {
-            let position = |id: &TaskId| tasks.tasks().iter().position(|task| task.id == *id);
-            Some((position(dragged)?, position(target)?))
-        });
+        let positions = self
+            .imp()
+            .tasks
+            .borrow()
+            .as_ref()
+            .and_then(|tasks| Some((tasks.position(dragged)?, tasks.position(target)?)));
         let Some((from, to)) = positions else {
             return;
         };
@@ -514,7 +516,7 @@ impl TaskListView {
             .tasks
             .borrow()
             .as_ref()
-            .and_then(|tasks| tasks.tasks().iter().position(|task| task.id == *id));
+            .and_then(|tasks| tasks.position(id));
         let Some(index) = position.and_then(|index| index.checked_add_signed(steps)) else {
             return;
         };
@@ -544,7 +546,7 @@ impl TaskListView {
             .tasks
             .borrow()
             .as_ref()
-            .and_then(|tasks| tasks.tasks().iter().position(|task| task.id == *id))
+            .and_then(|tasks| tasks.position(id))
             .expect("rows show tasks of the list shown");
         if !self.update(|tasks| tasks.set_status(id, status, today())) {
             return;

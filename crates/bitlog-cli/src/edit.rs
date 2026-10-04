@@ -86,10 +86,11 @@ pub fn remove_block(
     id: &BlockId,
     text: Option<RemovedText>,
 ) -> Result<()> {
-    let has_text = vault
-        .load_day(date)?
-        .and_then(|file| file.day.blocks.into_iter().find(|block| block.id == *id))
-        .is_some_and(|block| !block.text.is_empty());
+    let has_text = vault.load_day(date)?.is_some_and(|file| {
+        file.day
+            .block(id)
+            .is_some_and(|block| !block.text.is_empty())
+    });
     let text = match text {
         Some(text) => text,
         None if has_text => bail!(
@@ -108,9 +109,7 @@ pub fn edit_block_text(vault: &Vault, date: NaiveDate, id: &BlockId) -> Result<(
         .ok_or(EditError::UnknownBlock(id.clone()))?;
     let block = file
         .day
-        .blocks
-        .iter()
-        .find(|block| block.id == *id)
+        .block(id)
         .ok_or(EditError::UnknownBlock(id.clone()))?;
     // A new file under a name nobody knows in advance, readable only by
     // this user, so that nobody else can read the text or slip in a file.

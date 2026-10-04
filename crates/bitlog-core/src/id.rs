@@ -52,6 +52,20 @@ fn is_short_id(value: &str) -> bool {
     value.len() == SHORT_ID_LEN && value.bytes().all(|b| SHORT_ID_ALPHABET.contains(&b))
 }
 
+/// `value` as an identifier of the kind `kind`, if `is_valid` accepts it.
+fn parse_id(
+    value: &str,
+    is_valid: fn(&str) -> bool,
+    kind: &'static str,
+    rule: &'static str,
+) -> Result<String, InvalidId> {
+    if is_valid(value) {
+        Ok(value.to_owned())
+    } else {
+        Err(InvalidId::new(kind, value, rule))
+    }
+}
+
 /// Deserializes a string and validates it through `FromStr`.
 fn deserialize_parsed<'de, D: Deserializer<'de>, T: FromStr<Err = InvalidId>>(
     deserializer: D,
@@ -61,10 +75,16 @@ fn deserialize_parsed<'de, D: Deserializer<'de>, T: FromStr<Err = InvalidId>>(
         .map_err(serde::de::Error::custom)
 }
 
-fn random_short_id() -> String {
-    (0..SHORT_ID_LEN)
-        .map(|_| char::from(SHORT_ID_ALPHABET[fastrand::usize(..SHORT_ID_ALPHABET.len())]))
-        .collect()
+/// A random short id, made into an identifier by `make`, for which
+/// `is_taken` returns false.
+fn generate_short_id<T>(make: fn(String) -> T, is_taken: impl Fn(&T) -> bool) -> T {
+    let random = || char::from(SHORT_ID_ALPHABET[fastrand::usize(..SHORT_ID_ALPHABET.len())]);
+    loop {
+        let id = make((0..SHORT_ID_LEN).map(|_| random()).collect());
+        if !is_taken(&id) {
+            return id;
+        }
+    }
 }
 
 /// Identifies a project, and names its folder below `projects/`.
@@ -108,11 +128,7 @@ impl FromStr for ProjectSlug {
     type Err = InvalidId;
 
     fn from_str(value: &str) -> Result<Self, InvalidId> {
-        if is_slug(value) {
-            Ok(Self(value.to_owned()))
-        } else {
-            Err(InvalidId::new("project slug", value, SLUG_RULE))
-        }
+        parse_id(value, is_slug, "project slug", SLUG_RULE).map(Self)
     }
 }
 
@@ -142,11 +158,7 @@ impl FromStr for LocationKey {
     type Err = InvalidId;
 
     fn from_str(value: &str) -> Result<Self, InvalidId> {
-        if is_slug(value) {
-            Ok(Self(value.to_owned()))
-        } else {
-            Err(InvalidId::new("location key", value, SLUG_RULE))
-        }
+        parse_id(value, is_slug, "location key", SLUG_RULE).map(Self)
     }
 }
 
@@ -169,12 +181,7 @@ pub struct BlockId(String);
 impl BlockId {
     /// Creates a random id for which `is_taken` returns false.
     pub fn generate(is_taken: impl Fn(&Self) -> bool) -> Self {
-        loop {
-            let id = Self(random_short_id());
-            if !is_taken(&id) {
-                return id;
-            }
-        }
+        generate_short_id(Self, is_taken)
     }
 
     pub fn as_str(&self) -> &str {
@@ -186,11 +193,7 @@ impl FromStr for BlockId {
     type Err = InvalidId;
 
     fn from_str(value: &str) -> Result<Self, InvalidId> {
-        if is_short_id(value) {
-            Ok(Self(value.to_owned()))
-        } else {
-            Err(InvalidId::new("block id", value, SHORT_ID_RULE))
-        }
+        parse_id(value, is_short_id, "block id", SHORT_ID_RULE).map(Self)
     }
 }
 
@@ -213,12 +216,7 @@ pub struct TaskId(String);
 impl TaskId {
     /// Creates a random id for which `is_taken` returns false.
     pub fn generate(is_taken: impl Fn(&Self) -> bool) -> Self {
-        loop {
-            let id = Self(random_short_id());
-            if !is_taken(&id) {
-                return id;
-            }
-        }
+        generate_short_id(Self, is_taken)
     }
 
     pub fn as_str(&self) -> &str {
@@ -230,11 +228,7 @@ impl FromStr for TaskId {
     type Err = InvalidId;
 
     fn from_str(value: &str) -> Result<Self, InvalidId> {
-        if is_short_id(value) {
-            Ok(Self(value.to_owned()))
-        } else {
-            Err(InvalidId::new("task id", value, SHORT_ID_RULE))
-        }
+        parse_id(value, is_short_id, "task id", SHORT_ID_RULE).map(Self)
     }
 }
 

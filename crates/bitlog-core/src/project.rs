@@ -8,7 +8,9 @@ use serde::Deserialize;
 use toml_edit::DocumentMut;
 
 use crate::error::ReadError;
-use crate::file::{FORMAT, check_format, content_hash, parse_text, read_file, read_folder};
+use crate::file::{
+    FORMAT, check_format, content_hash, parse_text, parse_toml, read_file, read_folder,
+};
 use crate::toml_values::{local_date, set, set_date};
 use crate::{EditError, ProjectSlug};
 
@@ -76,6 +78,11 @@ struct ProjectFile {
     created: Option<NaiveDate>,
 }
 
+/// The folder of the project `slug` in `vault`.
+pub(crate) fn project_folder(vault: &Path, slug: &ProjectSlug) -> PathBuf {
+    vault.join("projects").join(slug.as_str())
+}
+
 fn is_color(value: &str) -> bool {
     value
         .strip_prefix('#')
@@ -141,10 +148,7 @@ impl Project {
 
     /// Where the file of the project `slug` lives in `vault`.
     pub fn path(vault: &Path, slug: &ProjectSlug) -> PathBuf {
-        vault
-            .join("projects")
-            .join(slug.as_str())
-            .join("project.toml")
+        project_folder(vault, slug).join("project.toml")
     }
 
     fn load(vault: &Path, slug: ProjectSlug) -> Result<Self, ReadError> {
@@ -186,12 +190,7 @@ impl Project {
     }
 
     fn parse(slug: ProjectSlug, text: &str) -> Result<Self, String> {
-        let file: ProjectFile = toml::from_str(text).map_err(|err| err.to_string())?;
-        // Read a second time, keeping comments and formatting for writing.
-        let document: DocumentMut = text
-            .parse()
-            .map_err(|err: toml_edit::TomlError| err.to_string())?;
-
+        let (file, document, hash): (ProjectFile, _, _) = parse_toml(text)?;
         check_format(file.format)?;
         let color = file.color.unwrap_or_else(|| DEFAULT_COLOR.to_owned());
         if !is_color(&color) {
@@ -206,7 +205,7 @@ impl Project {
             category: file.category.unwrap_or_else(|| DEFAULT_CATEGORY.to_owned()),
             created: file.created,
             document,
-            hash: Some(content_hash(text)),
+            hash: Some(hash),
         })
     }
 
