@@ -21,6 +21,7 @@ use crate::markdown_view::MarkdownView;
 use crate::note_dialogs::{self, confirm_create, confirm_delete};
 use crate::note_view::NoteView;
 use crate::project_view::{note_card, note_preview, note_text, show_preview};
+use crate::projects_page::shows;
 use crate::search_index::SearchIndex;
 
 /// A note in the list.
@@ -249,7 +250,7 @@ impl NotesPage {
     pub fn reload(&self) {
         let imp = self.imp();
         self.show_notes();
-        if self.shows("note") {
+        if shows(&imp.nav, "note") {
             imp.note_view.update_links();
             if !imp.note_view.reload() {
                 self.close_note();
@@ -268,15 +269,10 @@ impl NotesPage {
     pub fn open_note(&self, note: &NotePath) {
         let imp = self.imp();
         match imp.note_view.show_note(note) {
-            Ok(()) if !self.shows("note") => imp.nav.push(&imp.note_view),
+            Ok(()) if !shows(&imp.nav, "note") => imp.nav.push(&imp.note_view),
             Ok(()) => {}
             Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
         }
-    }
-
-    /// Whether the page with `tag` is in the navigation view.
-    fn shows(&self, tag: &str) -> bool {
-        self.imp().nav.find_page(tag).is_some()
     }
 
     /// Goes back from the note, which is no longer there.
@@ -536,7 +532,7 @@ impl NotesPage {
         if imp.note_view.note() == Some(note) {
             imp.note_view.forget();
             self.open_note(&renamed);
-        } else if self.shows("note") {
+        } else if shows(&imp.nav, "note") {
             imp.note_view.reload();
         }
         self.show_notes();

@@ -309,8 +309,9 @@ impl ProjectDialog {
                 imp.slug_hint.add_css_class("error");
             }
             None => {
-                imp.slug_hint
-                    .set_label(&gettext("The ID cannot be changed later."));
+                imp.slug_hint.set_label(&gettext(
+                    "The ID can only be changed later on the command line.",
+                ));
                 imp.slug_hint.remove_css_class("error");
                 imp.slug_hint.add_css_class("warning");
             }

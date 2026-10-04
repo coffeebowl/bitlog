@@ -182,6 +182,15 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
+/// Whether the page with `tag` is in `nav`. Unlike `find_page()`, a page on
+/// its way out is not, so that it is not built again while going back.
+pub fn shows(nav: &adw::NavigationView, tag: &str) -> bool {
+    let stack = nav.navigation_stack();
+    (0..stack.n_items())
+        .filter_map(|i| stack.item(i).and_downcast::<adw::NavigationPage>())
+        .any(|page| page.tag().as_deref() == Some(tag))
+}
+
 fn slug_param(param: Option<&glib::Variant>) -> ProjectSlug {
     param
         .and_then(|param| param.str()?.parse().ok())
@@ -244,7 +253,7 @@ impl ProjectsPage {
 
     /// The project open, alone or below one of its notes, if any.
     pub fn shown_project(&self) -> Option<ProjectSlug> {
-        if self.shows("project") {
+        if shows(&self.imp().nav, "project") {
             self.imp().project_view.slug()
         } else {
             None
@@ -262,10 +271,10 @@ impl ProjectsPage {
         let imp = self.imp();
         self.show_list();
         self.look_up();
-        if self.shows("project") && !self.show_project_again() {
+        if shows(&imp.nav, "project") && !self.show_project_again() {
             imp.nav.pop_to_tag("projects");
         }
-        if self.shows("note") && !imp.note_view.reload() {
+        if shows(&imp.nav, "note") && !imp.note_view.reload() {
             self.close_note();
         }
     }
@@ -567,7 +576,7 @@ impl ProjectsPage {
         let imp = self.imp();
         imp.note_view.update_links();
         let slug = imp.project_view.slug();
-        if self.shows("project")
+        if shows(&imp.nav, "project")
             && changed
                 .iter()
                 .any(|note| Some(note.project()) == slug.as_ref())
@@ -575,7 +584,7 @@ impl ProjectsPage {
             self.show_project_again();
         }
         let shown = imp.note_view.note();
-        if self.shows("note")
+        if shows(&imp.nav, "note")
             && changed.iter().any(|note| Some(note) == shown.as_ref())
             && !imp.note_view.reload()
         {
@@ -588,19 +597,9 @@ impl ProjectsPage {
     pub fn assets_changed(&self, projects: &[ProjectSlug]) {
         let imp = self.imp();
         let shown = imp.project_view.slug();
-        if self.shows("project") && shown.is_some_and(|slug| projects.contains(&slug)) {
+        if shows(&imp.nav, "project") && shown.is_some_and(|slug| projects.contains(&slug)) {
             imp.project_view.show_assets();
         }
-    }
-
-    /// Whether the page with `tag` is in the navigation view. Unlike
-    /// `find_page()`, a page on its way out is not, so that it is not built
-    /// again while going back.
-    fn shows(&self, tag: &str) -> bool {
-        let stack = self.imp().nav.navigation_stack();
-        (0..stack.n_items())
-            .filter_map(|i| stack.item(i).and_downcast::<adw::NavigationPage>())
-            .any(|page| page.tag().as_deref() == Some(tag))
     }
 
     /// Shows the project open with its notes as they are now, and marks the
@@ -656,7 +655,7 @@ impl ProjectsPage {
             self.emit_by_name::<()>("shown-project-changed", &[]);
         }
         match imp.note_view.show_note(note) {
-            Ok(()) if !self.shows("note") => imp.nav.push(&imp.note_view),
+            Ok(()) if !shows(&imp.nav, "note") => imp.nav.push(&imp.note_view),
             Ok(()) => {}
             Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
         }

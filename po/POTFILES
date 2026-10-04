@@ -20,7 +20,6 @@ app/src/standup_dialog.rs
 app/src/style_switcher.rs
 app/src/sync_conflict_dialog.rs
 app/src/task_list_view.rs
-app/src/week_chart.rs
 app/src/window.rs
 app/ui/calendar_view.blp
 app/ui/commit_dialog.blp
