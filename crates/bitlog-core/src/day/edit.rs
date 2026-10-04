@@ -161,12 +161,7 @@ fn check_title(title: &str) -> Result<String, EditError> {
 
 /// `**09:00–10:30 webshop: Title**`, so that moved text keeps its context.
 fn note_heading(block: &Block) -> String {
-    let mut heading = format!(
-        "{}–{} {}",
-        block.start.format("%H:%M"),
-        block.end.format("%H:%M"),
-        block.project
-    );
+    let mut heading = format!("{} {}", block.times(), block.project);
     if !block.title.is_empty() {
         heading = format!("{heading}: {}", block.title);
     }

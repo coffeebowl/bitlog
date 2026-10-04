@@ -15,6 +15,7 @@ mod markdown;
 mod notes;
 mod period;
 mod project;
+mod report;
 mod standup;
 mod tasks;
 mod toml_values;

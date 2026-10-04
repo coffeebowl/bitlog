@@ -280,7 +280,7 @@ impl TaskList {
     }
 
     /// Reads the content `text` of the task file at `path`.
-    pub(crate) fn read(path: &Path, text: &str) -> Result<Self, ReadError> {
+    pub fn read(path: &Path, text: &str) -> Result<Self, ReadError> {
         parse_text(path, text, Self::parse)
     }
 

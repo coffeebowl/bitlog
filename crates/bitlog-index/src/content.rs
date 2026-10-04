@@ -1,6 +1,7 @@
 //! Putting the content of vault files into the index and taking it out.
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use bitlog_core::{Day, NotePath, ProjectSlug, TaskList, Vault, wiki_links};
 use rusqlite::{Transaction, params};
@@ -52,17 +53,17 @@ pub(crate) fn sync_projects(tx: &Transaction, vault: &Vault) -> rusqlite::Result
     Ok(())
 }
 
-/// Reads `file` from `vault` and puts its content into the index. A file
-/// that is gone adds nothing.
-pub(crate) fn insert(tx: &Transaction, vault: &Vault, file: &IndexFile) -> Result<(), IndexError> {
+/// Puts `text`, the content of `file` at `path`, into the index.
+pub(crate) fn insert(
+    tx: &Transaction,
+    file: &IndexFile,
+    path: &Path,
+    text: &str,
+) -> Result<(), IndexError> {
     match file {
-        IndexFile::Day(date) => {
-            if let Some(file) = vault.load_day(*date)? {
-                insert_day(tx, &file.day)?;
-            }
-        }
-        IndexFile::Note(note) => insert_note(tx, note, &vault.load_note(note)?.text)?,
-        IndexFile::Tasks => insert_tasks(tx, &vault.load_tasks()?)?,
+        IndexFile::Day(_) => insert_day(tx, &Day::read(path, text)?.0)?,
+        IndexFile::Note(note) => insert_note(tx, note, text)?,
+        IndexFile::Tasks => insert_tasks(tx, &TaskList::read(path, text)?)?,
     }
     Ok(())
 }

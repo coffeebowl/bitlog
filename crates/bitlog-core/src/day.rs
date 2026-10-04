@@ -104,6 +104,15 @@ impl Block {
         start < other_end && other_start < end
     }
 
+    /// Start and end as `09:00–10:30`, for text written for people.
+    pub(crate) fn times(&self) -> String {
+        format!(
+            "{}–{}",
+            self.start.format("%H:%M"),
+            self.end.format("%H:%M")
+        )
+    }
+
     /// Whether the block belongs to a `break` project. Blocks of projects
     /// missing from `projects` are work.
     pub(crate) fn is_break(&self, projects: &[Project]) -> bool {
@@ -199,7 +208,7 @@ impl Day {
 
     /// Reads the content `text` of the day file `path`. Its date has to match
     /// the file name.
-    pub(crate) fn read(path: &Path, text: &str) -> Result<(Self, Vec<DayWarning>), ReadError> {
+    pub fn read(path: &Path, text: &str) -> Result<(Self, Vec<DayWarning>), ReadError> {
         parse_text(path, text, |text| {
             let (day, warnings) = Self::parse(text)?;
             let file_date = path.file_stem().and_then(|stem| stem.to_str());

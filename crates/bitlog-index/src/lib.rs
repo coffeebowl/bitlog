@@ -209,7 +209,7 @@ fn update(
     // Sync tools often touch files without changing them.
     if !known.is_some_and(|known| known.hash == hash) {
         remove(tx, file)?;
-        match insert(tx, vault, file) {
+        match insert(tx, file, &path, &text) {
             Ok(()) => {}
             Err(IndexError::Read(err)) => return drop_file(tx, file, &key, Some(err)),
             Err(err) => return Err(err),

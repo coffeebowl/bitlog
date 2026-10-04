@@ -195,7 +195,8 @@ impl ReportsPage {
                 .await
                 .map(|text| (export::blocks_file_name(Some(period)), text))
                 .map_err(|err| err.to_string()),
-            Export::Week => export::week_report(&vault, period.0)
+            Export::Week => vault
+                .week_report(period.0)
                 .map(|text| (export::week_file_name(period.0), text))
                 .map_err(|err| err.to_string()),
             Export::Remote => index

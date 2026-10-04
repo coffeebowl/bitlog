@@ -446,10 +446,7 @@ fn export(vault: &Vault, command: ExportCommand, today: NaiveDate) -> Result<()>
         ExportCommand::Week { date } => {
             let date = date.unwrap_or(today);
             let first = week_start(date, vault.config().week.first_day);
-            (
-                export::week_file_name(first),
-                export::week_report(vault, first)?,
-            )
+            (export::week_file_name(first), vault.week_report(first)?)
         }
     };
     let path = vault.write_export(&name, &text)?;
