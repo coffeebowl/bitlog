@@ -1,5 +1,5 @@
 use std::cell::{Cell, RefCell};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -50,8 +50,8 @@ mod imp {
         pub slug: RefCell<Option<ProjectSlug>>,
         /// The notes in the grid, in its order, with their previews.
         pub notes: RefCell<Vec<(NotePath, MarkdownView)>>,
-        /// The assets in the grid, in its order.
-        pub assets: RefCell<Vec<AssetPath>>,
+        /// The assets in the grid, in its order, with their cards.
+        pub assets: RefCell<Vec<(Asset, gtk::FlowBoxChild)>>,
         pub vault: RefCell<Option<Vault>>,
         pub index: RefCell<SearchIndex>,
         /// Counts the lookups in the index, so that one finishing after a
@@ -272,7 +272,11 @@ mod imp {
                 self.obj(),
                 move |_, card| {
                     let index = usize::try_from(card.index()).expect("cards are in the grid");
-                    let target = view.imp().assets.borrow()[index].to_string().to_variant();
+                    let target = view.imp().assets.borrow()[index]
+                        .0
+                        .path
+                        .to_string()
+                        .to_variant();
                     let _ = WidgetExt::activate_action(&view, "assets.open", Some(&target));
                 }
             ));
@@ -377,24 +381,38 @@ impl ProjectView {
         imp.notes.replace(notes);
     }
 
-    /// Shows the assets of the project as they are now.
+    /// Shows the assets of the project as they are now. The cards of the
+    /// assets that did not change stay, so that their previews are not read
+    /// again.
     pub fn show_assets(&self) {
         let imp = self.imp();
         let (Some(slug), Some(vault)) = (self.slug(), imp.vault.borrow().clone()) else {
             return;
         };
         imp.assets_grid.remove_all();
-        imp.assets.take();
+        let mut cards: HashMap<AssetPath, (Asset, gtk::FlowBoxChild)> = imp
+            .assets
+            .take()
+            .into_iter()
+            .map(|(asset, card)| (asset.path.clone(), (asset, card)))
+            .collect();
         match vault.assets(&slug) {
             Ok(assets) => {
-                for asset in &assets {
-                    imp.assets_grid.append(&asset_card(&vault, asset));
-                }
+                let assets: Vec<_> = assets
+                    .into_iter()
+                    .map(|asset| {
+                        let card = match cards.remove(&asset.path) {
+                            Some((known, card)) if known == asset => card,
+                            _ => asset_card(&vault, &asset),
+                        };
+                        imp.assets_grid.append(&card);
+                        (asset, card)
+                    })
+                    .collect();
                 imp.assets_stack
                     .set_visible_child_name(if assets.is_empty() { "empty" } else { "list" });
                 imp.add_assets_button.set_visible(!assets.is_empty());
-                imp.assets
-                    .replace(assets.into_iter().map(|asset| asset.path).collect());
+                imp.assets.replace(assets);
             }
             Err(err) => {
                 imp.assets_error_row.set_subtitle(&err.to_string());
