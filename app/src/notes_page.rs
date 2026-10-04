@@ -12,13 +12,13 @@ use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
+use crate::cards::{note_card, note_preview, note_text, show_preview};
 use crate::colors::color_dot;
 use crate::config;
 use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs;
 use crate::note_view::NoteView;
-use crate::project_view::{note_card, note_preview, note_text, show_preview};
 use crate::projects_page::shows;
 use crate::search_index::SearchIndex;
 use crate::widgets::param;

@@ -1,9 +1,11 @@
 app/src/alert.rs
 app/src/calendar_view.rs
+app/src/cards.rs
 app/src/commit_dialog.rs
 app/src/conflict_dialog.rs
 app/src/day_view.rs
 app/src/format.rs
+app/src/git_page.rs
 app/src/heatmap.rs
 app/src/main.rs
 app/src/markdown_view/callouts.rs
@@ -12,7 +14,8 @@ app/src/note_view.rs
 app/src/notes_page.rs
 app/src/preferences_dialog.rs
 app/src/project_dialog.rs
-app/src/project_view.rs
+app/src/project_view/assets.rs
+app/src/project_view/mod.rs
 app/src/projects_page.rs
 app/src/reports_page.rs
 app/src/search_dialog.rs
@@ -26,6 +29,7 @@ app/ui/calendar_view.blp
 app/ui/commit_dialog.blp
 app/ui/conflict_dialog.blp
 app/ui/day_view.blp
+app/ui/git_page.blp
 app/ui/note_view.blp
 app/ui/notes_page.blp
 app/ui/preferences_dialog.blp

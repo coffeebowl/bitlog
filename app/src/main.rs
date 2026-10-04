@@ -1,12 +1,14 @@
 mod alert;
 mod asset_preview;
 mod calendar_view;
+mod cards;
 mod colors;
 mod commit_dialog;
 mod config;
 mod conflict_dialog;
 mod day_view;
 mod format;
+mod git_page;
 mod heatmap;
 mod markdown_view;
 mod miniature;
