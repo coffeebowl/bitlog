@@ -12,6 +12,9 @@ use crate::notes::relink_day;
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
 use crate::{Day, DayWarning, EditError, NotePath, Project, ProjectSlug, TaskList, VaultConfig};
 
+/// The folder exports go to, relative to the vault.
+pub(crate) const EXPORTS: &str = "exports";
+
 #[derive(Debug, Clone)]
 pub struct Vault {
     root: PathBuf,
@@ -355,7 +358,7 @@ impl Vault {
 
     /// Where exports go. BitLog may overwrite anything in there.
     fn exports_path(&self) -> PathBuf {
-        self.root.join("exports")
+        self.root.join(EXPORTS)
     }
 
     /// Writes `text` to the file `name` in the exports folder, replacing

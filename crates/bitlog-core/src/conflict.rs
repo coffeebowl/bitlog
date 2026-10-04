@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{parse_text, read_optional, read_text};
+use crate::vault::EXPORTS;
 use crate::{BlockId, Day, DayFile, TaskId, TaskList, Vault, VaultChange};
 
 /// A conflict copy of a vault file.
@@ -146,7 +147,13 @@ impl Vault {
                 continue;
             }
             if entry.file_type().map_err(io_error)?.is_dir() {
-                self.find_copies(&folder.join(&name), copies)?;
+                // Exports are never read, and copies of assets are assets
+                // of their own (see `copy_of`). Both folders can be large.
+                let skipped = (folder.as_os_str().is_empty() && name == EXPORTS)
+                    || (folder.parent() == Some(Path::new("projects")) && name == "assets");
+                if !skipped {
+                    self.find_copies(&folder.join(&name), copies)?;
+                }
             } else if let Some(of) = copy_of(&folder.join(&name)) {
                 copies.push(ConflictCopy {
                     path: folder.join(&name),
@@ -413,7 +420,8 @@ mod tests {
         .unwrap();
         fs::create_dir_all(root.join(".git")).unwrap();
         fs::write(root.join(".git/tasks (conflicted copy).toml"), "").unwrap();
-        fs::write(root.join("exports/week (conflicted copy).md"), "").ok();
+        fs::create_dir_all(root.join("exports")).unwrap();
+        fs::write(root.join("exports/week (conflicted copy).md"), "").unwrap();
         let assets = root.join("projects/infra/assets");
         fs::create_dir_all(&assets).unwrap();
         fs::write(
@@ -440,6 +448,27 @@ mod tests {
         );
         // A copy of a note is no note.
         assert_eq!(vault.notes(&"infra".parse().unwrap()).unwrap().len(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn find_copies_skips_exports_and_assets() {
+        use std::os::unix::fs::PermissionsExt;
+        let (_dir, vault) = sample_copy();
+        let locked = [
+            vault.root().join("exports/locked"),
+            vault.root().join("projects/infra/assets/locked"),
+        ];
+        for folder in &locked {
+            fs::create_dir_all(folder).unwrap();
+            fs::set_permissions(folder, fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        // Neither folder is entered, so what is in there does not matter.
+        let copies = vault.conflict_copies();
+        for folder in &locked {
+            fs::set_permissions(folder, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        assert_eq!(copies.unwrap(), [day_copy()]);
     }
 
     #[test]
