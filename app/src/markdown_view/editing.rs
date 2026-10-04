@@ -1,0 +1,144 @@
+//! Editing helpers: check boxes, list items and markers around the
+//! selection.
+
+use std::ops::Range;
+
+use adw::prelude::*;
+use adw::subclass::prelude::*;
+use gtk::{gdk, glib};
+
+use super::check_boxes::CheckBox;
+use super::{MarkdownView, lists};
+
+impl MarkdownView {
+    /// What a click on the check box at `x`, `y` in widget coordinates
+    /// replaces, and with what, if there is one.
+    pub(super) fn check_box_at(&self, x: f64, y: f64) -> Option<(Range<i32>, String)> {
+        self.restyle_if_queued();
+        let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        let decorations = self.imp().decorations.borrow();
+        decorations
+            .check_box_at(self.upcast_ref(), x, y)
+            .map(CheckBox::toggle)
+    }
+
+    /// A click on a check box checks or unchecks it, before the view would
+    /// move the cursor there.
+    pub(super) fn toggle_check_boxes_on_click(&self) {
+        let click = gtk::GestureClick::builder()
+            .button(gdk::BUTTON_PRIMARY)
+            .propagation_phase(gtk::PropagationPhase::Capture)
+            .build();
+        click.connect_pressed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |click, _, x, y| {
+                if !view.is_editable() {
+                    return;
+                }
+                let Some((range, replacement)) = view.check_box_at(x, y) else {
+                    return;
+                };
+                click.set_state(gtk::EventSequenceState::Claimed);
+                let buffer = view.buffer();
+                let mut start = buffer.iter_at_offset(range.start);
+                let mut end = buffer.iter_at_offset(range.end);
+                buffer.begin_user_action();
+                buffer.delete(&mut start, &mut end);
+                buffer.insert(&mut start, &replacement);
+                buffer.end_user_action();
+            }
+        ));
+        self.add_controller(click);
+    }
+
+    /// In list items, Tab nests the item deeper, Shift+Tab less deep, and
+    /// Enter starts the next item, before the view would handle the keys.
+    /// Shift+Enter still only breaks the line.
+    pub(super) fn edit_lists_by_keys(&self) {
+        let keys = gtk::EventControllerKey::new();
+        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
+        keys.connect_key_pressed(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |_, key, _, modifiers| {
+                let others = gdk::ModifierType::CONTROL_MASK
+                    | gdk::ModifierType::ALT_MASK
+                    | gdk::ModifierType::SUPER_MASK;
+                let shift = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
+                if !view.is_editable() || modifiers.intersects(others) {
+                    return glib::Propagation::Proceed;
+                }
+                let is_handled = match key {
+                    gdk::Key::Tab => lists::nest(view.upcast_ref(), view.mode(), !shift),
+                    gdk::Key::ISO_Left_Tab => lists::nest(view.upcast_ref(), view.mode(), false),
+                    gdk::Key::Return | gdk::Key::KP_Enter if !shift => {
+                        lists::continue_item(view.upcast_ref(), view.mode())
+                    }
+                    _ => false,
+                };
+                if is_handled {
+                    glib::Propagation::Stop
+                } else {
+                    glib::Propagation::Proceed
+                }
+            }
+        ));
+        self.add_controller(keys);
+    }
+
+    /// Puts `marker` around the selection, or at the cursor, and selects
+    /// what it wraps. Takes it away instead if it is there already.
+    pub(super) fn toggle_marker(&self, marker: &str) {
+        let buffer = self.buffer();
+        let (start, end) = buffer.selection_bounds().unwrap_or_else(|| {
+            let cursor = buffer.iter_at_mark(&buffer.get_insert());
+            (cursor, cursor)
+        });
+        let (start, end) = (start.offset(), end.offset());
+        let length = i32::try_from(marker.chars().count()).expect("markers are short");
+        let mark = marker.chars().next().expect("markers are not empty");
+        let is_mark = |iter: &gtk::TextIter| iter.char() == mark;
+        // How many marker characters there are on each side, as in `***`.
+        let mut before = 0;
+        let mut iter = buffer.iter_at_offset(start);
+        while iter.backward_char() && is_mark(&iter) {
+            before += 1;
+        }
+        let mut after = 0;
+        let mut iter = buffer.iter_at_offset(end);
+        // The end of the text has no character, so the loop stops there.
+        while is_mark(&iter) {
+            after += 1;
+            iter.forward_char();
+        }
+        let run = before.min(after);
+        let is_wrapped = match marker {
+            // In `***both***`, one star is italic and two are bold.
+            "*" => run % 2 == 1,
+            "**" => run >= 2,
+            _ => run >= 1,
+        };
+
+        buffer.begin_user_action();
+        let (start, end) = if is_wrapped {
+            buffer.delete(
+                &mut buffer.iter_at_offset(end),
+                &mut buffer.iter_at_offset(end + length),
+            );
+            buffer.delete(
+                &mut buffer.iter_at_offset(start - length),
+                &mut buffer.iter_at_offset(start),
+            );
+            (start - length, end - length)
+        } else {
+            buffer.insert(&mut buffer.iter_at_offset(end), marker);
+            buffer.insert(&mut buffer.iter_at_offset(start), marker);
+            (start + length, end + length)
+        };
+        buffer.select_range(&buffer.iter_at_offset(start), &buffer.iter_at_offset(end));
+        buffer.end_user_action();
+    }
+}

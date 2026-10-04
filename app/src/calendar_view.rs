@@ -5,7 +5,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use std::collections::BTreeMap;
 
-use bitlog_core::{DayFile, Period, Vault, week_start};
+use bitlog_core::{Day, DayFile, Period, Vault, week_start};
 use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{glib, pango};
@@ -390,14 +390,6 @@ fn day_cell(
     is_today: bool,
     density: Density,
 ) -> gtk::Button {
-    let label = |text: &str, classes: &[&str]| {
-        gtk::Label::builder()
-            .label(text)
-            .xalign(0.0)
-            .ellipsize(pango::EllipsizeMode::End)
-            .css_classes(classes)
-            .build()
-    };
     let content = gtk::Box::builder()
         .orientation(gtk::Orientation::Vertical)
         .spacing(4)
@@ -431,103 +423,148 @@ fn day_cell(
         cell.add_css_class("non-workday");
     }
 
-    // The details again for the tooltip, as Pango markup, and for screen readers.
-    let mut markup = Vec::new();
-    let mut description = Vec::new();
+    let mut details = Details::default();
     match vault.load_day(date) {
         Ok(Some(DayFile { day, .. })) => {
-            let working_time = day.working_time(vault.projects());
-            let mut times: Vec<_> = day.time_per_project(vault.projects()).into_iter().collect();
-            times.retain(|(_, time)| !time.is_zero());
-            times.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
-            if !working_time.is_zero() {
-                let text = format_duration(working_time);
-                let shown = if density == Density::Full {
-                    text.clone()
-                } else {
-                    format_short_duration(working_time)
-                };
-                let hours = label(&shown, &["caption", "numeric"]);
-                // The hours are worse to lose than the names below.
-                hours.set_ellipsize(pango::EllipsizeMode::None);
-                if density == Density::Stacked {
-                    content.append(&hours);
-                } else {
-                    hours.set_hexpand(true);
-                    hours.set_xalign(1.0);
-                    top.append(&hours);
-                }
-                markup.push(format!("<b>{}</b>", glib::markup_escape_text(&text)));
-                description.push(text);
-            }
-            if !times.is_empty() {
-                let total: f32 = times.iter().map(|(_, time)| hours(*time)).sum();
-                let parts = times
-                    .iter()
-                    .map(|(slug, time)| (project_color(vault, slug), hours(*time) / total))
-                    .collect();
-                let bar = ShareBar::new(parts, 4);
-                bar.set_hexpand(true);
-                content.append(&bar);
-            }
-            for (index, (slug, time)) in times.iter().enumerate() {
-                let name = vault.project_name(slug);
-                let dot = color_dot(project_hex(vault, slug));
-                if index < PROJECTS_SHOWN {
-                    let line = label(
-                        &format!("{dot} {}", glib::markup_escape_text(name)),
-                        &["caption"],
-                    );
-                    line.set_use_markup(true);
-                    content.append(&line);
-                }
-                let text = format!("{name} · {}", format_duration(*time));
-                markup.push(format!("{dot} {}", glib::markup_escape_text(&text)));
-                description.push(text);
-            }
-            if times.len() > PROJECTS_SHOWN {
-                let more = (times.len() - PROJECTS_SHOWN).to_string();
-                // Translators: Projects of a day in the calendar that do not
-                // fit into it, as in "+2 more".
-                let text = gettext("+{count} more").replace("{count}", &more);
-                content.append(&label(&text, &["caption", "dim-label"]));
-            }
-
-            let mut facts = Vec::new();
-            if let Some(key) = &day.location {
-                facts.push(vault.config().location_name(key).to_owned());
-            }
-            if !day.is_work() {
-                facts.push(kind_name(&day.kind));
-                cell.add_css_class("day-off");
-            }
-            if !facts.is_empty() {
-                let text = facts.join(" · ");
-                // Pushed to the bottom of the cell.
-                let footer = label(&text, &["caption", "dim-label"]);
-                footer.set_vexpand(true);
-                footer.set_valign(gtk::Align::End);
-                content.append(&footer);
-                markup.push(glib::markup_escape_text(&text).to_string());
-                description.push(text);
-            }
+            show_times(vault, &day, density, &top, &content, &mut details);
+            show_facts(vault, &day, &cell, &content, &mut details);
         }
         Ok(None) => {}
         Err(err) => {
-            content.append(&label(&gettext("Cannot read"), &["caption", "error"]));
-            markup.push(glib::markup_escape_text(&err.to_string()).to_string());
-            description.push(err.to_string());
+            content.append(&cell_label(&gettext("Cannot read"), &["caption", "error"]));
+            details.push(
+                glib::markup_escape_text(&err.to_string()).into(),
+                err.to_string(),
+            );
         }
     }
 
-    if !markup.is_empty() {
-        cell.set_tooltip_markup(Some(&markup.join("\n")));
+    if !details.markup.is_empty() {
+        cell.set_tooltip_markup(Some(&details.markup.join("\n")));
     }
     cell.update_property(&[
         gtk::accessible::Property::Label(&format_full_date(date)),
-        gtk::accessible::Property::Description(&description.join(", ")),
+        gtk::accessible::Property::Description(&details.description.join(", ")),
     ]);
     cell
+}
+
+/// The details of a day in the calendar again, for the tooltip as Pango
+/// markup, and for screen readers.
+#[derive(Debug, Default)]
+struct Details {
+    markup: Vec<String>,
+    description: Vec<String>,
+}
+
+impl Details {
+    fn push(&mut self, markup: String, text: String) {
+        self.markup.push(markup);
+        self.description.push(text);
+    }
+}
+
+/// Shows the hours of `day` in `top`, or below it in `content` when
+/// stacked, and its projects with the most time in `content`.
+fn show_times(
+    vault: &Vault,
+    day: &Day,
+    density: Density,
+    top: &gtk::Box,
+    content: &gtk::Box,
+    details: &mut Details,
+) {
+    let working_time = day.working_time(vault.projects());
+    let mut times: Vec<_> = day.time_per_project(vault.projects()).into_iter().collect();
+    times.retain(|(_, time)| !time.is_zero());
+    times.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
+    if !working_time.is_zero() {
+        let text = format_duration(working_time);
+        let shown = if density == Density::Full {
+            text.clone()
+        } else {
+            format_short_duration(working_time)
+        };
+        let hours = cell_label(&shown, &["caption", "numeric"]);
+        // The hours are worse to lose than the names below.
+        hours.set_ellipsize(pango::EllipsizeMode::None);
+        if density == Density::Stacked {
+            content.append(&hours);
+        } else {
+            hours.set_hexpand(true);
+            hours.set_xalign(1.0);
+            top.append(&hours);
+        }
+        details.push(format!("<b>{}</b>", glib::markup_escape_text(&text)), text);
+    }
+    if !times.is_empty() {
+        let total: f32 = times.iter().map(|(_, time)| hours(*time)).sum();
+        let parts = times
+            .iter()
+            .map(|(slug, time)| (project_color(vault, slug), hours(*time) / total))
+            .collect();
+        let bar = ShareBar::new(parts, 4);
+        bar.set_hexpand(true);
+        content.append(&bar);
+    }
+    for (index, (slug, time)) in times.iter().enumerate() {
+        let name = vault.project_name(slug);
+        let dot = color_dot(project_hex(vault, slug));
+        if index < PROJECTS_SHOWN {
+            let line = cell_label(
+                &format!("{dot} {}", glib::markup_escape_text(name)),
+                &["caption"],
+            );
+            line.set_use_markup(true);
+            content.append(&line);
+        }
+        let text = format!("{name} · {}", format_duration(*time));
+        details.push(format!("{dot} {}", glib::markup_escape_text(&text)), text);
+    }
+    if times.len() > PROJECTS_SHOWN {
+        let more = (times.len() - PROJECTS_SHOWN).to_string();
+        // Translators: Projects of a day in the calendar that do not
+        // fit into it, as in "+2 more".
+        let text = gettext("+{count} more").replace("{count}", &more);
+        content.append(&cell_label(&text, &["caption", "dim-label"]));
+    }
+}
+
+/// Shows the location of `day`, and its kind unless it is a work day, at
+/// the bottom of `content`.
+fn show_facts(
+    vault: &Vault,
+    day: &Day,
+    cell: &gtk::Button,
+    content: &gtk::Box,
+    details: &mut Details,
+) {
+    let mut facts = Vec::new();
+    if let Some(key) = &day.location {
+        facts.push(vault.config().location_name(key).to_owned());
+    }
+    if !day.is_work() {
+        facts.push(kind_name(&day.kind));
+        cell.add_css_class("day-off");
+    }
+    if !facts.is_empty() {
+        let text = facts.join(" · ");
+        // Pushed to the bottom of the cell.
+        let footer = cell_label(&text, &["caption", "dim-label"]);
+        footer.set_vexpand(true);
+        footer.set_valign(gtk::Align::End);
+        content.append(&footer);
+        details.push(glib::markup_escape_text(&text).into(), text);
+    }
+}
+
+fn cell_label(text: &str, classes: &[&str]) -> gtk::Label {
+    gtk::Label::builder()
+        .label(text)
+        .xalign(0.0)
+        .ellipsize(pango::EllipsizeMode::End)
+        .css_classes(classes)
+        .build()
 }
 
 /// How many projects a day in the calendar names, those with the most time.

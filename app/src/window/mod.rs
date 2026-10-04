@@ -1,16 +1,17 @@
+mod vault;
+
 use std::cell::RefCell;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    BlockId, ConflictCopy, NotePath, ProjectSlug, ProjectStatus, ReadError, TaskId, Vault,
-    VaultChange, VaultWatcher, WatchError,
+    BlockId, ConflictCopy, NotePath, ProjectSlug, ProjectStatus, TaskId, Vault, VaultWatcher,
 };
 use bitlog_index::Found;
 use chrono::{Local, NaiveDate, TimeDelta};
-use gettextrs::{gettext, ngettext};
+use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
@@ -18,7 +19,6 @@ use crate::calendar_view::CalendarView;
 use crate::colors::color_dot;
 use crate::config;
 use crate::day_view::DayView;
-use crate::format::plural;
 use crate::notes_page::NotesPage;
 use crate::preferences_dialog::PreferencesDialog;
 use crate::projects_page::ProjectsPage;
@@ -26,7 +26,6 @@ use crate::reports_page::ReportsPage;
 use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
 use crate::style_switcher;
-use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
 use crate::widgets::param;
 
@@ -170,8 +169,6 @@ mod imp {
             klass.install_action_async("win.new-vault", None, |window, _, _| async move {
                 window.create_vault().await;
             });
-            // Previous, next and today move by the unit of the page shown,
-            // and do nothing on the task and project pages.
             klass.install_action("win.show-reports", None, |window, _, _| {
                 window.show_reports();
             });
@@ -180,28 +177,11 @@ mod imp {
             });
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
-            klass.install_action("win.today", None, |window, _, _| {
-                let today = Local::now().date_naive();
-                let imp = window.imp();
-                if window.shows(&imp.calendar_view) {
-                    imp.calendar_view.show(today);
-                } else if window.shows(&imp.reports_page) {
-                    imp.reports_page.show(today);
-                } else if window.shows(&imp.day_view) {
-                    imp.day_view.show_date(today);
-                }
-            });
+            klass.install_action("win.today", None, |window, _, _| window.step_to_today());
             klass.install_action("win.show-today", None, |window, _, _| {
                 window.show_day(Local::now().date_naive());
             });
-            // Forwarded, so that the shortcut works wherever the focus is.
-            klass.install_action("win.new-block", None, |window, _, _| {
-                let day_view = &window.imp().day_view;
-                if window.shows(day_view) {
-                    // Fails on days without a file, which have no blocks yet.
-                    let _ = WidgetExt::activate_action(day_view, "day.new-block", None);
-                }
-            });
+            klass.install_action("win.new-block", None, |window, _, _| window.new_block());
             klass.install_action("win.show-calendar", None, |window, _, _| {
                 window.show_calendar();
             });
@@ -222,16 +202,7 @@ mod imp {
             klass.install_action(
                 "win.show-project",
                 Some(glib::VariantTy::STRING),
-                |window, _, slug| {
-                    let slug: ProjectSlug = param(slug, "projects");
-                    // Without reloading the page first, which would show the
-                    // project open before once more.
-                    window.save_texts_now();
-                    let imp = window.imp();
-                    window.show_page(&imp.projects_page, &imp.projects_row);
-                    imp.projects_page.open_project(&slug);
-                    window.select_project_row();
-                },
+                |window, _, slug| window.show_project(&param(slug, "projects")),
             );
             klass.install_action("win.new-project", None, |window, _, _| {
                 window.show_projects();
@@ -251,25 +222,13 @@ mod imp {
                         .expect("blocks are passed as date and id");
                     let date = date.parse().expect("dates are passed as YYYY-MM-DD");
                     let id: BlockId = id.parse().expect("block ids are passed as they are");
-                    window.show_day(date);
-                    window.imp().day_view.show_block_by_id(&id);
+                    window.show_block(date, &id);
                 },
             );
             klass.install_action(
                 "win.show-note",
                 Some(glib::VariantTy::STRING),
-                |window, _, note| {
-                    let note: NotePath = param(note, "notes");
-                    let imp = window.imp();
-                    // The notes page shows them itself.
-                    if window.shows(&imp.notes_page) {
-                        imp.notes_page.open_note(&note);
-                        return;
-                    }
-                    window.show_projects();
-                    imp.projects_page.show_note(&note);
-                    window.select_project_row();
-                },
+                |window, _, note| window.show_note(&param(note, "notes")),
             );
             klass.install_action(
                 "win.show-task",
@@ -381,167 +340,6 @@ impl Window {
             .build();
     }
 
-    /// Opens the vault of the last session, if there is one.
-    fn open_last_vault(&self) {
-        let uri = self.imp().settings.string("last-vault");
-        if uri.is_empty() {
-            return;
-        }
-        let folder = gio::File::for_uri(&uri);
-        match folder.path() {
-            Some(path) => self.open_vault(&path),
-            None => show_error(
-                self,
-                &gettext("Cannot Open Vault"),
-                &gettext("The vault is not on a local file system."),
-            ),
-        }
-    }
-
-    async fn choose_vault(&self) {
-        let dialog = gtk::FileDialog::builder()
-            .title(gettext("Open Vault"))
-            .modal(true)
-            .build();
-        // Dismissing the dialog is reported as an error, too.
-        let Ok(folder) = dialog.select_folder_future(Some(self)).await else {
-            return;
-        };
-        match folder.path() {
-            Some(path) => self.open_vault(&path),
-            None => show_error(
-                self,
-                &gettext("Cannot Open Vault"),
-                &gettext("Choose a folder on a local file system."),
-            ),
-        }
-    }
-
-    /// Creates a vault in a folder the user chooses and opens it.
-    async fn create_vault(&self) {
-        let dialog = gtk::FileDialog::builder()
-            .title(gettext("New Vault"))
-            .accept_label(gettext("_Create"))
-            .modal(true)
-            .build();
-        // Dismissing the dialog is reported as an error, too.
-        let Ok(folder) = dialog.select_folder_future(Some(self)).await else {
-            return;
-        };
-        let Some(path) = folder.path() else {
-            show_error(
-                self,
-                &gettext("Cannot Create Vault"),
-                &gettext("Choose a folder on a local file system."),
-            );
-            return;
-        };
-        self.create_vault_in(&path);
-    }
-
-    /// Creates a vault in `path` and opens it. Like the CLI, it is named
-    /// after its folder.
-    fn create_vault_in(&self, path: &Path) {
-        let name = path
-            .file_name()
-            .map_or("BitLog".into(), |name| name.to_string_lossy());
-        match Vault::create(path, &name, Local::now().date_naive()) {
-            Ok(_) => self.open_vault(path),
-            Err(err) => show_error(self, &gettext("Cannot Create Vault"), &err.to_string()),
-        }
-    }
-
-    /// Opens the vault in `path` and remembers it for the next start.
-    ///
-    /// On failure the window keeps showing what it showed before.
-    fn open_vault(&self, path: &Path) {
-        let imp = self.imp();
-        if let Err(err) = self.load_vault(path) {
-            show_error(self, &gettext("Cannot Open Vault"), &err.to_string());
-            return;
-        }
-        let today = Local::now().date_naive();
-        imp.calendar_view.show(today);
-        imp.day_view.show_date(today);
-        imp.split_view.set_content(Some(&imp.day_view));
-        imp.sidebar_list.select_row(Some(&*imp.today_row));
-        imp.stack.set_visible_child_name("vault");
-        for action in VAULT_ACTIONS {
-            self.action_set_enabled(action, true);
-        }
-        self.check_conflicts();
-        imp.settings
-            .set_string("last-vault", &gio::File::for_path(path).uri())
-            .expect("the last vault can be stored");
-    }
-
-    /// Reads the vault in `path` for all pages and watches it for changes
-    /// made elsewhere. On failure everything stays as it was.
-    fn load_vault(&self, path: &Path) -> Result<(), ReadError> {
-        let imp = self.imp();
-        let vault = Rc::new(Vault::open(path)?);
-        self.set_vault(&vault);
-        imp.vault_path.replace(Some(path.to_owned()));
-        // Built in the background, so that the first search is quick.
-        let index = SearchIndex::default();
-        imp.index.replace(index.clone());
-        imp.projects_page.set_index(index.clone());
-        imp.notes_page.set_index(index.clone());
-        imp.reports_page.set_index(index.clone());
-        let indexed = vault.clone();
-        glib::spawn_future_local(async move {
-            if let Err(err) = index.update(&indexed).await {
-                glib::g_warning!("bitlog", "{err}");
-            }
-        });
-        // The watcher tells its own writes apart through the vault it
-        // belongs to, so every vault gets a new one.
-        let window: glib::SendWeakRef<Self> = self.downgrade().into();
-        let watcher = vault.watch(move |changes| {
-            let window = window.clone();
-            glib::MainContext::default().invoke(move || {
-                if let Some(window) = window.upgrade() {
-                    window.vault_changed(changes);
-                }
-            });
-        });
-        match watcher {
-            Ok(watcher) => {
-                imp.watcher.replace(Some(watcher));
-            }
-            Err(err) => {
-                imp.watcher.replace(None);
-                let message = format!(
-                    "{}\n\n{err}",
-                    gettext("Changes made elsewhere only show up after going to another day.")
-                );
-                show_error(self, &gettext("Cannot Watch Vault"), &message);
-            }
-        }
-        Ok(())
-    }
-
-    fn vault(&self) -> Rc<Vault> {
-        self.imp()
-            .vault
-            .borrow()
-            .clone()
-            .expect("only an open vault can be worked on")
-    }
-
-    fn set_vault(&self, vault: &Rc<Vault>) {
-        let imp = self.imp();
-        imp.vault.replace(Some(vault.clone()));
-        imp.sidebar.set_title(&vault.config().name);
-        imp.calendar_view.set_vault(vault.clone());
-        imp.day_view.set_vault(vault.clone());
-        imp.tasks_page.set_vault(vault.clone());
-        imp.notes_page.set_vault(vault.clone());
-        imp.projects_page.set_vault(vault.clone());
-        imp.reports_page.set_vault(vault.clone());
-        self.show_sidebar_projects(vault);
-    }
-
     /// Lists the active projects of `vault` in the sidebar in their order,
     /// apart from breaks. The others are on the project page.
     fn show_sidebar_projects(&self, vault: &Vault) {
@@ -591,161 +389,6 @@ impl Window {
         imp.day_view.show_date(imp.day_view.date());
     }
 
-    /// Shows what was changed elsewhere, by sync or the CLI.
-    fn vault_changed(&self, changes: Result<Vec<VaultChange>, WatchError>) {
-        match changes {
-            Ok(changes) => {
-                self.show_changes(&changes);
-                self.check_conflicts();
-            }
-            // Watching goes on, a later change may be seen again.
-            Err(err) => glib::g_warning!("bitlog", "{err}"),
-        }
-    }
-
-    /// Merges the sync conflict copies without contradictions, and offers
-    /// to resolve the others.
-    fn check_conflicts(&self) {
-        let imp = self.imp();
-        let vault = self.vault();
-        let copies = match vault.conflict_copies() {
-            Ok(copies) => copies,
-            Err(err) => {
-                glib::g_warning!("bitlog", "{err}");
-                Vec::new()
-            }
-        };
-        let mut open = Vec::new();
-        for copy in copies {
-            let merged = vault.contradictions(&copy).map(|contradictions| {
-                contradictions.is_empty() && vault.merge_conflict(&copy, &[]).is_ok()
-            });
-            match merged {
-                Ok(true) => {
-                    let toast = gettext("Merged a sync conflict of {file}")
-                        .replace("{file}", &file_title(&vault, &copy.of));
-                    imp.toast_overlay.add_toast(adw::Toast::new(&toast));
-                    // Own writes are not watched.
-                    self.show_changes(std::slice::from_ref(&copy.of));
-                }
-                Ok(false) => open.push(copy),
-                // An unreadable copy cannot be resolved here; `bitlog
-                // doctor` names it.
-                Err(err) => glib::g_warning!("bitlog", "{err}"),
-            }
-        }
-        imp.conflict_banner.set_title(
-            &ngettext(
-                "{count} sync conflict",
-                "{count} sync conflicts",
-                plural(open.len()),
-            )
-            .replace("{count}", &open.len().to_string()),
-        );
-        imp.conflict_banner.set_revealed(!open.is_empty());
-        imp.conflicts.replace(open);
-    }
-
-    /// Lets the user resolve the first sync conflict that needs a decision.
-    fn resolve_conflict(&self) {
-        let imp = self.imp();
-        let Some(copy) = imp.conflicts.borrow().first().cloned() else {
-            return;
-        };
-        self.save_texts_now();
-        match SyncConflictDialog::new(self.vault(), copy.clone()) {
-            Ok(dialog) => {
-                dialog.connect_merged(glib::clone!(
-                    #[weak(rename_to = window)]
-                    self,
-                    move || {
-                        // Own writes are not watched.
-                        window.show_changes(std::slice::from_ref(&copy.of));
-                        window.check_conflicts();
-                    }
-                ));
-                dialog.present(Some(self));
-            }
-            Err(err) => show_error(
-                self,
-                &gettext("Cannot Read Sync Conflict"),
-                &err.to_string(),
-            ),
-        }
-    }
-
-    /// Shows the files of `changes` as they are now.
-    fn show_changes(&self, changes: &[VaultChange]) {
-        let imp = self.imp();
-        let changes_vault =
-            |change: &VaultChange| matches!(change, VaultChange::Config | VaultChange::Project(_));
-        if changes.iter().any(changes_vault) {
-            self.reload_vault();
-            return;
-        }
-        if changes.contains(&VaultChange::Day(imp.day_view.date())) {
-            imp.day_view.reload();
-        }
-        if changes.contains(&VaultChange::Tasks) {
-            imp.day_view.show_tasks();
-            if self.shows(&imp.tasks_page) {
-                imp.tasks_page.reload();
-            }
-        }
-        let notes: Vec<NotePath> = changes
-            .iter()
-            .filter_map(|change| match change {
-                VaultChange::Note(note) => Some(note.clone()),
-                _ => None,
-            })
-            .collect();
-        if !notes.is_empty() {
-            imp.projects_page.notes_changed(&notes);
-            if self.shows(&imp.notes_page) {
-                imp.notes_page.reload();
-            }
-        }
-        let assets: Vec<ProjectSlug> = changes
-            .iter()
-            .filter_map(|change| match change {
-                VaultChange::Assets(slug) => Some(slug.clone()),
-                _ => None,
-            })
-            .collect();
-        if !assets.is_empty() {
-            imp.projects_page.assets_changed(&assets);
-        }
-        let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
-        if self.shows(&imp.calendar_view) && changes.iter().any(changes_day) {
-            imp.calendar_view.reload();
-        }
-        if self.shows(&imp.reports_page) && changes.iter().any(changes_day) {
-            imp.reports_page.reload();
-        }
-    }
-
-    /// Reads settings and projects again, keeping the pages where they are.
-    fn reload_vault(&self) {
-        let imp = self.imp();
-        let path = imp
-            .vault_path
-            .borrow()
-            .clone()
-            .expect("changes are only watched in an open vault");
-        let date = imp.day_view.date();
-        match self.load_vault(&path) {
-            Ok(()) => {
-                imp.day_view.show_date(date);
-                imp.calendar_view.reload();
-                imp.tasks_page.reload();
-                imp.projects_page.reload();
-                self.reload_shown_pages();
-                self.check_conflicts();
-            }
-            Err(err) => show_error(self, &gettext("Cannot Open Vault"), &err.to_string()),
-        }
-    }
-
     /// Whether `page` is the page shown.
     fn shows(&self, page: &impl IsA<adw::NavigationPage>) -> bool {
         self.imp().split_view.content().as_ref() == Some(page.upcast_ref())
@@ -760,6 +403,7 @@ impl Window {
     }
 
     /// Shows the day, week or month `steps` steps after the one shown now.
+    /// Like going to today, it does nothing on the task and project pages.
     fn step(&self, steps: i32) {
         let imp = self.imp();
         if self.shows(&imp.calendar_view) {
@@ -774,12 +418,40 @@ impl Window {
         }
     }
 
+    /// Shows the day, week or month of today, on the page shown.
+    fn step_to_today(&self) {
+        let today = Local::now().date_naive();
+        let imp = self.imp();
+        if self.shows(&imp.calendar_view) {
+            imp.calendar_view.show(today);
+        } else if self.shows(&imp.reports_page) {
+            imp.reports_page.show(today);
+        } else if self.shows(&imp.day_view) {
+            imp.day_view.show_date(today);
+        }
+    }
+
+    /// Adds a block to the day shown, forwarded from the window so that the
+    /// shortcut works wherever the focus is.
+    fn new_block(&self) {
+        let day_view = &self.imp().day_view;
+        if self.shows(day_view) {
+            // Fails on days without a file, which have no blocks yet.
+            let _ = WidgetExt::activate_action(day_view, "day.new-block", None);
+        }
+    }
+
     fn show_day(&self, date: NaiveDate) {
         let imp = self.imp();
         imp.projects_page.save_now();
         imp.notes_page.save_now();
         imp.day_view.show_date(date);
         self.show_page(&imp.day_view, &imp.today_row);
+    }
+
+    fn show_block(&self, date: NaiveDate, id: &BlockId) {
+        self.show_day(date);
+        self.imp().day_view.show_block_by_id(id);
     }
 
     fn show_calendar(&self) {
@@ -808,6 +480,29 @@ impl Window {
         self.save_texts_now();
         imp.projects_page.reload();
         self.show_page(&imp.projects_page, &imp.projects_row);
+    }
+
+    fn show_project(&self, slug: &ProjectSlug) {
+        // Without reloading the page first, which would show the project
+        // open before once more.
+        self.save_texts_now();
+        let imp = self.imp();
+        self.show_page(&imp.projects_page, &imp.projects_row);
+        imp.projects_page.open_project(slug);
+        self.select_project_row();
+    }
+
+    /// Shows `note` on the notes page if that is shown, which shows notes
+    /// itself, or else in its project.
+    fn show_note(&self, note: &NotePath) {
+        let imp = self.imp();
+        if self.shows(&imp.notes_page) {
+            imp.notes_page.open_note(note);
+            return;
+        }
+        self.show_projects();
+        imp.projects_page.show_note(note);
+        self.select_project_row();
     }
 
     fn show_preferences(&self) {

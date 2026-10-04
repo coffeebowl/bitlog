@@ -138,7 +138,6 @@ pub struct TaskItem {
 
 pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
     let mut formatting = Formatting::default();
-    let styles = &mut formatting.styles;
     let mut stack: Vec<Frame> = Vec::new();
     for (event, range) in Parser::new_ext(text, options(mode)).into_offset_iter() {
         match event {
@@ -152,65 +151,10 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
             }
             Event::End(_) => {
                 let frame = stack.pop().expect("every end has a start");
-                let in_quote = matches!(frame.tag, Tag::BlockQuote(_))
-                    || stack
-                        .iter()
-                        .any(|frame| matches!(frame.tag, Tag::BlockQuote(_)));
-                let inline = style_element(text, &frame, mode, in_quote, styles);
-                formatting.inline_markup.extend(inline);
-                if let Some(marker) = list_marker(text, &frame, &stack) {
-                    styles.push(marker);
-                }
-                match &frame.tag {
-                    Tag::Item => {
-                        let item = list_item(text, frame.range.clone(), depth(&stack));
-                        formatting.list_items.push(item);
-                    }
-                    Tag::CodeBlock(kind) => {
-                        let info = match kind {
-                            CodeBlockKind::Fenced(info) => Some(info.as_ref()),
-                            CodeBlockKind::Indented => None,
-                        };
-                        formatting.code_blocks.push(code_block(text, &frame, info));
-                    }
-                    Tag::Table(_) => formatting.tables.push(table_lines(text, &frame.range)),
-                    Tag::Link {
-                        link_type,
-                        dest_url,
-                        ..
-                    } => {
-                        let url = web_url(*link_type, dest_url);
-                        if let (Some(url), Some(range)) = (url, trim(text, frame.range.clone())) {
-                            formatting.web_links.push(WebLink { range, url });
-                        }
-                    }
-                    Tag::BlockQuote(Some(kind)) => {
-                        let line_end = next_line_start(text, frame.range.start);
-                        let marker = text[frame.range.start..line_end]
-                            .find("[!")
-                            .zip(text[frame.range.start..line_end].find(']'))
-                            .map(|(start, end)| {
-                                frame.range.start + start..frame.range.start + end + 1
-                            });
-                        if let Some(marker) = marker {
-                            formatting.callouts.push(Callout {
-                                range: frame.range.clone(),
-                                kind: match kind {
-                                    BlockQuoteKind::Note => CalloutKind::Note,
-                                    BlockQuoteKind::Tip => CalloutKind::Tip,
-                                    BlockQuoteKind::Important => CalloutKind::Important,
-                                    BlockQuoteKind::Warning => CalloutKind::Warning,
-                                    BlockQuoteKind::Caution => CalloutKind::Caution,
-                                },
-                                marker,
-                            });
-                        }
-                    }
-                    _ => {}
-                }
+                end_element(text, &frame, &stack, mode, &mut formatting);
             }
             Event::Code(_) => {
-                styles.push((range.clone(), MarkdownStyle::Code));
+                formatting.styles.push((range.clone(), MarkdownStyle::Code));
                 let ticks = |part: &str| part.len() - part.trim_matches('`').len();
                 let code = &text[range.clone()];
                 let open = code.len() - code.trim_start_matches('`').len();
@@ -220,7 +164,9 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
                     range.end - close..range.end,
                 ];
                 for markup in &markup {
-                    styles.push((markup.clone(), MarkdownStyle::Markup));
+                    formatting
+                        .styles
+                        .push((markup.clone(), MarkdownStyle::Markup));
                 }
                 formatting.inline_markup.push(InlineMarkup {
                     element: range.clone(),
@@ -243,12 +189,16 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
                             .unwrap_or(range.end..range.end),
                     });
                 }
-                styles.push((range.clone(), MarkdownStyle::Markup));
+                formatting
+                    .styles
+                    .push((range.clone(), MarkdownStyle::Markup));
             }
             Event::Rule => {
                 if let Some(markup) = trim(text, range.clone()) {
-                    styles.push((markup.clone(), MarkdownStyle::Rule));
-                    styles.push((markup, MarkdownStyle::Markup));
+                    formatting
+                        .styles
+                        .push((markup.clone(), MarkdownStyle::Rule));
+                    formatting.styles.push((markup, MarkdownStyle::Markup));
                 }
             }
             _ => {}
@@ -258,7 +208,9 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
         }
     }
     // Outer ranges first.
-    styles.sort_by_key(|(range, _)| (range.start, Reverse(range.end)));
+    formatting
+        .styles
+        .sort_by_key(|(range, _)| (range.start, Reverse(range.end)));
     formatting.list_indents = list_indents(text, &formatting.list_items);
     formatting.list_markers = formatting
         .list_items
@@ -266,6 +218,71 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
         .map(|item| item.range.start..item.content)
         .collect();
     formatting
+}
+
+/// Formats the element of `frame`, inside the elements of `stack`, once it
+/// has ended and its children are known.
+fn end_element(
+    text: &str,
+    frame: &Frame,
+    stack: &[Frame],
+    mode: MarkdownMode,
+    formatting: &mut Formatting,
+) {
+    let in_quote = matches!(frame.tag, Tag::BlockQuote(_))
+        || stack
+            .iter()
+            .any(|frame| matches!(frame.tag, Tag::BlockQuote(_)));
+    let inline = style_element(text, frame, mode, in_quote, &mut formatting.styles);
+    formatting.inline_markup.extend(inline);
+    if let Some(marker) = list_marker(text, frame, stack) {
+        formatting.styles.push(marker);
+    }
+    match &frame.tag {
+        Tag::Item => {
+            let item = list_item(text, frame.range.clone(), depth(stack));
+            formatting.list_items.push(item);
+        }
+        Tag::CodeBlock(kind) => {
+            let info = match kind {
+                CodeBlockKind::Fenced(info) => Some(info.as_ref()),
+                CodeBlockKind::Indented => None,
+            };
+            formatting.code_blocks.push(code_block(text, frame, info));
+        }
+        Tag::Table(_) => formatting.tables.push(table_lines(text, &frame.range)),
+        Tag::Link {
+            link_type,
+            dest_url,
+            ..
+        } => {
+            let url = web_url(*link_type, dest_url);
+            if let (Some(url), Some(range)) = (url, trim(text, frame.range.clone())) {
+                formatting.web_links.push(WebLink { range, url });
+            }
+        }
+        Tag::BlockQuote(Some(kind)) => {
+            let line_end = next_line_start(text, frame.range.start);
+            let marker = text[frame.range.start..line_end]
+                .find("[!")
+                .zip(text[frame.range.start..line_end].find(']'))
+                .map(|(start, end)| frame.range.start + start..frame.range.start + end + 1);
+            if let Some(marker) = marker {
+                formatting.callouts.push(Callout {
+                    range: frame.range.clone(),
+                    kind: match kind {
+                        BlockQuoteKind::Note => CalloutKind::Note,
+                        BlockQuoteKind::Tip => CalloutKind::Tip,
+                        BlockQuoteKind::Important => CalloutKind::Important,
+                        BlockQuoteKind::Warning => CalloutKind::Warning,
+                        BlockQuoteKind::Caution => CalloutKind::Caution,
+                    },
+                    marker,
+                });
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Where a link of `link_type` to `destination` leads another app to, if

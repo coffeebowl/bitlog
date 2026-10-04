@@ -4,6 +4,8 @@ mod code_blocks;
 mod code_highlight;
 mod decorations;
 mod diagrams;
+mod editing;
+mod links;
 mod lists;
 mod styling;
 mod tables;
@@ -12,7 +14,6 @@ mod tags;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ops::Range;
-use std::rc::Rc;
 use std::sync::OnceLock;
 
 use adw::prelude::*;
@@ -26,11 +27,11 @@ use gtk::{gdk, gio, glib};
 use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 
-use self::check_boxes::CheckBox;
 use self::code_highlight::CodeHighlighter;
 pub use self::code_highlight::{Highlighting, Themes, themes};
 use self::decorations::Decorations;
 use self::diagrams::Diagrams;
+use self::links::Target;
 use self::styling::Styling;
 use crate::colors::with_alpha;
 
@@ -45,15 +46,6 @@ const GRID_ALPHA: f32 = 0.2;
 const CORNER_RADIUS: f32 = 6.0;
 /// The actions that change the text, only enabled while it is editable.
 const EDIT_ACTIONS: [&str; 3] = ["markdown.bold", "markdown.italic", "markdown.code"];
-
-/// Where a link leads.
-#[derive(Debug, Clone)]
-enum Target {
-    /// A note of the vault, or none if the wiki link points nowhere.
-    Note(Option<NotePath>),
-    /// A web page or mail address, which another app opens.
-    Web(String),
-}
 
 /// Tells the wiki links of a project note apart, see
 /// `MarkdownView::set_wiki_links`.
@@ -507,244 +499,6 @@ impl MarkdownView {
                 }
             }
         ));
-    }
-
-    /// Where the link at `iter` leads, if there is one.
-    fn link_at(&self, iter: &gtk::TextIter) -> Option<Target> {
-        self.restyle_if_queued();
-        self.imp()
-            .links
-            .borrow()
-            .iter()
-            .find(|(range, _)| range.contains(&iter.offset()))
-            .map(|(_, target)| target.clone())
-    }
-
-    /// Follows the link at `iter`, if there is one.
-    fn follow_link_at(&self, iter: &gtk::TextIter) {
-        if let Some(target) = self.link_at(iter) {
-            self.follow_link(target);
-        }
-    }
-
-    /// Opens a note of the vault, or another app for a web page or mail
-    /// address.
-    fn follow_link(&self, target: Target) {
-        match target {
-            Target::Note(Some(note)) => {
-                self.emit_by_name::<()>("wiki-link-activated", &[&note.to_string()]);
-            }
-            // Points nowhere, like `[[a/b/c]]`.
-            Target::Note(None) => self.error_bell(),
-            Target::Web(url) => {
-                let window = self.root().and_downcast::<gtk::Window>();
-                gtk::UriLauncher::new(&url).launch(
-                    window.as_ref(),
-                    None::<&gio::Cancellable>,
-                    |_| {},
-                );
-            }
-        }
-    }
-
-    /// The text at `x`, `y` in widget coordinates, if there is any.
-    fn iter_at(&self, x: f64, y: f64) -> Option<gtk::TextIter> {
-        let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
-        // Below the text of a line, GTK takes the pointer for the end of the
-        // line, counting its hidden text as shown, and aborts if it has any.
-        // Lines are higher than their text by the space below them, and for
-        // a moment after their text shrank, until they are laid out again.
-        let (line, _) = self.line_at_y(y);
-        let mut end = line;
-        if !end.ends_line() {
-            end.forward_to_line_end();
-        }
-        let (last_row, _) = self.cursor_locations(Some(&end));
-        if y >= last_row.y() + last_row.height() {
-            return None;
-        }
-        self.iter_at_location(x, y)
-    }
-
-    /// A click on a link follows it, as in the "Hypertext" demo of GTK, and
-    /// the pointer shows where that is possible.
-    fn follow_links_on_click(&self) {
-        let click = gtk::GestureClick::builder()
-            .button(gdk::BUTTON_PRIMARY)
-            .build();
-        // The link under the pointer as the button goes down: the text may
-        // move before it goes up, as the cursor reveals the markup.
-        let pressed = Rc::new(RefCell::new(None));
-        click.connect_pressed(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            #[strong]
-            pressed,
-            move |_, _, x, y| {
-                let link = view.iter_at(x, y).and_then(|iter| view.link_at(&iter));
-                pressed.replace(link);
-            }
-        ));
-        click.connect_released(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_, presses, _, _| {
-                let link = pressed.take();
-                // Selecting text is no click on a link.
-                if presses != 1 || view.buffer().has_selection() {
-                    return;
-                }
-                if let Some(target) = link {
-                    view.follow_link(target);
-                }
-            }
-        ));
-        self.add_controller(click);
-        let motion = gtk::EventControllerMotion::new();
-        motion.connect_motion(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_, x, y| {
-                let on_link = view
-                    .iter_at(x, y)
-                    .is_some_and(|iter| view.link_at(&iter).is_some());
-                let on_check_box = view.is_editable() && view.check_box_at(x, y).is_some();
-                let pointer = on_link || on_check_box;
-                view.set_cursor_from_name(Some(if pointer { "pointer" } else { "text" }));
-            }
-        ));
-        self.add_controller(motion);
-    }
-
-    /// What a click on the check box at `x`, `y` in widget coordinates
-    /// replaces, and with what, if there is one.
-    fn check_box_at(&self, x: f64, y: f64) -> Option<(Range<i32>, String)> {
-        self.restyle_if_queued();
-        let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
-        let decorations = self.imp().decorations.borrow();
-        decorations
-            .check_box_at(self.upcast_ref(), x, y)
-            .map(CheckBox::toggle)
-    }
-
-    /// A click on a check box checks or unchecks it, before the view would
-    /// move the cursor there.
-    fn toggle_check_boxes_on_click(&self) {
-        let click = gtk::GestureClick::builder()
-            .button(gdk::BUTTON_PRIMARY)
-            .propagation_phase(gtk::PropagationPhase::Capture)
-            .build();
-        click.connect_pressed(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |click, _, x, y| {
-                if !view.is_editable() {
-                    return;
-                }
-                let Some((range, replacement)) = view.check_box_at(x, y) else {
-                    return;
-                };
-                click.set_state(gtk::EventSequenceState::Claimed);
-                let buffer = view.buffer();
-                let mut start = buffer.iter_at_offset(range.start);
-                let mut end = buffer.iter_at_offset(range.end);
-                buffer.begin_user_action();
-                buffer.delete(&mut start, &mut end);
-                buffer.insert(&mut start, &replacement);
-                buffer.end_user_action();
-            }
-        ));
-        self.add_controller(click);
-    }
-
-    /// In list items, Tab nests the item deeper, Shift+Tab less deep, and
-    /// Enter starts the next item, before the view would handle the keys.
-    /// Shift+Enter still only breaks the line.
-    fn edit_lists_by_keys(&self) {
-        let keys = gtk::EventControllerKey::new();
-        keys.set_propagation_phase(gtk::PropagationPhase::Capture);
-        keys.connect_key_pressed(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            #[upgrade_or]
-            glib::Propagation::Proceed,
-            move |_, key, _, modifiers| {
-                let others = gdk::ModifierType::CONTROL_MASK
-                    | gdk::ModifierType::ALT_MASK
-                    | gdk::ModifierType::SUPER_MASK;
-                let shift = modifiers.contains(gdk::ModifierType::SHIFT_MASK);
-                if !view.is_editable() || modifiers.intersects(others) {
-                    return glib::Propagation::Proceed;
-                }
-                let is_handled = match key {
-                    gdk::Key::Tab => lists::nest(view.upcast_ref(), view.mode(), !shift),
-                    gdk::Key::ISO_Left_Tab => lists::nest(view.upcast_ref(), view.mode(), false),
-                    gdk::Key::Return | gdk::Key::KP_Enter if !shift => {
-                        lists::continue_item(view.upcast_ref(), view.mode())
-                    }
-                    _ => false,
-                };
-                if is_handled {
-                    glib::Propagation::Stop
-                } else {
-                    glib::Propagation::Proceed
-                }
-            }
-        ));
-        self.add_controller(keys);
-    }
-
-    /// Puts `marker` around the selection, or at the cursor, and selects
-    /// what it wraps. Takes it away instead if it is there already.
-    fn toggle_marker(&self, marker: &str) {
-        let buffer = self.buffer();
-        let (start, end) = buffer.selection_bounds().unwrap_or_else(|| {
-            let cursor = buffer.iter_at_mark(&buffer.get_insert());
-            (cursor, cursor)
-        });
-        let (start, end) = (start.offset(), end.offset());
-        let length = i32::try_from(marker.chars().count()).expect("markers are short");
-        let mark = marker.chars().next().expect("markers are not empty");
-        let is_mark = |iter: &gtk::TextIter| iter.char() == mark;
-        // How many marker characters there are on each side, as in `***`.
-        let mut before = 0;
-        let mut iter = buffer.iter_at_offset(start);
-        while iter.backward_char() && is_mark(&iter) {
-            before += 1;
-        }
-        let mut after = 0;
-        let mut iter = buffer.iter_at_offset(end);
-        // The end of the text has no character, so the loop stops there.
-        while is_mark(&iter) {
-            after += 1;
-            iter.forward_char();
-        }
-        let run = before.min(after);
-        let is_wrapped = match marker {
-            // In `***both***`, one star is italic and two are bold.
-            "*" => run % 2 == 1,
-            "**" => run >= 2,
-            _ => run >= 1,
-        };
-
-        buffer.begin_user_action();
-        let (start, end) = if is_wrapped {
-            buffer.delete(
-                &mut buffer.iter_at_offset(end),
-                &mut buffer.iter_at_offset(end + length),
-            );
-            buffer.delete(
-                &mut buffer.iter_at_offset(start - length),
-                &mut buffer.iter_at_offset(start),
-            );
-            (start - length, end - length)
-        } else {
-            buffer.insert(&mut buffer.iter_at_offset(end), marker);
-            buffer.insert(&mut buffer.iter_at_offset(start), marker);
-            (start + length, end + length)
-        };
-        buffer.select_range(&buffer.iter_at_offset(start), &buffer.iter_at_offset(end));
-        buffer.end_user_action();
     }
 }
 

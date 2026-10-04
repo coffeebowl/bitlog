@@ -84,7 +84,12 @@ pub fn make_movable(
     on_drop: impl Fn(String, bool) + 'static,
 ) {
     let row = row.upcast_ref::<gtk::Widget>();
-    let handle = handle.upcast_ref::<gtk::Widget>();
+    add_drag_source(row, handle.upcast_ref(), value.clone());
+    add_drop_target(row, value, accepts, on_drop);
+}
+
+/// Lets `row` be dragged as `value`, see `make_movable`.
+fn add_drag_source(row: &gtk::Widget, handle: &gtk::Widget, value: String) {
     // Where the row was grabbed, and whether a finger holds it so that it
     // may be dragged.
     let grab = Rc::new(Cell::new((0.0, 0.0)));
@@ -171,7 +176,16 @@ pub fn make_movable(
     row.add_controller(touch);
     row.add_controller(long_press);
     row.add_controller(source);
+}
 
+/// Lets values be dropped next to `row`, which holds `value`, see
+/// `make_movable`.
+fn add_drop_target(
+    row: &gtk::Widget,
+    value: String,
+    accepts: impl Fn(&str) -> bool + 'static,
+    on_drop: impl Fn(String, bool) + 'static,
+) {
     let target = gtk::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
     target.set_preload(true);
     // The value dragged, and whether it goes after this row, if it may go
