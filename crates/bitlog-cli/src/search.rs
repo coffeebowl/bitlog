@@ -2,6 +2,8 @@
 
 use bitlog_index::{Found, SearchHit};
 
+use crate::table::table;
+
 const BOLD: &str = "\x1b[1m";
 const RESET: &str = "\x1b[0m";
 
@@ -11,16 +13,11 @@ pub fn format_hits(hits: &[SearchHit], bold: bool) -> String {
     if hits.is_empty() {
         return "Nothing found.\n".to_owned();
     }
-    let places: Vec<String> = hits.iter().map(|hit| place(&hit.found)).collect();
-    let width = places
+    let rows: Vec<[String; 2]> = hits
         .iter()
-        .map(|place| place.chars().count())
-        .max()
-        .unwrap_or(0);
-    hits.iter()
-        .zip(&places)
-        .map(|(hit, place)| format!("{place:<width$}  {}\n", one_line(hit, bold)))
-        .collect()
+        .map(|hit| [place(&hit.found), one_line(hit, bold)])
+        .collect();
+    table(&rows, &[])
 }
 
 /// Where a hit lies, notes as a wiki link would name them.

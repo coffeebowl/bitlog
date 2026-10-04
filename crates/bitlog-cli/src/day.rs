@@ -3,6 +3,8 @@
 use bitlog_core::{Day, Vault};
 use chrono::{NaiveDate, NaiveTime, TimeDelta};
 
+use crate::table::table;
+
 /// The heading of the day `date`, as in "Wednesday, 2026-09-23".
 pub fn heading(date: NaiveDate) -> String {
     date.format("%A, %Y-%m-%d").to_string()
@@ -10,15 +12,10 @@ pub fn heading(date: NaiveDate) -> String {
 
 /// The heading, the day's details and a table of its blocks with their ids.
 pub fn format_day(vault: &Vault, day: &Day) -> String {
-    let mut details = vec![capitalize(&day.kind)];
-    if let Some(key) = &day.location {
-        details.push(vault.config().location_name(key).to_owned());
-    }
-    details.push(format_duration(day.working_time(vault.projects())) + " worked");
-
-    let mut lines = vec![heading(day.date), details.join(" · "), String::new()];
+    let details = vault.day_details(day, format_duration);
+    let mut text = format!("{}\n{details}\n\n", heading(day.date));
     if day.blocks.is_empty() {
-        lines.push("No blocks.".to_owned());
+        text.push_str("No blocks.\n");
     }
     let rows: Vec<[String; 5]> = day
         .blocks
@@ -34,20 +31,8 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
             ]
         })
         .collect();
-    let width = |column: usize| {
-        rows.iter()
-            .map(|row| row[column].chars().count())
-            .max()
-            .unwrap_or(0)
-    };
-    let (span_width, duration_width, project_width) = (width(1), width(2), width(3));
-    for [id, span, duration, project, title] in &rows {
-        let line = format!(
-            "{id}  {span:<span_width$}  {duration:>duration_width$}  {project:<project_width$}  {title}"
-        );
-        lines.push(line.trim_end().to_owned());
-    }
-    lines.iter().map(|line| format!("{line}\n")).collect()
+    text.push_str(&table(&rows, &[2]));
+    text
 }
 
 /// "08:00–16:30", with "+1" for an end on the next day.
@@ -67,15 +52,6 @@ pub fn format_duration(duration: TimeDelta) -> String {
         (hours, 0) => format!("{hours} h"),
         (0, minutes) => format!("{minutes} min"),
         (hours, minutes) => format!("{hours} h {minutes} min"),
-    }
-}
-
-/// `kind` is free text in the file, usually lowercase like `work`.
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
     }
 }
 

@@ -5,6 +5,7 @@ use bitlog_index::RemoteDays;
 use chrono::{Datelike, NaiveDate, TimeDelta};
 
 use crate::day::format_duration;
+use crate::table::table;
 
 /// The period, a table of the time per project without breaks, most
 /// first, with each project's share, the total and the breaks, then the
@@ -41,17 +42,7 @@ pub fn format_stats(
         if !breaks.is_zero() {
             rows.push(["Breaks".to_owned(), format_duration(breaks), String::new()]);
         }
-        let width = |column: usize| {
-            rows.iter()
-                .map(|row| row[column].chars().count())
-                .max()
-                .unwrap_or(0)
-        };
-        let (name_width, time_width, share_width) = (width(0), width(1), width(2));
-        for [name, time, share] in &rows {
-            let line = format!("{name:<name_width$}  {time:>time_width$}  {share:>share_width$}");
-            lines.push(line.trim_end().to_owned());
-        }
+        lines.push(table(&rows, &[1, 2]).trim_end().to_owned());
     }
     lines.push(String::new());
     for year in first.year()..=last.year() {

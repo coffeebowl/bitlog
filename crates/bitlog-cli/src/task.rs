@@ -4,6 +4,8 @@ use anyhow::Result;
 use bitlog_core::{EditError, Task, TaskId, TaskList, TaskStatus, Vault};
 use chrono::NaiveDate;
 
+use crate::table::table;
+
 /// The open tasks with their ids and due dates, and with `all` the
 /// finished ones below.
 pub fn format_tasks(tasks: &TaskList, all: bool, today: NaiveDate) -> String {
@@ -33,18 +35,11 @@ pub fn format_tasks(tasks: &TaskList, all: bool, today: NaiveDate) -> String {
 
 /// One line per task: id, title and `note`, with the titles aligned.
 fn lines(tasks: &[&Task], note: impl Fn(&Task) -> String) -> String {
-    let width = tasks
+    let rows: Vec<[String; 3]> = tasks
         .iter()
-        .map(|task| task.title.chars().count())
-        .max()
-        .unwrap_or(0);
-    tasks
-        .iter()
-        .map(|task| {
-            let line = format!("{}  {:<width$}  {}", task.id, task.title, note(task));
-            format!("{}\n", line.trim_end())
-        })
-        .collect()
+        .map(|task| [task.id.to_string(), task.title.clone(), note(task)])
+        .collect();
+    table(&rows, &[])
 }
 
 /// Applies `change` to the task list and saves it.

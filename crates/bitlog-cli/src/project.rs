@@ -9,6 +9,8 @@ use bitlog_core::{
 };
 use chrono::NaiveDate;
 
+use crate::table::table;
+
 /// A table of all projects in their order: slug, name, category, status,
 /// color and the path of their repository on this device.
 pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) -> String {
@@ -29,25 +31,7 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
             ]
         })
         .collect();
-    let widths: Vec<usize> = (0..5)
-        .map(|column| {
-            rows.iter()
-                .map(|row| row[column].chars().count())
-                .max()
-                .unwrap_or(0)
-        })
-        .collect();
-    rows.iter()
-        .map(|row| {
-            let mut line: String = row
-                .iter()
-                .zip(&widths)
-                .map(|(value, width)| format!("{value:<width$}  "))
-                .collect();
-            line.push_str(&row[5]);
-            format!("{}\n", line.trim_end())
-        })
-        .collect()
+    table(&rows, &[])
 }
 
 /// The latest `limit` commits of the repository of the project `slug`.
@@ -70,12 +54,7 @@ fn format_log(commits: &[Commit]) -> String {
     if commits.is_empty() {
         return "No commits yet.\n".to_owned();
     }
-    let width = commits
-        .iter()
-        .map(|commit| commit.author.chars().count())
-        .max()
-        .unwrap_or(0);
-    commits
+    let rows: Vec<[String; 4]> = commits
         .iter()
         .map(|commit| {
             let tags = if commit.tags.is_empty() {
@@ -88,15 +67,15 @@ fn format_log(commits: &[Commit]) -> String {
                     .collect();
                 format!("({}) ", tags.join(", "))
             };
-            format!(
-                "{}  {}  {:<width$}  {tags}{}\n",
-                commit.short_id(),
-                commit.time.format("%Y-%m-%d %H:%M"),
-                commit.author,
-                commit.summary
-            )
+            [
+                commit.short_id().to_owned(),
+                commit.time.format("%Y-%m-%d %H:%M").to_string(),
+                commit.author.clone(),
+                format!("{tags}{}", commit.summary),
+            ]
         })
-        .collect()
+        .collect();
+    table(&rows, &[])
 }
 
 /// Changes to a project; `None` keeps a value as it is.

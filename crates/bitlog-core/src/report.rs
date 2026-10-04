@@ -1,4 +1,5 @@
-//! A report of a week for the exports folder.
+//! A report of a week for the exports folder, and the details of a day it
+//! shares with the command line.
 
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
@@ -6,8 +7,8 @@ use std::fmt::Write;
 
 use chrono::{Days, NaiveDate, TimeDelta};
 
-use crate::Vault;
 use crate::error::ReadError;
+use crate::{Day, Vault};
 
 impl Vault {
     /// A report of the week starting on `first` in Markdown: the time per
@@ -46,15 +47,7 @@ impl Vault {
             // One blank line before, whatever the day before ended with.
             report.truncate(report.trim_end().len());
             let _ = write!(report, "\n\n## {}\n\n", day.date.format("%A, %Y-%m-%d"));
-            let mut details = vec![capitalize(&day.kind)];
-            if let Some(key) = &day.location {
-                details.push(self.config().location_name(key).to_owned());
-            }
-            details.push(format!(
-                "{} worked",
-                hours(day.working_time(self.projects()))
-            ));
-            let _ = writeln!(report, "{}", details.join(" · "));
+            let _ = writeln!(report, "{}", self.day_details(day, hours));
             if !day.note.is_empty() {
                 let _ = write!(report, "\n{}\n", day.note);
             }
@@ -84,6 +77,20 @@ impl Vault {
         report.truncate(report.trim_end().len());
         report.push('\n');
         Ok(report)
+    }
+
+    /// The kind, location and working time of `day`, as in "Work · Remote ·
+    /// 7:45 worked", with the time as `duration` writes it.
+    pub fn day_details(&self, day: &Day, duration: impl Fn(TimeDelta) -> String) -> String {
+        let mut details = vec![capitalize(&day.kind)];
+        if let Some(key) = &day.location {
+            details.push(self.config().location_name(key).to_owned());
+        }
+        details.push(format!(
+            "{} worked",
+            duration(day.working_time(self.projects()))
+        ));
+        details.join(" · ")
     }
 }
 
