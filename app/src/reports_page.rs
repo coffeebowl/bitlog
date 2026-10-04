@@ -4,14 +4,14 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Period, ProjectSlug, Vault};
+use bitlog_core::{Period, Vault};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
 
-use crate::alert::show_error;
-use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot, lightness, mix, sea_green};
+use crate::alert::{show_error, toast_overlay};
+use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
 use crate::format::{capitalize, format_date, format_duration, format_share, format_short_date};
 use crate::heatmap::Heatmap;
 use crate::search_index::{ReportData, SearchIndex};
@@ -126,6 +126,14 @@ impl ReportsPage {
         self.imp().vault.replace(Some(vault));
     }
 
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("reports are only shown once a vault is open")
+    }
+
     pub fn set_index(&self, index: SearchIndex) {
         self.imp().index.replace(index);
     }
@@ -152,7 +160,7 @@ impl ReportsPage {
     /// Looks up the period shown again and shows it.
     pub fn reload(&self) {
         let imp = self.imp();
-        let vault = imp.vault.borrow().clone().expect("reports need a vault");
+        let vault = self.vault();
         let period = self.range(&vault);
         self.show_title(period);
         // A report covers one week.
@@ -186,7 +194,7 @@ impl ReportsPage {
     /// in a toast that leads to the file.
     async fn export(&self, what: Export) {
         let imp = self.imp();
-        let vault = imp.vault.borrow().clone().expect("reports need a vault");
+        let vault = self.vault();
         let index = imp.index.borrow().clone();
         let period = self.range(&vault);
         let export = match what {
@@ -234,10 +242,7 @@ impl ReportsPage {
                         );
                     }
                 ));
-                self.ancestor(adw::ToastOverlay::static_type())
-                    .and_downcast::<adw::ToastOverlay>()
-                    .expect("pages lie in the window's toast overlay")
-                    .add_toast(toast);
+                toast_overlay(self).add_toast(toast);
             }
             Err(message) => show_error(self, &gettext("Cannot Export"), &message),
         }
@@ -297,13 +302,16 @@ impl ReportsPage {
 
         let most = work.first().map_or(TimeDelta::zero(), |(_, time)| *time);
         for (slug, time) in &work {
-            let (name, color) = match vault.project(slug) {
-                Some(project) => (project.name.clone(), project.color.as_str()),
-                None => (slug.to_string(), UNKNOWN_PROJECT_COLOR),
-            };
-            let row = time_row(&color_dot(color), &name, *time, total);
-            let color = gdk::RGBA::parse(color).expect("project colors are valid");
-            row.add_suffix(&ShareBar::new(vec![(color, share(*time, most))]));
+            let row = time_row(
+                &color_dot(project_hex(vault, slug)),
+                vault.project_name(slug),
+                *time,
+                total,
+            );
+            let bar = ShareBar::new(vec![(project_color(vault, slug), share(*time, most))], 10);
+            // Wide enough beside long names to compare.
+            bar.set_width_request(60);
+            row.add_suffix(&bar);
             rows.push((imp.projects_group.get(), row));
         }
         if work.is_empty() {
@@ -339,8 +347,7 @@ impl ReportsPage {
         for ((category, time), color) in categories.iter().zip(CATEGORY_COLORS.iter().cycle()) {
             let row = time_row(&color_dot(color), &capitalize(category), *time, total);
             rows.push((imp.categories_group.get(), row));
-            let color = gdk::RGBA::parse(*color).expect("the category colors are valid");
-            parts.push((color, share(*time, total)));
+            parts.push((parse(color), share(*time, total)));
         }
         imp.category_bar.set_parts(parts);
         imp.categories_group.set_visible(!categories.is_empty());
@@ -372,14 +379,6 @@ impl ReportsPage {
         imp.heatmap
             .show(days, period, vault.config().week.first_day);
     }
-}
-
-/// The color of the project `slug`, gray for one the vault does not know.
-fn project_color(vault: &Vault, slug: &ProjectSlug) -> gdk::RGBA {
-    let color = vault
-        .project(slug)
-        .map_or(UNKNOWN_PROJECT_COLOR, |project| project.color.as_str());
-    gdk::RGBA::parse(color).expect("project colors are valid")
 }
 
 /// How light the colors of the projects of `vault` are on average, breaks

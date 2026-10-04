@@ -16,11 +16,12 @@ use crate::colors::color_dot;
 use crate::format::{
     PROJECT_STATUSES, format_duration, format_full_date, format_short_date, status_name,
 };
-use crate::note_dialogs::{self, ask_note_name, note_param};
+use crate::note_dialogs::{self, ask_note_name};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
 use crate::search_index::{ProjectsData, SearchIndex};
+use crate::widgets::{param, set_class};
 
 mod imp {
     use super::*;
@@ -83,42 +84,42 @@ mod imp {
                 "projects.edit",
                 Some(glib::VariantTy::STRING),
                 |page, _, slug| {
-                    page.edit(Some(slug_param(slug)));
+                    page.edit(Some(param(slug, "projects")));
                 },
             );
             klass.install_action(
                 "projects.open",
                 Some(glib::VariantTy::STRING),
                 |page, _, slug| {
-                    page.open_project(&slug_param(slug));
+                    page.open_project(&param(slug, "projects"));
                 },
             );
             klass.install_action_async(
                 "notes.new",
                 Some(glib::VariantTy::STRING),
-                |page, _, slug| async move { page.new_note(slug_param(slug.as_ref())).await },
+                |page, _, slug| async move { page.new_note(param(slug.as_ref(), "projects")).await },
             );
             klass.install_action(
                 "notes.open",
                 Some(glib::VariantTy::STRING),
                 |page, _, note| {
-                    page.open_note(&note_param(note));
+                    page.open_note(&param(note, "notes"));
                 },
             );
             klass.install_action_async(
                 "notes.follow",
                 Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.follow_link(note_param(note.as_ref())).await },
+                |page, _, note| async move { page.follow_link(param(note.as_ref(), "notes")).await },
             );
             klass.install_action_async(
                 "notes.rename",
                 Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.rename_note(note_param(note.as_ref())).await },
+                |page, _, note| async move { page.rename_note(param(note.as_ref(), "notes")).await },
             );
             klass.install_action_async(
                 "notes.delete",
                 Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.delete_note(note_param(note.as_ref())).await },
+                |page, _, note| async move { page.delete_note(param(note.as_ref(), "notes")).await },
             );
         }
 
@@ -189,12 +190,6 @@ pub fn shows(nav: &adw::NavigationView, tag: &str) -> bool {
     (0..stack.n_items())
         .filter_map(|i| stack.item(i).and_downcast::<adw::NavigationPage>())
         .any(|page| page.tag().as_deref() == Some(tag))
-}
-
-fn slug_param(param: Option<&glib::Variant>) -> ProjectSlug {
-    param
-        .and_then(|param| param.str()?.parse().ok())
-        .expect("project actions take a slug")
 }
 
 impl ProjectsPage {
@@ -841,15 +836,6 @@ fn project_row(
         row.add_suffix(&time);
     }
     row
-}
-
-/// Adds the style class `class` to `widget`, or removes it.
-fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
-    if on {
-        widget.add_css_class(class);
-    } else {
-        widget.remove_css_class(class);
-    }
 }
 
 /// `date` without the year if it is the year of `today`.

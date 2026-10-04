@@ -3,13 +3,14 @@ use std::path::PathBuf;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{ChangedFile, CommitDetails, FileChange, git_file_diff};
+use bitlog_core::{ChangedFile, CommitDetails, FileChange, git_file_diff, short_id};
 use chrono::{DateTime, FixedOffset, Local, NaiveDate};
 use gettextrs::{gettext, ngettext};
 use gtk::{gio, glib};
 use sourceview5::prelude::*;
 
-use crate::format::{format_full_date, format_time};
+use crate::format::{format_full_date, format_time, plural};
+use crate::markdown_view::style_scheme;
 
 /// The files the dialog lists at most, so that huge commits open quickly.
 const FILES_SHOWN: usize = 200;
@@ -140,12 +141,9 @@ impl CommitDialog {
         }
         let parents = &details.parents;
         imp.parents_row.set_visible(!parents.is_empty());
-        imp.parents_row.set_title(&ngettext(
-            "Parent",
-            "Parents",
-            u32::try_from(parents.len()).unwrap_or(u32::MAX),
-        ));
-        let short: Vec<_> = parents.iter().map(|id| &id[..7]).collect();
+        imp.parents_row
+            .set_title(&ngettext("Parent", "Parents", plural(parents.len())));
+        let short: Vec<_> = parents.iter().map(|id| short_id(id)).collect();
         imp.parents_row.set_subtitle(&short.join(", "));
         let tags = &commit.tags;
         imp.tags_row.set_visible(!tags.is_empty());
@@ -159,7 +157,7 @@ impl CommitDialog {
     /// Lists `files` with the lines added and removed, and their sum above.
     fn show_files(&self, files: &[ChangedFile]) {
         let group = &self.imp().files_group;
-        let count = u32::try_from(files.len()).unwrap_or(u32::MAX);
+        let count = plural(files.len());
         let (added, removed) = files
             .iter()
             .filter_map(|file| file.lines)
@@ -180,7 +178,7 @@ impl CommitDialog {
         if files.len() > FILES_SHOWN {
             let more = files.len() - FILES_SHOWN;
             // Translators: The files of a commit left out of its list.
-            let title = ngettext("{count} more file", "{count} more files", more as u32)
+            let title = ngettext("{count} more file", "{count} more files", plural(more))
                 .replace("{count}", &more.to_string());
             group.add(
                 &adw::ActionRow::builder()
@@ -320,10 +318,7 @@ fn diff_view(diff: &str) -> gtk::Widget {
     // Follows light and dark style like the rest of the app.
     adw::StyleManager::default()
         .bind_property("dark", &buffer, "style-scheme")
-        .transform_to(|_, dark: bool| {
-            let name = if dark { "Adwaita-dark" } else { "Adwaita" };
-            sourceview5::StyleSchemeManager::default().scheme(name)
-        })
+        .transform_to(|_, dark: bool| style_scheme(dark))
         .sync_create()
         .build();
     let view = sourceview5::View::builder()
@@ -357,11 +352,6 @@ fn diff_view(diff: &str) -> gtk::Widget {
     content.append(&scrolled);
     content.append(&label);
     content.upcast()
-}
-
-/// `count` for choosing a plural form.
-fn plural(count: usize) -> u32 {
-    u32::try_from(count).unwrap_or(u32::MAX)
 }
 
 /// The lines added and removed, as in "+12 −3", leaving out none.

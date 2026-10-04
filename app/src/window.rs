@@ -18,6 +18,7 @@ use crate::calendar_view::CalendarView;
 use crate::colors::color_dot;
 use crate::config;
 use crate::day_view::DayView;
+use crate::format::plural;
 use crate::notes_page::NotesPage;
 use crate::preferences_dialog::PreferencesDialog;
 use crate::projects_page::ProjectsPage;
@@ -27,6 +28,7 @@ use crate::search_index::SearchIndex;
 use crate::style_switcher;
 use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
 use crate::tasks_page::TasksPage;
+use crate::widgets::param;
 
 /// Actions that need an open vault.
 const VAULT_ACTIONS: [&str; 19] = [
@@ -221,9 +223,7 @@ mod imp {
                 "win.show-project",
                 Some(glib::VariantTy::STRING),
                 |window, _, slug| {
-                    let slug: ProjectSlug = slug
-                        .and_then(|slug| slug.str()?.parse().ok())
-                        .expect("projects are passed as their slug");
+                    let slug: ProjectSlug = param(slug, "projects");
                     // Without reloading the page first, which would show the
                     // project open before once more.
                     window.save_texts_now();
@@ -259,9 +259,7 @@ mod imp {
                 "win.show-note",
                 Some(glib::VariantTy::STRING),
                 |window, _, note| {
-                    let note: NotePath = note
-                        .and_then(|note| note.str()?.parse().ok())
-                        .expect("notes are passed as their path");
+                    let note: NotePath = param(note, "notes");
                     let imp = window.imp();
                     // The notes page shows them itself.
                     if window.shows(&imp.notes_page) {
@@ -277,9 +275,7 @@ mod imp {
                 "win.show-task",
                 Some(glib::VariantTy::STRING),
                 |window, _, id| {
-                    let id: TaskId = id
-                        .and_then(|id| id.str()?.parse().ok())
-                        .expect("tasks are passed as their id");
+                    let id: TaskId = param(id, "tasks");
                     window.show_tasks();
                     window.imp().tasks_page.show_task(&id);
                 },
@@ -287,12 +283,7 @@ mod imp {
             klass.install_action(
                 "win.show-day",
                 Some(glib::VariantTy::STRING),
-                |window, _, date| {
-                    let date = date
-                        .and_then(|date| date.str()?.parse().ok())
-                        .expect("the calendar passes dates as YYYY-MM-DD");
-                    window.show_day(date);
-                },
+                |window, _, date| window.show_day(param(date, "days")),
             );
         }
 
@@ -530,6 +521,14 @@ impl Window {
         Ok(())
     }
 
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("only an open vault can be worked on")
+    }
+
     fn set_vault(&self, vault: &Rc<Vault>) {
         let imp = self.imp();
         imp.vault.replace(Some(vault.clone()));
@@ -608,11 +607,7 @@ impl Window {
     /// to resolve the others.
     fn check_conflicts(&self) {
         let imp = self.imp();
-        let vault = imp
-            .vault
-            .borrow()
-            .clone()
-            .expect("conflicts are checked in an open vault");
+        let vault = self.vault();
         let copies = match vault.conflict_copies() {
             Ok(copies) => copies,
             Err(err) => {
@@ -639,10 +634,13 @@ impl Window {
                 Err(err) => glib::g_warning!("bitlog", "{err}"),
             }
         }
-        let count = u32::try_from(open.len()).unwrap_or(u32::MAX);
         imp.conflict_banner.set_title(
-            &ngettext("{count} sync conflict", "{count} sync conflicts", count)
-                .replace("{count}", &count.to_string()),
+            &ngettext(
+                "{count} sync conflict",
+                "{count} sync conflicts",
+                plural(open.len()),
+            )
+            .replace("{count}", &open.len().to_string()),
         );
         imp.conflict_banner.set_revealed(!open.is_empty());
         imp.conflicts.replace(open);
@@ -655,8 +653,7 @@ impl Window {
             return;
         };
         self.save_texts_now();
-        let vault = imp.vault.borrow().clone().expect("conflicts need a vault");
-        match SyncConflictDialog::new(vault, copy.clone()) {
+        match SyncConflictDialog::new(self.vault(), copy.clone()) {
             Ok(dialog) => {
                 dialog.connect_merged(glib::clone!(
                     #[weak(rename_to = window)]
@@ -742,12 +739,7 @@ impl Window {
                 imp.calendar_view.reload();
                 imp.tasks_page.reload();
                 imp.projects_page.reload();
-                if self.shows(&imp.notes_page) {
-                    imp.notes_page.reload();
-                }
-                if self.shows(&imp.reports_page) {
-                    imp.reports_page.reload();
-                }
+                self.reload_shown_pages();
                 self.check_conflicts();
             }
             Err(err) => show_error(self, &gettext("Cannot Open Vault"), &err.to_string()),
@@ -819,16 +811,10 @@ impl Window {
     }
 
     fn show_preferences(&self) {
-        let imp = self.imp();
         if self.visible_dialog().is_some() {
             return;
         }
-        let vault = imp
-            .vault
-            .borrow()
-            .clone()
-            .expect("preferences need a vault");
-        let dialog = PreferencesDialog::new(&vault);
+        let dialog = PreferencesDialog::new(&self.vault());
         dialog.connect_save(glib::clone!(
             #[weak(rename_to = window)]
             self,
@@ -840,15 +826,9 @@ impl Window {
     /// Saves the settings `dialog` holds and closes it. On failure it
     /// stays open.
     fn save_preferences(&self, dialog: &PreferencesDialog) {
-        let imp = self.imp();
         // A copy shares the record of own writes, so watching the vault
         // goes on as before.
-        let mut vault = Vault::clone(
-            &imp.vault
-                .borrow()
-                .clone()
-                .expect("preferences need a vault"),
-        );
+        let mut vault = Vault::clone(&self.vault());
         match vault.update_config(|config| dialog.apply(config)) {
             Ok(_) => {
                 dialog.close();
@@ -870,6 +850,13 @@ impl Window {
         imp.day_view.show_date(imp.day_view.date());
         imp.calendar_view.reload();
         imp.projects_page.reload();
+        self.reload_shown_pages();
+    }
+
+    /// Reads the notes and the reports again if they are shown. Hidden,
+    /// they are read when shown.
+    fn reload_shown_pages(&self) {
+        let imp = self.imp();
         if self.shows(&imp.notes_page) {
             imp.notes_page.reload();
         }
@@ -887,9 +874,11 @@ impl Window {
         }
         // So that the search finds what was just typed.
         self.save_texts_now();
-        let vault = imp.vault.borrow().clone().expect("search needs a vault");
-        let dialog =
-            SearchDialog::new(vault, imp.index.borrow().clone(), self.shows(&imp.day_view));
+        let dialog = SearchDialog::new(
+            self.vault(),
+            imp.index.borrow().clone(),
+            self.shows(&imp.day_view),
+        );
         dialog.present(Some(self));
     }
 

@@ -266,9 +266,7 @@ fn theme(scheme: &sourceview5::StyleScheme) -> Theme {
 
 thread_local! {
     static THEMES: Themes = Themes(Arc::new([false, true].map(|dark| {
-        let name = if dark { "Adwaita-dark" } else { "Adwaita" };
-        sourceview5::StyleSchemeManager::default()
-            .scheme(name)
+        super::style_scheme(dark)
             .as_ref()
             .map(theme)
             .unwrap_or_default()

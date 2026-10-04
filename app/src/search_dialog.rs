@@ -212,6 +212,14 @@ impl SearchDialog {
         dialog
     }
 
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("the dialog is set up with a vault")
+    }
+
     /// Shows the commands and texts that match what is typed.
     fn search(&self) {
         let imp = self.imp();
@@ -223,7 +231,7 @@ impl SearchDialog {
             self.show_results(&query, error.map_or(Ok(Vec::new()), Err));
             return;
         }
-        let vault = imp.vault.borrow().clone().expect("the dialog has a vault");
+        let vault = self.vault();
         let index = imp.index.borrow().clone();
         glib::spawn_future_local(glib::clone!(
             #[weak(rename_to = dialog)]
@@ -243,7 +251,7 @@ impl SearchDialog {
         let imp = self.imp();
         imp.list.remove_all();
         let query = query.to_lowercase();
-        let vault = imp.vault.borrow().clone().expect("the dialog has a vault");
+        let vault = self.vault();
         let mut rows = Vec::new();
         for command in imp.commands.borrow().iter() {
             let title = command.title.to_lowercase();

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -6,16 +6,26 @@ use gtk::{gdk, glib, graphene, gsk};
 
 use crate::colors::with_alpha;
 
-const HEIGHT: i32 = 10;
+/// The natural width; the bar takes any width it gets.
 const WIDTH: i32 = 120;
 
 mod imp {
     use super::*;
 
-    #[derive(Debug, Default)]
+    #[derive(Debug)]
     pub struct ShareBar {
         /// Colored parts from the left, each a share of the whole width.
         pub parts: RefCell<Vec<(gdk::RGBA, f32)>>,
+        pub height: Cell<i32>,
+    }
+
+    impl Default for ShareBar {
+        fn default() -> Self {
+            Self {
+                parts: RefCell::default(),
+                height: Cell::new(10),
+            }
+        }
     }
 
     #[glib::object_subclass]
@@ -35,8 +45,11 @@ mod imp {
     impl WidgetImpl for ShareBar {
         fn measure(&self, orientation: gtk::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
             match orientation {
-                gtk::Orientation::Vertical => (HEIGHT, HEIGHT, -1, -1),
-                _ => (WIDTH / 2, WIDTH, -1, -1),
+                gtk::Orientation::Vertical => {
+                    let height = self.height.get();
+                    (height, height, -1, -1)
+                }
+                _ => (0, WIDTH, -1, -1),
             }
         }
 
@@ -70,11 +83,13 @@ glib::wrapper! {
 }
 
 impl ShareBar {
-    /// A bar with `parts`, each a color and a share from 0 to 1.
-    pub fn new(parts: Vec<(gdk::RGBA, f32)>) -> Self {
+    /// A bar `height` pixels high with `parts`, each a color and a share
+    /// from 0 to 1.
+    pub fn new(parts: Vec<(gdk::RGBA, f32)>, height: i32) -> Self {
         let bar: Self = glib::Object::builder()
             .property("valign", gtk::Align::Center)
             .build();
+        bar.imp().height.set(height);
         bar.set_parts(parts);
         bar
     }

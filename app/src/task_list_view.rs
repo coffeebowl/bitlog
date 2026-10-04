@@ -8,8 +8,9 @@ use chrono::{Local, NaiveDate};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
 
-use crate::alert::show_error;
+use crate::alert::{show_error, toast_overlay};
 use crate::format::{format_short_date, glib_date, naive_date};
+use crate::widgets::param;
 
 mod imp {
     use super::*;
@@ -69,13 +70,13 @@ mod imp {
             klass.install_action("tasks.archive", None, |view, _, _| view.archive());
             let id = Some(glib::VariantTy::STRING);
             klass.install_action("tasks.move-up", id, |view, _, id| {
-                view.move_task(&task_id(id), -1);
+                view.move_task(&param(id, "tasks"), -1);
             });
             klass.install_action("tasks.move-down", id, |view, _, id| {
-                view.move_task(&task_id(id), 1);
+                view.move_task(&param(id, "tasks"), 1);
             });
             klass.install_action("tasks.drop", id, |view, _, id| {
-                view.finish_task(&task_id(id), TaskStatus::Dropped);
+                view.finish_task(&param(id, "tasks"), TaskStatus::Dropped);
             });
         }
 
@@ -116,12 +117,6 @@ glib::wrapper! {
 }
 
 /// The id a task action is called with.
-fn task_id(value: Option<&glib::Variant>) -> TaskId {
-    value
-        .and_then(|value| value.str()?.parse().ok())
-        .expect("task actions are called with a task id")
-}
-
 fn today() -> NaiveDate {
     Local::now().date_naive()
 }
@@ -565,7 +560,7 @@ impl TaskListView {
             self,
             move |_| view.reopen_task(&id, Some(index))
         ));
-        self.add_toast(toast);
+        toast_overlay(self).add_toast(toast);
     }
 
     /// Opens the task `id` again, at `index` among the open tasks if given,
@@ -587,19 +582,10 @@ impl TaskListView {
         let archived = self.vault().archive_tasks(&tasks, today());
         if self.show_saved(archived) {
             // Archived tasks can no longer be opened again.
-            self.toast_overlay().dismiss_all();
-            self.add_toast(adw::Toast::new(&gettext("Finished tasks archived")));
+            let overlay = toast_overlay(self);
+            overlay.dismiss_all();
+            overlay.add_toast(adw::Toast::new(&gettext("Finished tasks archived")));
         }
-    }
-
-    fn toast_overlay(&self) -> adw::ToastOverlay {
-        self.ancestor(adw::ToastOverlay::static_type())
-            .and_downcast()
-            .expect("task lists lie in the window's toast overlay")
-    }
-
-    fn add_toast(&self, toast: adw::Toast) {
-        self.toast_overlay().add_toast(toast);
     }
 
     /// Applies `change` to the task list shown, saves it and shows the

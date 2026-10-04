@@ -1,20 +1,20 @@
 use std::cell::{Cell, RefCell};
-use std::f64::consts::PI;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use std::collections::BTreeMap;
 
-use bitlog_core::{DayFile, Period, ProjectSlug, Vault, week_start};
+use bitlog_core::{DayFile, Period, Vault, week_start};
 use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
-use gtk::{gdk, glib, pango};
+use gtk::{glib, pango};
 
-use crate::colors::{UNKNOWN_PROJECT_COLOR, color_dot};
+use crate::colors::{color_dot, project_color, project_hex};
 use crate::format::{
     format_date, format_duration, format_full_date, format_short_duration, kind_name,
 };
+use crate::share_bar::ShareBar;
 use crate::week_chart::{ChartDay, WeekChart};
 
 /// How much of a day the month shows, by the room there is.
@@ -298,15 +298,6 @@ impl CalendarView {
         imp.window_title.set_subtitle(&subtitle);
         self.set_title(&title);
 
-        let hex = |slug: &ProjectSlug| {
-            vault
-                .project(slug)
-                .map_or(UNKNOWN_PROJECT_COLOR, |project| project.color.as_str())
-                .to_owned()
-        };
-        let color = |slug: &ProjectSlug| {
-            gdk::RGBA::parse(hex(slug)).expect("the core only accepts valid colours")
-        };
         let today = Local::now().date_naive();
         let mut worked = TimeDelta::zero();
         let mut target = 0.0;
@@ -337,7 +328,7 @@ impl CalendarView {
                 label: format_date(date, "%a %-d"),
                 segments: times
                     .iter()
-                    .map(|(slug, time)| (color(slug), hours(*time)))
+                    .map(|(slug, time)| (project_color(&vault, slug), hours(*time)))
                     .collect(),
                 working_hours: (date <= today).then(|| hours(working_time)),
                 target_hours,
@@ -363,7 +354,7 @@ impl CalendarView {
             let name = vault.project_name(&slug);
             let markup = format!(
                 "{} {} · {}",
-                color_dot(&hex(&slug)),
+                color_dot(project_hex(&vault, &slug)),
                 glib::markup_escape_text(name),
                 glib::markup_escape_text(&format_duration(time)),
             );
@@ -451,13 +442,6 @@ fn day_cell(
             let mut times: Vec<_> = day.time_per_project(vault.projects()).into_iter().collect();
             times.retain(|(_, time)| !time.is_zero());
             times.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
-            let color = |slug: &ProjectSlug| {
-                vault
-                    .project(slug)
-                    .map_or(UNKNOWN_PROJECT_COLOR, |project| project.color.as_str())
-                    .to_owned()
-            };
-
             if !working_time.is_zero() {
                 let text = format_duration(working_time);
                 let shown = if density == Density::Full {
@@ -479,19 +463,18 @@ fn day_cell(
                 description.push(text);
             }
             if !times.is_empty() {
-                let segments = times
+                let total: f32 = times.iter().map(|(_, time)| hours(*time)).sum();
+                let parts = times
                     .iter()
-                    .map(|(slug, time)| {
-                        let color = gdk::RGBA::parse(color(slug))
-                            .expect("the core only accepts valid colours");
-                        (color, hours(*time))
-                    })
+                    .map(|(slug, time)| (project_color(vault, slug), hours(*time) / total))
                     .collect();
-                content.append(&project_bar(segments));
+                let bar = ShareBar::new(parts, 4);
+                bar.set_hexpand(true);
+                content.append(&bar);
             }
             for (index, (slug, time)) in times.iter().enumerate() {
                 let name = vault.project_name(slug);
-                let dot = color_dot(&color(slug));
+                let dot = color_dot(project_hex(vault, slug));
                 if index < PROJECTS_SHOWN {
                     let line = label(
                         &format!("{dot} {}", glib::markup_escape_text(name)),
@@ -552,36 +535,18 @@ fn day_cell(
 /// How many projects a day in the calendar names, those with the most time.
 const PROJECTS_SHOWN: usize = 3;
 
-/// A thin bar split into the shares of `segments`, colours and hours.
-fn project_bar(segments: Vec<(gdk::RGBA, f32)>) -> gtk::DrawingArea {
-    let bar = gtk::DrawingArea::builder()
-        .content_height(4)
-        .hexpand(true)
-        .build();
-    let total: f32 = segments.iter().map(|(_, hours)| hours).sum();
-    bar.set_draw_func(move |_, cr, width, height| {
-        let (width, height) = (f64::from(width), f64::from(height));
-        let radius = height / 2.0;
-        // Rounded ends for the whole bar.
-        cr.new_sub_path();
-        cr.arc(radius, radius, radius, 0.5 * PI, 1.5 * PI);
-        cr.arc(width - radius, radius, radius, 1.5 * PI, 0.5 * PI);
-        cr.close_path();
-        cr.clip();
-        let mut x = 0.0;
-        for (color, hours) in &segments {
-            let part = width * f64::from(hours / total);
-            cr.set_source_rgba(
-                color.red().into(),
-                color.green().into(),
-                color.blue().into(),
-                color.alpha().into(),
-            );
-            cr.rectangle(x, 0.0, part, height);
-            // Drawing only fails once the surface is broken, then nothing shows.
-            let _ = cr.fill();
-            x += part;
-        }
-    });
-    bar
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn weeks_are_numbered_by_their_thursday() {
+        let date = |month, day| NaiveDate::from_ymd_opt(2026, month, day).unwrap();
+        // From Monday and from Sunday.
+        assert_eq!(week_number(date(9, 28)), 40);
+        assert_eq!(week_number(date(9, 27)), 40);
+        // From Saturday, a week whose Thursday lies in the new year.
+        assert_eq!(week_number(date(1, 3)), 2);
+        assert_eq!(week_number(date(12, 28)), 53);
+    }
 }

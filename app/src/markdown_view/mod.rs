@@ -748,15 +748,17 @@ impl MarkdownView {
     }
 }
 
+/// The style scheme of GtkSourceView that goes with the light or `dark`
+/// style of the app.
+pub fn style_scheme(dark: bool) -> Option<sourceview5::StyleScheme> {
+    let name = if dark { "Adwaita-dark" } else { "Adwaita" };
+    sourceview5::StyleSchemeManager::default().scheme(name)
+}
+
 /// Follows light and dark style like the rest of the app. Without a scheme,
 /// GtkSourceView keeps light colours.
 fn set_style_scheme(view: &MarkdownView, style_manager: &adw::StyleManager) {
-    let name = if style_manager.is_dark() {
-        "Adwaita-dark"
-    } else {
-        "Adwaita"
-    };
-    let scheme = sourceview5::StyleSchemeManager::default().scheme(name);
+    let scheme = style_scheme(style_manager.is_dark());
     view.buffer()
         .downcast::<sourceview5::Buffer>()
         .expect("a source view has a source buffer")

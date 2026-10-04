@@ -29,8 +29,14 @@ pub struct Commit {
 impl Commit {
     /// The hash shortened to seven digits, as Git usually shows it.
     pub fn short_id(&self) -> &str {
-        &self.id[..7]
+        short_id(&self.id)
     }
+}
+
+/// The full hash `id` in hex shortened to seven digits, as Git usually
+/// shows it.
+pub fn short_id(id: &str) -> &str {
+    &id[..7]
 }
 
 /// A repository whose log cannot be read.
@@ -560,6 +566,7 @@ mod tests {
         assert_eq!(first.time.to_rfc3339(), "2026-09-21T09:00:00+02:00");
         assert_eq!(first.id.len(), 40);
         assert_eq!(first.short_id(), &first.id[..7]);
+        assert_eq!(short_id(&first.id), first.short_id());
     }
 
     #[test]

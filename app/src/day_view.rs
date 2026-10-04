@@ -1,6 +1,5 @@
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
-use std::time::Duration;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -23,6 +22,7 @@ use crate::project_picker::{project_markup, project_popover};
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
+use crate::widgets::SaveTimer;
 
 mod imp {
     use super::*;
@@ -37,7 +37,7 @@ mod imp {
         /// The block shown in the panel, kept there when the day is saved.
         pub shown_block: RefCell<Option<BlockId>>,
         /// The pending save of the texts being typed.
-        pub text_save: RefCell<Option<glib::SourceId>>,
+        pub text_save: SaveTimer,
         /// The stateful actions `day.kind` and `day.location`, whose state
         /// is the value of the day shown.
         pub actions: gio::SimpleActionGroup,
@@ -350,9 +350,9 @@ impl DayView {
     /// elsewhere, keeping what is being typed.
     pub fn reload(&self) {
         let imp = self.imp();
-        if imp.text_save.borrow().is_some() {
+        if imp.text_save.cancel() {
             // Saving reads the changed file and keeps both changes.
-            self.save_texts_now();
+            self.save_texts();
             return;
         }
         let loaded = self.vault().load_day(self.date());
@@ -544,28 +544,16 @@ impl DayView {
     }
 
     fn save_texts_later(&self) {
-        let imp = self.imp();
-        if let Some(source) = imp.text_save.take() {
-            source.remove();
-        }
-        let source = glib::timeout_add_local_once(
-            Duration::from_secs(1),
-            glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move || {
-                    view.imp().text_save.take();
-                    view.save_texts();
-                }
-            ),
-        );
-        imp.text_save.replace(Some(source));
+        self.imp().text_save.schedule(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move || view.save_texts()
+        ));
     }
 
     /// Saves the texts being typed, if there are unsaved changes.
     pub fn save_texts_now(&self) {
-        if let Some(source) = self.imp().text_save.take() {
-            source.remove();
+        if self.imp().text_save.cancel() {
             self.save_texts();
         }
     }
@@ -762,9 +750,7 @@ impl DayView {
             return;
         }
         // What is being typed goes with the day.
-        if let Some(source) = self.imp().text_save.take() {
-            source.remove();
-        }
+        self.imp().text_save.cancel();
         if let Err(err) = self.vault().delete_day(date) {
             show_error(self, &gettext("Cannot Delete Day"), &err.to_string());
         }

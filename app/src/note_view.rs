@@ -2,7 +2,6 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::io;
 use std::rc::Rc;
-use std::time::Duration;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -13,10 +12,11 @@ use gtk::glib;
 
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
-use crate::format::format_full_date;
+use crate::format::{format_full_date, plural, title_markup};
 use crate::markdown_view::MarkdownView;
 use crate::project_view::note_menu;
 use crate::search_index::SearchIndex;
+use crate::widgets::SaveTimer;
 use crate::window::show_action;
 
 mod imp {
@@ -35,7 +35,7 @@ mod imp {
         /// The note shown, as last read or saved.
         pub file: RefCell<Option<NoteFile>>,
         /// Saves what is being typed a moment after the last key.
-        pub save: RefCell<Option<glib::SourceId>>,
+        pub save: SaveTimer,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
@@ -165,8 +165,8 @@ impl NoteView {
     /// the note is still there.
     pub fn reload(&self) -> bool {
         let imp = self.imp();
-        if imp.save.borrow().is_some() {
-            self.save_now();
+        if imp.save.cancel() {
+            self.save();
             return true;
         }
         let Some(note) = self.note() else {
@@ -229,8 +229,7 @@ impl NoteView {
                 for backlink in &backlinks {
                     imp.backlinks_list.append(&backlink_row(&vault, backlink));
                 }
-                let count = u32::try_from(backlinks.len()).unwrap_or(u32::MAX);
-                let label = ngettext("{count} Link", "{count} Links", count)
+                let label = ngettext("{count} Link", "{count} Links", plural(backlinks.len()))
                     .replace("{count}", &backlinks.len().to_string());
                 imp.backlinks_button.set_label(&label);
                 imp.backlinks_button.set_visible(!backlinks.is_empty());
@@ -253,35 +252,21 @@ impl NoteView {
     /// it is deleted.
     pub fn forget(&self) {
         let imp = self.imp();
-        if let Some(source) = imp.save.take() {
-            source.remove();
-        }
+        imp.save.cancel();
         imp.file.replace(None);
     }
 
     fn save_later(&self) {
-        let imp = self.imp();
-        if let Some(source) = imp.save.take() {
-            source.remove();
-        }
-        let source = glib::timeout_add_local_once(
-            Duration::from_secs(1),
-            glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move || {
-                    view.imp().save.take();
-                    view.save();
-                }
-            ),
-        );
-        imp.save.replace(Some(source));
+        self.imp().save.schedule(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move || view.save()
+        ));
     }
 
     /// Saves what is being typed, if there are unsaved changes.
     pub fn save_now(&self) {
-        if let Some(source) = self.imp().save.take() {
-            source.remove();
+        if self.imp().save.cancel() {
             self.save();
         }
     }
@@ -348,15 +333,14 @@ fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
             escaped(note.name()),
             vault.project_name(note.project()).to_owned(),
         ),
-        // Without a title, the project's name stands in for it, in italics.
-        Found::Block { date, .. } => (
-            match (&backlink.title, &backlink.project) {
-                (Some(title), _) => escaped(title),
-                (None, Some(project)) => format!("<i>{}</i>", escaped(vault.project_name(project))),
-                (None, None) => escaped(&gettext("Block")),
-            },
-            format_full_date(*date),
-        ),
+        Found::Block { date, .. } => {
+            let project = backlink.project.as_ref().map_or_else(
+                || gettext("Block"),
+                |project| vault.project_name(project).to_owned(),
+            );
+            let title = backlink.title.as_deref().unwrap_or_default();
+            (title_markup(title, &project), format_full_date(*date))
+        }
         Found::DayNote(date) => (escaped(&gettext("Day Note")), format_full_date(*date)),
         Found::Task(_) => unreachable!("tasks hold no links"),
     };

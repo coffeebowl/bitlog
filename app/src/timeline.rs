@@ -8,7 +8,7 @@ use chrono::Local;
 use glib::subclass::Signal;
 use gtk::{gdk, glib, graphene, gsk, pango};
 
-use crate::colors::{sea_green, with_alpha};
+use crate::colors::{self, sea_green, with_alpha};
 
 /// Height of one minute. A 15 minute block is just high enough for one line.
 const MINUTE_HEIGHT: f32 = 1.6;
@@ -621,10 +621,7 @@ impl Timeline {
                 ));
                 imp::Entry {
                     span: block.span(),
-                    color: project.map(|project| {
-                        gdk::RGBA::parse(project.color.as_str())
-                            .expect("the core only accepts valid colours")
-                    }),
+                    color: project.map(|project| colors::parse(&project.color)),
                     child,
                     lines,
                 }

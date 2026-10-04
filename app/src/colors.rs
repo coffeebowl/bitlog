@@ -1,13 +1,33 @@
 //! Colours the app draws with, beside those of the theme.
 
+use bitlog_core::{ProjectSlug, Vault};
 use gtk::gdk;
 
 /// For blocks of projects the vault does not know.
-pub const UNKNOWN_PROJECT_COLOR: &str = "#9a9996";
+const UNKNOWN_PROJECT_COLOR: &str = "#9a9996";
 
 /// The accent colour of the brand, used sparingly.
 pub fn sea_green() -> gdk::RGBA {
-    gdk::RGBA::parse("#3ba99c").expect("the colour is valid")
+    parse("#3ba99c")
+}
+
+/// `hex`, as in `#3584e4`, from the app or a project, whose colors the core
+/// checks.
+pub fn parse(hex: &str) -> gdk::RGBA {
+    gdk::RGBA::parse(hex).expect("the colors of the app and the core are valid")
+}
+
+/// The color of the project `slug`, as in `#3584e4`, gray for one the vault
+/// does not know.
+pub fn project_hex<'a>(vault: &'a Vault, slug: &ProjectSlug) -> &'a str {
+    vault
+        .project(slug)
+        .map_or(UNKNOWN_PROJECT_COLOR, |project| project.color.as_str())
+}
+
+/// The color of the project `slug`, gray for one the vault does not know.
+pub fn project_color(vault: &Vault, slug: &ProjectSlug) -> gdk::RGBA {
+    parse(project_hex(vault, slug))
 }
 
 /// `color` with its opacity scaled by `alpha`.

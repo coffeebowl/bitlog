@@ -1,9 +1,24 @@
-//! Dates, times and durations as the app shows them.
+//! Dates, times, durations and counts as the app shows them.
 
 use bitlog_core::ProjectStatus;
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeDelta};
 use gettextrs::gettext;
 use gtk::glib;
+
+/// `count` for choosing a plural form with `ngettext`.
+pub fn plural(count: usize) -> u32 {
+    u32::try_from(count).unwrap_or(u32::MAX)
+}
+
+/// The title of a block as Pango markup. Without a title, the name of its
+/// project stands in for it, in italics, as in the day's timeline.
+pub fn title_markup(title: &str, project_name: &str) -> String {
+    if title.is_empty() {
+        format!("<i>{}</i>", glib::markup_escape_text(project_name))
+    } else {
+        glib::markup_escape_text(title).to_string()
+    }
+}
 
 /// `date` formatted with the codes of g_date_time_format(), in the user's
 /// language.
@@ -142,5 +157,22 @@ pub fn capitalize(text: &str) -> String {
     match chars.next() {
         Some(first) => first.to_uppercase().chain(chars).collect(),
         None => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stand_in_titles_are_italic() {
+        assert_eq!(title_markup("Fix <b>", "Webshop"), "Fix &lt;b&gt;");
+        assert_eq!(title_markup("", "R&D"), "<i>R&amp;D</i>");
+    }
+
+    #[test]
+    fn plural_counts_fit() {
+        assert_eq!(plural(2), 2);
+        assert_eq!(plural(usize::MAX), u32::MAX);
     }
 }

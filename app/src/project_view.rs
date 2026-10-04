@@ -2,6 +2,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -17,15 +18,18 @@ use gtk::{gdk, gio, glib};
 
 use crate::alert::show_error;
 use crate::asset_preview::asset_page;
+use crate::colors;
 use crate::commit_dialog::CommitDialog;
 use crate::format::{
-    format_duration, format_full_date, format_share, format_time, format_weekday_date,
+    format_duration, format_full_date, format_share, format_time, format_weekday_date, plural,
+    title_markup,
 };
 use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::miniature::Miniature;
 use crate::note_dialogs::ask_name;
 use crate::search_index::{ProjectData, SearchIndex};
+use crate::widgets::param;
 use crate::window::show_action;
 
 /// Blocks the timeline shows at first and adds with "Load More".
@@ -52,7 +56,7 @@ mod imp {
         pub notes: RefCell<Vec<(NotePath, MarkdownView)>>,
         /// The assets in the grid, in its order, with their cards.
         pub assets: RefCell<Vec<(Asset, gtk::FlowBoxChild)>>,
-        pub vault: RefCell<Option<Vault>>,
+        pub vault: RefCell<Option<Rc<Vault>>>,
         pub index: RefCell<SearchIndex>,
         /// Counts the lookups in the index, so that one finishing after a
         /// newer one is dropped.
@@ -166,35 +170,37 @@ mod imp {
                 "assets.open",
                 Some(glib::VariantTy::STRING),
                 |view, _, asset| async move {
-                    view.open_asset(asset_param(asset.as_ref()), false).await;
+                    view.open_asset(param(asset.as_ref(), "assets"), false)
+                        .await;
                 },
             );
             klass.install_action_async(
                 "assets.open-with",
                 Some(glib::VariantTy::STRING),
                 |view, _, asset| async move {
-                    view.open_asset(asset_param(asset.as_ref()), true).await;
+                    view.open_asset(param(asset.as_ref(), "assets"), true).await;
                 },
             );
             klass.install_action_async(
                 "assets.show",
                 Some(glib::VariantTy::STRING),
                 |view, _, asset| async move {
-                    view.show_asset_in_folder(asset_param(asset.as_ref())).await;
+                    view.show_asset_in_folder(param(asset.as_ref(), "assets"))
+                        .await;
                 },
             );
             klass.install_action_async(
                 "assets.rename",
                 Some(glib::VariantTy::STRING),
                 |view, _, asset| async move {
-                    view.rename_asset(asset_param(asset.as_ref())).await;
+                    view.rename_asset(param(asset.as_ref(), "assets")).await;
                 },
             );
             klass.install_action_async(
                 "assets.trash",
                 Some(glib::VariantTy::STRING),
                 |view, _, asset| async move {
-                    view.trash_asset(asset_param(asset.as_ref())).await;
+                    view.trash_asset(param(asset.as_ref(), "assets")).await;
                 },
             );
         }
@@ -315,7 +321,7 @@ impl ProjectView {
 
     /// Shows `project` of `vault` with its notes, and looks up the time
     /// spent on it, its blocks and its commits in the background.
-    pub fn show(&self, vault: &Vault, project: &Project) {
+    pub fn show(&self, vault: &Rc<Vault>, project: &Project) {
         let imp = self.imp();
         let repo = vault
             .repo_paths()
@@ -437,7 +443,7 @@ impl ProjectView {
 impl ProjectView {
     /// Looks up the time spent on `project` and its newest blocks, then
     /// shows them.
-    fn look_up(&self, vault: &Vault, project: &Project) {
+    fn look_up(&self, vault: &Rc<Vault>, project: &Project) {
         let imp = self.imp();
         let lookup = imp.lookups.get() + 1;
         imp.lookups.set(lookup);
@@ -551,7 +557,7 @@ impl ProjectView {
             }
         }
         imp.activity.replace(activity.iter().copied().collect());
-        let color = gdk::RGBA::parse(project.color.as_str()).expect("project colors are valid");
+        let color = colors::parse(&project.color);
         imp.heatmap.show(
             activity.iter().map(|(date, time)| (*date, *time, color)),
             Heatmap::last_days(today, ACTIVITY_DAYS),
@@ -610,7 +616,7 @@ impl ProjectView {
 
 impl ProjectView {
     /// The vault shown, which the actions on assets need.
-    fn vault(&self) -> Vault {
+    fn vault(&self) -> Rc<Vault> {
         self.imp()
             .vault
             .borrow()
@@ -638,7 +644,8 @@ impl ProjectView {
         let Some(slug) = self.slug() else {
             return;
         };
-        let vault = self.vault();
+        // A copy for the thread copying.
+        let vault = Vault::clone(&self.vault());
         let paths: Vec<Option<PathBuf>> = files.iter().map(|file| file.path()).collect();
         let errors = gio::spawn_blocking(move || {
             paths
@@ -1100,11 +1107,6 @@ fn uncommitted_text(uncommitted: Uncommitted) -> String {
     parts.join(" · ")
 }
 
-/// `count` for choosing a plural form.
-fn plural(count: usize) -> u32 {
-    u32::try_from(count).unwrap_or(u32::MAX)
-}
-
 /// A commit in the log: its summary, then hash, author and time. The log
 /// shows it in detail when activated.
 fn commit_row(commit: &Commit) -> adw::ActionRow {
@@ -1133,12 +1135,6 @@ fn commit_row(commit: &Commit) -> adw::ActionRow {
         );
     }
     row
-}
-
-fn asset_param(param: Option<&glib::Variant>) -> AssetPath {
-    param
-        .and_then(|param| param.str()?.parse().ok())
-        .expect("asset actions take an asset path")
 }
 
 /// The message for a file chosen or dropped that has no local path.
@@ -1193,15 +1189,9 @@ fn block_action(block: &ProjectBlock) -> (&'static str, glib::Variant) {
 /// A block in the timeline: its title, or else the name of its project,
 /// its day and time and how long it took, opening it when activated.
 fn block_row(block: &ProjectBlock, project_name: &str, today: NaiveDate) -> adw::ActionRow {
-    // A stand-in title is in italics, as in the day's timeline.
-    let title = if block.title.is_empty() {
-        format!("<i>{}</i>", glib::markup_escape_text(project_name))
-    } else {
-        glib::markup_escape_text(&block.title).to_string()
-    };
     let minute = |minute: u32| format!("{:02}:{:02}", minute / 60 % 24, minute % 60);
     let row = adw::ActionRow::builder()
-        .title(title)
+        .title(title_markup(&block.title, project_name))
         .subtitle(glib::markup_escape_text(&format!(
             "{} · {}–{}",
             format_weekday_date(block.date, today),
@@ -1342,7 +1332,7 @@ fn page_card(
 fn preview_text(text: &str) -> &str {
     let end = text
         .match_indices('\n')
-        .nth(PREVIEW_LINES)
+        .nth(PREVIEW_LINES - 1)
         .map_or(text.len(), |(end, _)| end);
     &text[..end]
 }
@@ -1360,4 +1350,18 @@ pub fn note_menu(note: &NotePath) -> gio::Menu {
         menu.append_item(&item);
     }
     menu
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn previews_start_of_long_texts() {
+        assert_eq!(preview_text("# Notes\n\nShort."), "# Notes\n\nShort.");
+        let long: Vec<String> = (1..=80).map(|line| line.to_string()).collect();
+        let preview = preview_text(&long.join("\n")).to_owned();
+        assert_eq!(preview.lines().count(), PREVIEW_LINES);
+        assert!(preview.ends_with("\n50"));
+    }
 }

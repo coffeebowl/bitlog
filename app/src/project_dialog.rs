@@ -7,11 +7,12 @@ use adw::subclass::prelude::*;
 use bitlog_core::{EditError, Project, ProjectSlug, check_repo_path};
 use gettextrs::gettext;
 use glib::subclass::Signal;
-use gtk::{gdk, gio, glib};
+use gtk::{gio, glib};
 
 use crate::alert::show_error;
+use crate::colors;
 use crate::format::{PROJECT_STATUSES, status_name};
-use crate::preferences_dialog::changed;
+use crate::widgets::{changed, set_class};
 
 mod imp {
     use super::*;
@@ -145,8 +146,7 @@ impl ProjectDialog {
         let new = Project::new("new".parse().expect("valid slug"), "", today);
         let shown = project.unwrap_or(&new);
         imp.name_row.set_text(&shown.name);
-        imp.color_button
-            .set_rgba(&gdk::RGBA::parse(shown.color.as_str()).expect("project colors are valid"));
+        imp.color_button.set_rgba(&colors::parse(&shown.color));
         imp.category_row.set_text(&shown.category);
         let status = PROJECT_STATUSES
             .iter()
@@ -295,27 +295,16 @@ impl ProjectDialog {
             .map(|(_, name)| name);
         let slug_valid = !imp.slug_group.is_visible() || (slug.is_some() && owner.is_none());
         let slug_error = !slug_valid && !imp.slug_row.text().is_empty();
-        if slug_error {
-            imp.slug_row.add_css_class("error");
-        } else {
-            imp.slug_row.remove_css_class("error");
-        }
-        match owner {
+        set_class(&*imp.slug_row, "error", slug_error);
+        let hint = match owner {
             Some(name) => {
-                imp.slug_hint.set_label(
-                    &gettext("The project “{name}” already has this ID.").replace("{name}", name),
-                );
-                imp.slug_hint.remove_css_class("warning");
-                imp.slug_hint.add_css_class("error");
+                gettext("The project “{name}” already has this ID.").replace("{name}", name)
             }
-            None => {
-                imp.slug_hint.set_label(&gettext(
-                    "The ID can only be changed later on the command line.",
-                ));
-                imp.slug_hint.remove_css_class("error");
-                imp.slug_hint.add_css_class("warning");
-            }
-        }
+            None => gettext("The ID can only be changed later on the command line."),
+        };
+        imp.slug_hint.set_label(&hint);
+        set_class(&*imp.slug_hint, "error", owner.is_some());
+        set_class(&*imp.slug_hint, "warning", owner.is_none());
         imp.save_button
             .set_sensitive(!self.name().is_empty() && slug_valid);
     }

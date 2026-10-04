@@ -18,11 +18,12 @@ use crate::format::{
     PROJECT_STATUSES, format_full_date, format_short_date, format_time, format_weekday_date,
 };
 use crate::markdown_view::MarkdownView;
-use crate::note_dialogs::{self, note_param};
+use crate::note_dialogs;
 use crate::note_view::NoteView;
 use crate::project_view::{note_card, note_preview, note_text, show_preview};
 use crate::projects_page::shows;
 use crate::search_index::SearchIndex;
+use crate::widgets::param;
 
 /// A note in the list.
 #[derive(Debug)]
@@ -116,23 +117,23 @@ mod imp {
                 "notes.open",
                 Some(glib::VariantTy::STRING),
                 |page, _, note| {
-                    page.open_note(&note_param(note));
+                    page.open_note(&param(note, "notes"));
                 },
             );
             klass.install_action_async(
                 "notes.follow",
                 Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.follow_link(note_param(note.as_ref())).await },
+                |page, _, note| async move { page.follow_link(param(note.as_ref(), "notes")).await },
             );
             klass.install_action_async(
                 "notes.rename",
                 Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.rename_note(note_param(note.as_ref())).await },
+                |page, _, note| async move { page.rename_note(param(note.as_ref(), "notes")).await },
             );
             klass.install_action_async(
                 "notes.delete",
                 Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.delete_note(note_param(note.as_ref())).await },
+                |page, _, note| async move { page.delete_note(param(note.as_ref(), "notes")).await },
             );
         }
 

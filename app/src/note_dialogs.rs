@@ -10,14 +10,8 @@ use gettextrs::{gettext, ngettext};
 use gtk::glib;
 
 use crate::alert::show_error;
+use crate::format::plural;
 use crate::search_index::SearchIndex;
-
-/// The note an action of the group `notes` is about.
-pub fn note_param(param: Option<&glib::Variant>) -> NotePath {
-    param
-        .and_then(|param| param.str()?.parse().ok())
-        .expect("note actions take a note path")
-}
 
 /// Asks for the name of a note in `project`, starting with `name`.
 /// Returns `None` if the user cancels.
@@ -191,11 +185,10 @@ async fn ask_update_links(
     note: &NotePath,
     others: usize,
 ) -> Option<bool> {
-    let count = u32::try_from(others).unwrap_or(u32::MAX);
     let body = ngettext(
         "{count} other place links to “{name}”. Should the link point to the new name?",
         "{count} other places link to “{name}”. Should the links point to the new name?",
-        count,
+        plural(others),
     )
     .replace("{count}", &others.to_string())
     .replace("{name}", note.name());

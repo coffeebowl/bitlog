@@ -105,6 +105,14 @@ impl SyncConflictDialog {
         Ok(dialog)
     }
 
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("the dialog is set up with a vault")
+    }
+
     pub fn connect_merged(&self, callback: impl Fn() + 'static) {
         self.connect_closure(
             "merged",
@@ -166,7 +174,7 @@ impl SyncConflictDialog {
             .filter(|(_, toggles)| toggles.active_name().as_deref() == Some("copy"))
             .map(|(contradiction, _)| contradiction.clone())
             .collect();
-        let vault = imp.vault.borrow().clone().expect("set up with a vault");
+        let vault = self.vault();
         let copy = imp.copy.borrow().clone().expect("set up with a copy");
         match vault.merge_conflict(&copy, &theirs) {
             Ok(()) => {

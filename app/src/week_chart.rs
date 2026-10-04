@@ -231,3 +231,25 @@ fn running_totals(hours: impl Iterator<Item = Option<f32>>) -> Vec<f32> {
 fn hours_label(hours: f32) -> String {
     format_duration(TimeDelta::minutes((hours * 60.0).round() as i64))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scale_fits_value_in_few_lines() {
+        assert_eq!(scale(0.0), (0.0, 1.0));
+        assert_eq!(scale(4.0), (4.0, 1.0));
+        assert_eq!(scale(7.5), (8.0, 2.0));
+        assert_eq!(scale(40.0), (40.0, 8.0));
+        assert_eq!(scale(41.0), (50.0, 10.0));
+        assert_eq!(scale(1500.0), (1600.0, 200.0));
+    }
+
+    #[test]
+    fn totals_run_until_the_first_missing_day() {
+        let hours = [Some(1.0), Some(2.5), None, Some(4.0)];
+        assert_eq!(running_totals(hours.into_iter()), [1.0, 3.5]);
+        assert!(running_totals([None, Some(1.0)].into_iter()).is_empty());
+    }
+}

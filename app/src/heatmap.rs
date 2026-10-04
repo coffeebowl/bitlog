@@ -385,3 +385,20 @@ fn level(time: TimeDelta) -> f32 {
         _ => 1.0,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn levels_grow_with_time() {
+        let level_at = |minutes| level(TimeDelta::minutes(minutes));
+        assert_eq!(level_at(0), 0.0);
+        assert_eq!(level_at(1), 0.3);
+        assert_eq!(level_at(59), 0.3);
+        assert_eq!(level_at(60), 0.5);
+        assert_eq!(level_at(239), 0.75);
+        assert_eq!(level_at(240), 1.0);
+        assert_eq!(level_at(600), 1.0);
+    }
+}

@@ -12,6 +12,7 @@ use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::format::{format_date, format_duration, format_time};
+use crate::widgets::{changed, set_class};
 
 /// The block lengths offered, besides the one set.
 const SLOT_MINUTES: [u32; 6] = [5, 10, 15, 20, 30, 60];
@@ -175,15 +176,6 @@ const WEEKDAYS: [Weekday; 7] = [
     Weekday::Sun,
 ];
 
-/// Sets `field` to `entered` if that differs from `shown`, the value the
-/// dialog started with, so that a value changed elsewhere meanwhile is kept
-/// unless the user changed it too.
-pub fn changed<T: PartialEq>(field: &mut T, shown: &T, entered: T) {
-    if entered != *shown {
-        *field = entered;
-    }
-}
-
 /// The name of `weekday` in the user's language.
 fn weekday_name(weekday: Weekday) -> String {
     weekday_label(weekday, "%A")
@@ -195,15 +187,6 @@ fn weekday_label(weekday: Weekday, format: &str) -> String {
     let monday = NaiveDate::from_ymd_opt(2026, 9, 21).expect("valid date");
     let date = monday + TimeDelta::days(weekday.num_days_from_monday().into());
     format_date(date, format)
-}
-
-/// Shows `row` as invalid if `error` is set.
-fn mark_error(row: &impl IsA<gtk::Widget>, error: bool) {
-    if error {
-        row.add_css_class("error");
-    } else {
-        row.remove_css_class("error");
-    }
 }
 
 /// The times offered for the day view: every half hour, and `set`.
@@ -435,9 +418,9 @@ impl PreferencesDialog {
         }
         let (start, end) = self.day_range();
         let range_valid = start < end;
-        mark_error(&*imp.day_end_row, !range_valid);
+        set_class(&*imp.day_end_row, "error", !range_valid);
         let has_workday = !self.workdays().is_empty();
-        mark_error(&*imp.workdays_row, !has_workday);
+        set_class(&*imp.workdays_row, "error", !has_workday);
         imp.save_button
             .set_sensitive(!self.name().is_empty() && range_valid && has_workday);
     }

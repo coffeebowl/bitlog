@@ -29,6 +29,7 @@ mod task_list_view;
 mod tasks_page;
 mod timeline;
 mod week_chart;
+mod widgets;
 mod window;
 
 use adw::prelude::*;
