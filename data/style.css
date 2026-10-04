@@ -78,8 +78,8 @@ flowboxchild.page-card {
   background-color: color-mix(in srgb, var(--accent-bg-color) 10%, transparent);
 }
 
-/* Projects are moved in their list by dragging them: the row taken away is
-   dimmed, a line shows where it goes, and it moves as a card. */
+/* Projects and tasks are moved in their lists by dragging them: the row
+   taken away is dimmed, a line shows where it goes, and it moves as a card. */
 row.dragging {
   opacity: 0.4;
 }
@@ -92,7 +92,7 @@ row.drop-after {
   box-shadow: inset 0 -2px var(--accent-bg-color);
 }
 
-.dragged-project {
+.dragged-row {
   background-color: var(--card-bg-color);
   border-radius: 12px;
   box-shadow:

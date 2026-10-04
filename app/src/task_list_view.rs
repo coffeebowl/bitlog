@@ -10,7 +10,7 @@ use gtk::{gdk, gio, glib};
 
 use crate::alert::{show_error, toast_overlay};
 use crate::format::{format_short_date, glib_date, naive_date};
-use crate::widgets::param;
+use crate::widgets::{drag_handle, make_movable, param};
 
 mod imp {
     use super::*;
@@ -241,11 +241,7 @@ impl TaskListView {
     /// An open task: drag it, tick it off, edit its title and due date, move
     /// or drop it.
     fn task_row(&self, task: &Task, today: NaiveDate) -> gtk::ListBoxRow {
-        let handle = gtk::Image::builder()
-            .icon_name("list-drag-handle-symbolic")
-            .tooltip_text(gettext("Drag to Move"))
-            .css_classes(["dim-label"])
-            .build();
+        let handle = drag_handle();
         let title = gtk::Entry::builder()
             .text(&task.title)
             .hexpand(true)
@@ -324,7 +320,18 @@ impl TaskListView {
         ));
         title.add_controller(focus);
         title.connect_activate(move |_| save_title());
-        self.setup_drag(&row, &handle, &task.id);
+        let id = task.id.clone();
+        let on_drop = glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |dragged: String, below| {
+                if let Ok(dragged) = dragged.parse() {
+                    view.drop_task(&dragged, &id, below);
+                }
+            }
+        );
+        let accepts = |dragged: &str| dragged.parse::<TaskId>().is_ok();
+        make_movable(&row, &handle, task.id.to_string(), accepts, on_drop);
         row
     }
 
@@ -418,71 +425,6 @@ impl TaskListView {
         };
         row.set_subtitle(&subtitle);
         row
-    }
-
-    /// Lets the task of `row` be dragged by `handle` and other tasks be
-    /// dropped on `row`, above or below it.
-    fn setup_drag(&self, row: &gtk::ListBoxRow, handle: &gtk::Image, id: &TaskId) {
-        let source = gtk::DragSource::builder()
-            .actions(gdk::DragAction::MOVE)
-            .content(&gdk::ContentProvider::for_value(&id.as_str().to_value()))
-            .build();
-        source.connect_drag_begin(glib::clone!(
-            #[weak]
-            row,
-            move |source, _| {
-                source.set_icon(Some(&gtk::WidgetPaintable::new(Some(&row))), 0, 0);
-            }
-        ));
-        handle.add_controller(source);
-
-        let target = gtk::DropTarget::new(glib::Type::STRING, gdk::DragAction::MOVE);
-        target.connect_motion(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            #[weak]
-            row,
-            #[upgrade_or]
-            gdk::DragAction::empty(),
-            move |_, _, _| {
-                view.imp().list.drag_highlight_row(&row);
-                gdk::DragAction::MOVE
-            }
-        ));
-        target.connect_leave(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_| view.imp().list.drag_unhighlight_row()
-        ));
-        let id = id.clone();
-        target.connect_drop(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            #[weak]
-            row,
-            #[upgrade_or]
-            false,
-            move |_, value, _, y| {
-                view.imp().list.drag_unhighlight_row();
-                let Some(dragged) = value
-                    .get::<String>()
-                    .ok()
-                    .and_then(|text| text.parse::<TaskId>().ok())
-                else {
-                    return false;
-                };
-                let below = y > f64::from(row.height()) / 2.0;
-                let id = id.clone();
-                // Not while the row that takes the drop is being replaced.
-                glib::idle_add_local_once(glib::clone!(
-                    #[weak]
-                    view,
-                    move || view.drop_task(&dragged, &id, below)
-                ));
-                true
-            }
-        ));
-        row.add_controller(target);
     }
 
     /// Moves the task `dragged` above or below the task `target`.
