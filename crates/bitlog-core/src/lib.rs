@@ -44,7 +44,7 @@ pub use markdown::{
     Callout, CalloutKind, CodeBlock, Continuation, Formatting, InlineMarkup, ListIndent,
     MarkdownMode, MarkdownStyle, TableLine, TaskItem, WebLink, closing_fence, continue_list,
     continue_quote, continue_table, escape_headings, markdown_formatting, nest_list_item,
-    pairs_bracket, tidied_table, typed_link_target,
+    pairs_bracket, pasted_link, tidied_table, typed_link_target,
 };
 pub use notes::{NoteFile, SavedNote, WikiLink, link_target, wiki_links};
 pub use period::{Period, week_start};

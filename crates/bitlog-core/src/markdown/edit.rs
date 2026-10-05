@@ -1,6 +1,6 @@
-//! What Enter and Tab do in lists, quotes and tables, `[` anywhere and the
-//! opening fence of a code block, as edits of the text, and which wiki link
-//! is being typed.
+//! What Enter and Tab do in lists, quotes and tables, `[` anywhere, the
+//! opening fence of a code block and a web address pasted over a selection,
+//! as edits of the text, and which wiki link is being typed.
 
 use std::ops::Range;
 
@@ -257,6 +257,47 @@ pub fn closing_fence(text: &str, mode: MarkdownMode, at: usize) -> Option<String
     opens_unclosed_block.then(|| format!("\n{indent}{fence}"))
 }
 
+/// The link to put in place of the `selection` in `text` when `pasted` is
+/// pasted over it, as in `[selection](https://example.com)`: if `pasted` is
+/// a web address and the selection plain text on one line, outside code and
+/// links. Otherwise, pasting replaces the selection as usual.
+pub fn pasted_link(
+    text: &str,
+    mode: MarkdownMode,
+    selection: Range<usize>,
+    pasted: &str,
+) -> Option<String> {
+    let url = pasted.trim();
+    let selected = &text[selection.clone()];
+    if !is_web_address(url)
+        || selected.trim().is_empty()
+        || selected.contains(['\n', '[', ']'])
+        || is_web_address(selected.trim())
+    {
+        return None;
+    }
+    let formatting = markdown_formatting(text, mode);
+    let overlaps =
+        |range: &Range<usize>| range.start < selection.end && selection.start < range.end;
+    let in_code_or_link = formatting.styles.iter().any(|(range, style)| {
+        matches!(
+            style,
+            MarkdownStyle::Code | MarkdownStyle::CodeBlock | MarkdownStyle::Link
+        ) && overlaps(range)
+    }) || formatting
+        .web_links
+        .iter()
+        .any(|link| overlaps(&link.range));
+    (!in_code_or_link).then(|| format!("[{selected}]({url})"))
+}
+
+fn is_web_address(text: &str) -> bool {
+    ["https://", "http://"].iter().any(|scheme| {
+        text.strip_prefix(scheme)
+            .is_some_and(|rest| !rest.is_empty() && !rest.contains(char::is_whitespace))
+    })
+}
+
 /// The target of the wiki link being typed at `at` in `text`, as a byte
 /// range: from after its `[[` to the next `]`, `|`, `#` or the end of the
 /// line. `None` if `at` is in no wiki link, or after its `|` or `#`.
@@ -330,6 +371,41 @@ mod tests {
         assert_eq!(closing("```^rust"), None);
         assert_eq!(closing("````^"), None);
         assert_eq!(closing("a ```^"), None);
+    }
+
+    #[test]
+    fn web_addresses_pasted_over_text_link_it() {
+        // With the selection between `^`.
+        let link = |text: &str, pasted: &str| {
+            let start = text.find('^').expect("the text has a selection");
+            let end = text.rfind('^').expect("the text has a selection") - 1;
+            pasted_link(
+                &text.replace('^', ""),
+                MarkdownMode::Block,
+                start..end,
+                pasted,
+            )
+        };
+        let url = "https://example.com/a_(b)";
+        assert_eq!(
+            link("See ^the docs^ there", &format!(" {url}\n")).as_deref(),
+            Some("[the docs](https://example.com/a_(b))")
+        );
+        assert_eq!(
+            link("**^bold^**", url).as_deref(),
+            Some("[bold](https://example.com/a_(b))")
+        );
+        assert_eq!(link("^text^", "no address"), None);
+        assert_eq!(link("^text^", "https://"), None);
+        assert_eq!(link("^text^", "https://a b"), None);
+        assert_eq!(link("^https://old^", url), None);
+        assert_eq!(link("^two\nlines^", url), None);
+        assert_eq!(link("^[x]^", url), None);
+        assert_eq!(link("`^code^`", url), None);
+        assert_eq!(link("[^text^](https://old)", url), None);
+        assert_eq!(link("[text](https://^old^)", url), None);
+        assert_eq!(link("[[^note^]]", url), None);
+        assert_eq!(link("```\n^code^\n```", url), None);
     }
 
     /// What Enter does at the end of the line with `at` in `text`.

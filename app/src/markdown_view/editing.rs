@@ -1,5 +1,6 @@
 //! Editing helpers: check boxes, list items, brackets, fences of code
-//! blocks, markers around the selection and tidying up tables.
+//! blocks, links of pasted web addresses, markers around the selection and
+//! tidying up tables.
 
 use std::cell::Cell;
 use std::ops::Range;
@@ -7,7 +8,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{closing_fence, pairs_bracket};
+use bitlog_core::{closing_fence, pairs_bracket, pasted_link};
 use gtk::{gdk, glib};
 
 use super::check_boxes::CheckBox;
@@ -160,6 +161,62 @@ impl MarkdownView {
                 }
             ),
         );
+    }
+
+    /// Makes a link of a web address pasted over a selection, where
+    /// `pasted_link` says so. The clipboard is read in the background, so
+    /// GTK does not paste by itself while there is a selection.
+    pub(super) fn link_pasted_addresses(&self) {
+        self.connect_paste_clipboard(|view| {
+            let Some((start, end)) = view.buffer().selection_bounds() else {
+                return;
+            };
+            view.stop_signal_emission_by_name("paste-clipboard");
+            let selection = start.offset()..end.offset();
+            glib::spawn_future_local(glib::clone!(
+                #[weak]
+                view,
+                async move {
+                    let clipboard = view.clipboard();
+                    let pasted = clipboard.read_text_future().await.ok().flatten();
+                    view.paste_over(selection, pasted.as_deref(), &clipboard);
+                }
+            ));
+        });
+    }
+
+    /// Puts the link for `pasted` in place of the `selection`, if it is
+    /// still selected, or pastes as GTK does.
+    fn paste_over(&self, selection: Range<i32>, pasted: Option<&str>, clipboard: &gdk::Clipboard) {
+        let buffer = self.buffer();
+        let link = buffer
+            .selection_bounds()
+            .filter(|(start, end)| (start.offset()..end.offset()) == selection)
+            .zip(pasted)
+            .and_then(|((start, end), pasted)| {
+                let before = buffer.text(&buffer.start_iter(), &start, true);
+                let selected = buffer.text(&start, &end, true);
+                let text = format!(
+                    "{before}{selected}{}",
+                    buffer.text(&end, &buffer.end_iter(), true)
+                );
+                let bytes = before.len()..before.len() + selected.len();
+                pasted_link(&text, self.mode(), bytes, pasted)
+            });
+        match link {
+            Some(link) => {
+                let (mut start, mut end) = (
+                    buffer.iter_at_offset(selection.start),
+                    buffer.iter_at_offset(selection.end),
+                );
+                buffer.begin_user_action();
+                buffer.delete(&mut start, &mut end);
+                buffer.insert(&mut start, &link);
+                buffer.end_user_action();
+            }
+            None => buffer.paste_clipboard(clipboard, None, self.is_editable()),
+        }
+        self.scroll_mark_onscreen(&buffer.get_insert());
     }
 
     /// Types `[` with the `]` closing it, where `pairs_bracket` says so, or
