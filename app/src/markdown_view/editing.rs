@@ -1,6 +1,6 @@
 //! Editing helpers: check boxes, list items, brackets, fences of code
-//! blocks, links of pasted web addresses, markers around the selection and
-//! tidying up tables.
+//! blocks, links of pasted web addresses, markers around the selection,
+//! toggling tasks and tidying up tables.
 
 use std::cell::Cell;
 use std::ops::Range;
@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{closing_fence, pairs_bracket, pasted_link};
+use bitlog_core::{closing_fence, pairs_bracket, pasted_link, toggled_tasks};
 use gtk::{gdk, glib};
 
 use super::check_boxes::CheckBox;
@@ -219,6 +219,39 @@ impl MarkdownView {
             None => buffer.paste_clipboard(clipboard, None, self.is_editable()),
         }
         self.scroll_mark_onscreen(&buffer.get_insert());
+    }
+
+    /// Toggles the lines of the selection, or that of the cursor, as tasks,
+    /// as `toggled_tasks` says. The cursor and the selection keep their
+    /// place in the text of their lines.
+    pub(super) fn toggle_tasks(&self) {
+        let buffer = self.buffer();
+        let (start, end) = buffer.selection_bounds().unwrap_or_else(|| {
+            let cursor = buffer.iter_at_mark(&buffer.get_insert());
+            (cursor, cursor)
+        });
+        let byte_offset =
+            |iter: &gtk::TextIter| buffer.text(&buffer.start_iter(), iter, true).len();
+        let selection = byte_offset(&start)..byte_offset(&end);
+        // Counted from the end of their lines, which stays as it is.
+        let place = |iter: &gtk::TextIter| (iter.line(), iter.chars_in_line() - iter.line_offset());
+        let (start_place, end_place) = (place(&start), place(&end));
+        let text = buffer.text(&buffer.start_iter(), &buffer.end_iter(), true);
+        let chars = |byte: usize| i32::try_from(text[..byte].chars().count()).expect("texts fit");
+        buffer.begin_user_action();
+        for (range, line) in toggled_tasks(&text, selection).into_iter().rev() {
+            let mut line_start = buffer.iter_at_offset(chars(range.start));
+            let mut line_end = buffer.iter_at_offset(chars(range.end));
+            buffer.delete(&mut line_start, &mut line_end);
+            buffer.insert(&mut line_start, &line);
+        }
+        let at_place = |(line, from_end): (i32, i32)| {
+            let mut iter = buffer.iter_at_line(line).expect("lines stay");
+            iter.set_line_offset((iter.chars_in_line() - from_end).max(0));
+            iter
+        };
+        buffer.select_range(&at_place(end_place), &at_place(start_place));
+        buffer.end_user_action();
     }
 
     /// Puts the selection between `open` and `close`, and keeps it

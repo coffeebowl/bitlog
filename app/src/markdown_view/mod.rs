@@ -47,7 +47,12 @@ const GRID_ALPHA: f32 = 0.2;
 /// Of code blocks and tables.
 const CORNER_RADIUS: f32 = 6.0;
 /// The actions that change the text, only enabled while it is editable.
-const EDIT_ACTIONS: [&str; 3] = ["markdown.bold", "markdown.italic", "markdown.code"];
+const EDIT_ACTIONS: [&str; 4] = [
+    "markdown.bold",
+    "markdown.italic",
+    "markdown.code",
+    "markdown.toggle-task",
+];
 
 /// Tells the wiki links of a text apart, see `MarkdownView::set_wiki_links`.
 #[derive(Debug)]
@@ -110,6 +115,13 @@ mod imp {
                 klass.install_action(action, None, move |view, _, _| view.toggle_marker(marker));
                 klass.add_binding_action(key, gdk::ModifierType::CONTROL_MASK, action);
             }
+            // As in Obsidian.
+            klass.install_action(EDIT_ACTIONS[3], None, |view, _, _| view.toggle_tasks());
+            klass.add_binding_action(
+                gdk::Key::l,
+                gdk::ModifierType::CONTROL_MASK,
+                EDIT_ACTIONS[3],
+            );
             // Enter alone starts a new line.
             klass.install_action("markdown.follow-link", None, |view, _, _| {
                 let buffer = view.buffer();

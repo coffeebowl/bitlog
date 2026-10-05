@@ -1,6 +1,6 @@
 //! What Enter and Tab do in lists, quotes and tables, `[` anywhere, the
-//! opening fence of a code block and a web address pasted over a selection,
-//! as edits of the text, and which wiki link is being typed.
+//! opening fence of a code block, a web address pasted over a selection and
+//! toggling tasks, as edits of the text, and which wiki link is being typed.
 
 use std::ops::Range;
 
@@ -298,6 +298,74 @@ fn is_web_address(text: &str) -> bool {
     })
 }
 
+/// The lines of the `selection` in `text` toggled as tasks, as in Obsidian:
+/// text and list items become open tasks, open tasks are checked, checked
+/// ones opened again. As the byte range of each line, without its line
+/// break, and its new text.
+pub fn toggled_tasks(text: &str, selection: Range<usize>) -> Vec<(Range<usize>, String)> {
+    // A selection up to the start of a line leaves that line alone.
+    let end = if selection.end > selection.start && text[..selection.end].ends_with('\n') {
+        selection.end - 1
+    } else {
+        selection.end
+    };
+    let mut edits = Vec::new();
+    let mut start = line_start(text, selection.start);
+    loop {
+        let line_end = text[start..]
+            .find('\n')
+            .map_or(text.len(), |end| start + end);
+        let line = text[start..line_end].trim_end_matches('\r');
+        edits.push((start..start + line.len(), toggled_task(line)));
+        if line_end >= end {
+            return edits;
+        }
+        start = line_end + 1;
+    }
+}
+
+fn toggled_task(line: &str) -> String {
+    let rest = line.trim_start_matches([' ', '\t', '>']);
+    let indent = &line[..line.len() - rest.len()];
+    let (marker, rest) = rest.split_at(list_marker_len(rest).unwrap_or(0));
+    let marker = if marker.is_empty() { "- " } else { marker };
+    let check_box = |mark: &str| {
+        rest.strip_prefix(mark)
+            .filter(|text| text.is_empty() || text.starts_with(' '))
+    };
+    let task = if let Some(text) = check_box("[ ]") {
+        format!("[x]{text}")
+    } else if let Some(text) = check_box("[x]").or_else(|| check_box("[X]")) {
+        format!("[ ]{text}")
+    } else {
+        format!("[ ] {rest}")
+    };
+    format!("{indent}{marker}{task}")
+}
+
+/// The length of the marker of a list item at the start of `text`, with
+/// the space after it, as in `- ` or `12. `.
+fn list_marker_len(text: &str) -> Option<usize> {
+    let digits = text.len() - text.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+    let marker = match digits {
+        0 => text
+            .chars()
+            .next()
+            .filter(|c| matches!(c, '-' | '*' | '+'))?
+            .len_utf8(),
+        1..=9 => {
+            digits
+                + text[digits..]
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '.' | ')'))?
+                    .len_utf8()
+        }
+        _ => return None,
+    };
+    text[marker..].starts_with(' ').then_some(marker + 1)
+}
+
 /// The target of the wiki link being typed at `at` in `text`, as a byte
 /// range: from after its `[[` to the next `]`, `|`, `#` or the end of the
 /// line. `None` if `at` is in no wiki link, or after its `|` or `#`.
@@ -406,6 +474,32 @@ mod tests {
         assert_eq!(link("[text](https://^old^)", url), None);
         assert_eq!(link("[[^note^]]", url), None);
         assert_eq!(link("```\n^code^\n```", url), None);
+    }
+
+    #[test]
+    fn tasks_toggle_line_by_line() {
+        let toggled = |text: &str, selection: Range<usize>| -> Vec<String> {
+            toggled_tasks(text, selection)
+                .into_iter()
+                .map(|(range, line)| format!("{}→{line}", &text[range]))
+                .collect()
+        };
+        assert_eq!(toggled("Call Anna", 3..3), ["Call Anna→- [ ] Call Anna"]);
+        assert_eq!(toggled("", 0..0), ["→- [ ] "]);
+        assert_eq!(toggled("a\n", 2..2), ["→- [ ] "]);
+        assert_eq!(
+            toggled("- [ ] a\n  * [x] b\r\n> 2. [X]\n-x", 0..30),
+            [
+                "- [ ] a→- [x] a",
+                "  * [x] b→  * [ ] b",
+                "> 2. [X]→> 2. [ ]",
+                "-x→- [ ] -x",
+            ]
+        );
+        // Lists and check boxes need their spaces.
+        assert_eq!(toggled("1. [ ]x", 0..0), ["1. [ ]x→1. [ ] [ ]x"]);
+        // The line after the selection is not in it.
+        assert_eq!(toggled("a\nb\nc", 2..4), ["b→- [ ] b"]);
     }
 
     /// What Enter does at the end of the line with `at` in `text`.
