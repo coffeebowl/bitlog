@@ -48,11 +48,11 @@ const CORNER_RADIUS: f32 = 6.0;
 /// The actions that change the text, only enabled while it is editable.
 const EDIT_ACTIONS: [&str; 3] = ["markdown.bold", "markdown.italic", "markdown.code"];
 
-/// Tells the wiki links of a project note apart, see
-/// `MarkdownView::set_wiki_links`.
+/// Tells the wiki links of a text apart, see `MarkdownView::set_wiki_links`.
 #[derive(Debug)]
 pub struct WikiLinks {
-    project: ProjectSlug,
+    /// That of the text, which short links like `[[name]]` point into.
+    project: Option<ProjectSlug>,
     /// The notes there are, of all projects.
     existing: HashSet<NotePath>,
 }
@@ -72,7 +72,7 @@ mod imp {
         pub placeholder: RefCell<String>,
         /// Whether the text is being replaced, which is no edit.
         pub loading: Cell<bool>,
-        /// Set for project notes, whose wiki links can be followed.
+        /// Set for texts whose wiki links can be followed.
         pub wiki_links: RefCell<Option<WikiLinks>>,
         /// The links in the text as last styled, as character ranges with
         /// where they lead.
@@ -185,7 +185,7 @@ mod imp {
             view.connect_full_notify(|view| view.restyle());
             view.follow_links_on_click();
             view.toggle_check_boxes_on_click();
-            view.edit_lists_by_keys();
+            view.edit_by_keys();
 
             let style_manager = adw::StyleManager::default();
             set_style_scheme(&view, &style_manager);
@@ -315,9 +315,10 @@ impl MarkdownView {
         );
     }
 
-    /// Makes the wiki links of this note of `project` followable, and dims
-    /// those to notes missing from `existing`.
-    pub fn set_wiki_links(&self, project: ProjectSlug, existing: HashSet<NotePath>) {
+    /// Makes the wiki links of this text of `project` followable, and dims
+    /// those to notes missing from `existing`. A day note belongs to no
+    /// project.
+    pub fn set_wiki_links(&self, project: Option<ProjectSlug>, existing: HashSet<NotePath>) {
         self.imp()
             .wiki_links
             .replace(Some(WikiLinks { project, existing }));
@@ -401,7 +402,7 @@ impl MarkdownView {
 
         let mut links = Vec::new();
         if let Some(wiki) = &*imp.wiki_links.borrow() {
-            for link in wiki_links(&text, Some(&wiki.project)) {
+            for link in wiki_links(&text, wiki.project.as_ref()) {
                 if !link
                     .note
                     .as_ref()

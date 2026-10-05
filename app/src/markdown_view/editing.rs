@@ -1,10 +1,11 @@
-//! Editing helpers: check boxes, list items, markers around the selection
-//! and tidying up tables.
+//! Editing helpers: check boxes, list items, brackets, markers around the
+//! selection and tidying up tables.
 
 use std::ops::Range;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
+use bitlog_core::pairs_bracket;
 use gtk::{gdk, glib};
 
 use super::check_boxes::CheckBox;
@@ -78,8 +79,9 @@ impl MarkdownView {
     /// In list items, Tab nests the item deeper, Shift+Tab less deep, and
     /// Enter starts the next item, as it starts the next row in tables,
     /// before the view would handle the keys. Shift+Enter still only
-    /// breaks the line.
-    pub(super) fn edit_lists_by_keys(&self) {
+    /// breaks the line. Brackets come in pairs, so that wiki links are
+    /// quick to type.
+    pub(super) fn edit_by_keys(&self) {
         let keys = gtk::EventControllerKey::new();
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);
         keys.connect_key_pressed(glib::clone!(
@@ -101,6 +103,9 @@ impl MarkdownView {
                     gdk::Key::Return | gdk::Key::KP_Enter if !shift => {
                         lists::continue_item(view.upcast_ref(), view.mode())
                     }
+                    gdk::Key::bracketleft => view.type_bracket(),
+                    gdk::Key::bracketright => view.skip_bracket(),
+                    gdk::Key::BackSpace => view.delete_brackets(),
                     _ => false,
                 };
                 if is_handled {
@@ -111,6 +116,68 @@ impl MarkdownView {
             }
         ));
         self.add_controller(keys);
+    }
+
+    /// Types `[` with the `]` closing it, where `pairs_bracket` says so, or
+    /// puts the selection in brackets. Whether that took the key.
+    fn type_bracket(&self) -> bool {
+        let buffer = self.buffer();
+        if let Some((start, end)) = buffer.selection_bounds() {
+            let (start, end) = (start.offset(), end.offset());
+            buffer.begin_user_action();
+            buffer.insert(&mut buffer.iter_at_offset(end), "]");
+            buffer.insert(&mut buffer.iter_at_offset(start), "[");
+            buffer.select_range(
+                &buffer.iter_at_offset(start + 1),
+                &buffer.iter_at_offset(end + 1),
+            );
+            buffer.end_user_action();
+            return true;
+        }
+        let (text, at) = lists::text_and_cursor(&buffer);
+        if !pairs_bracket(&text, at) {
+            return false;
+        }
+        buffer.begin_user_action();
+        buffer.insert_at_cursor("[]");
+        let mut cursor = buffer.iter_at_mark(&buffer.get_insert());
+        cursor.backward_char();
+        buffer.place_cursor(&cursor);
+        buffer.end_user_action();
+        true
+    }
+
+    /// Steps over the `]` at the cursor instead of typing another one, as
+    /// it may have come with its `[`. Whether there is one.
+    fn skip_bracket(&self) -> bool {
+        let buffer = self.buffer();
+        let mut cursor = buffer.iter_at_mark(&buffer.get_insert());
+        if buffer.has_selection() || cursor.char() != ']' {
+            return false;
+        }
+        cursor.forward_char();
+        buffer.place_cursor(&cursor);
+        true
+    }
+
+    /// Takes away both brackets of an empty pair at the cursor, as they
+    /// may have been typed together. Whether there is one.
+    fn delete_brackets(&self) -> bool {
+        let buffer = self.buffer();
+        let mut end = buffer.iter_at_mark(&buffer.get_insert());
+        let mut start = end;
+        if buffer.has_selection()
+            || end.char() != ']'
+            || !start.backward_char()
+            || start.char() != '['
+        {
+            return false;
+        }
+        end.forward_char();
+        buffer.begin_user_action();
+        buffer.delete(&mut start, &mut end);
+        buffer.end_user_action();
+        true
     }
 
     /// Puts `marker` around the selection, or at the cursor, and selects

@@ -287,6 +287,7 @@ impl Window {
             })
             .collect();
         if !notes.is_empty() {
+            imp.day_view.update_links();
             imp.projects_page.notes_changed(&notes);
             if self.shows(&imp.notes_page) {
                 imp.notes_page.reload();

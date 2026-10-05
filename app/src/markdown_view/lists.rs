@@ -218,7 +218,7 @@ pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
 }
 
 /// The text of `buffer` and the byte offset of its cursor.
-fn text_and_cursor(buffer: &gtk::TextBuffer) -> (glib::GString, usize) {
+pub(super) fn text_and_cursor(buffer: &gtk::TextBuffer) -> (glib::GString, usize) {
     let (start, end) = buffer.bounds();
     let text = buffer.text(&start, &end, true);
     let cursor = buffer.iter_at_mark(&buffer.get_insert()).offset();

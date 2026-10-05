@@ -18,11 +18,12 @@ use crate::alert::show_error;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs::confirm_delete;
+use crate::note_view::existing_notes;
 use crate::project_picker::project_popover;
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
-use crate::widgets::SaveTimer;
+use crate::widgets::{SaveTimer, param};
 use block_panel::spin_time;
 
 mod block_panel;
@@ -110,6 +111,11 @@ mod imp {
             klass.install_action("day.create", None, |view, _, _| view.create_day());
             klass.install_action("day.new-block", None, |view, _, _| view.new_block());
             klass.install_action("day.standup", None, |view, _, _| view.show_standup());
+            klass.install_action_async(
+                "day.follow",
+                Some(glib::VariantTy::STRING),
+                |view, _, note| async move { view.follow_link(param(note.as_ref(), "notes")).await },
+            );
             klass.install_action_async("day.delete-block", None, |view, _, _| async move {
                 view.delete_block().await;
             });
@@ -271,6 +277,9 @@ impl DayView {
         let imp = self.imp();
         self.action_set_enabled("day.new-block", true);
         self.action_set_enabled("day.delete", true);
+        // The day note belongs to no project.
+        imp.note_view
+            .set_wiki_links(None, existing_notes(&self.vault()));
         self.show_details(&file.day);
         let is_today = file.day.date == Local::now().date_naive();
         imp.timeline.set_day(&self.vault(), &file.day, is_today);

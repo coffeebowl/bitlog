@@ -1,5 +1,5 @@
-//! What Enter and Tab do in lists, quotes and tables, as edits of the
-//! text.
+//! What Enter and Tab do in lists, quotes and tables, and `[` anywhere, as
+//! edits of the text.
 
 use std::ops::Range;
 
@@ -226,9 +226,34 @@ pub fn nest_list_item(
     Some(edits)
 }
 
+/// Whether `[` typed at `at` in `text` comes with the `]` closing it, so
+/// that `[[` starts a wiki link: before the end of a line, a space or
+/// another `]`. Before a word it stays alone, as it is about to wrap it.
+pub fn pairs_bracket(text: &str, at: usize) -> bool {
+    text[at..]
+        .chars()
+        .next()
+        .is_none_or(|next| next.is_whitespace() || next == ']')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn brackets_pair_before_spaces_and_brackets() {
+        // With `^` for the cursor.
+        let pairs = |text: &str| {
+            let at = text.find('^').expect("the text has a cursor");
+            pairs_bracket(&text.replace('^', ""), at)
+        };
+        assert!(pairs("^"));
+        assert!(pairs("a ^\nb"));
+        assert!(pairs("see ^ there"));
+        assert!(pairs("[^]]"));
+        assert!(!pairs("^word"));
+        assert!(!pairs("^(x)"));
+    }
 
     /// What Enter does at the end of the line with `at` in `text`.
     fn enter(text: &str, at: &str) -> Option<Continuation> {

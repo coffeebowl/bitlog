@@ -43,7 +43,8 @@ pub use init::CreateError;
 pub use markdown::{
     Callout, CalloutKind, CodeBlock, Continuation, Formatting, InlineMarkup, ListIndent,
     MarkdownMode, MarkdownStyle, TableLine, TaskItem, WebLink, continue_list, continue_quote,
-    continue_table, escape_headings, markdown_formatting, nest_list_item, tidied_table,
+    continue_table, escape_headings, markdown_formatting, nest_list_item, pairs_bracket,
+    tidied_table,
 };
 pub use notes::{NoteFile, SavedNote, WikiLink, wiki_links};
 pub use period::{Period, week_start};

@@ -149,7 +149,7 @@ impl NoteView {
             .set_subtitle(self.vault().project_name(note.project()));
         imp.menu_button.set_menu_model(Some(&note_menu(note)));
         imp.editor
-            .set_wiki_links(note.project().clone(), existing_notes(&self.vault()));
+            .set_wiki_links(Some(note.project().clone()), existing_notes(&self.vault()));
         // A new note starts with an empty undo history.
         imp.editor.set_markdown(&file.text);
         imp.file.replace(Some(file));
@@ -196,7 +196,7 @@ impl NoteView {
         if let Some(note) = self.note() {
             self.imp()
                 .editor
-                .set_wiki_links(note.project().clone(), existing_notes(&self.vault()));
+                .set_wiki_links(Some(note.project().clone()), existing_notes(&self.vault()));
             self.show_backlinks();
         }
     }
@@ -315,7 +315,7 @@ impl NoteView {
 
 /// The notes of all projects of `vault`, to tell which wiki links point to
 /// one. Projects whose notes cannot be listed count as having none.
-fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
+pub fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
     vault
         .all_notes()
         .filter_map(|note| {

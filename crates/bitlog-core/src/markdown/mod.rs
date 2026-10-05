@@ -7,7 +7,9 @@ mod lists;
 mod tables;
 
 pub use code_blocks::CodeBlock;
-pub use edit::{Continuation, continue_list, continue_quote, continue_table, nest_list_item};
+pub use edit::{
+    Continuation, continue_list, continue_quote, continue_table, nest_list_item, pairs_bracket,
+};
 pub use headings::{escape_headings, heading_lines};
 pub use lists::ListIndent;
 pub use tables::{TableLine, tidied_table};
@@ -509,18 +511,18 @@ fn trim(text: &str, range: Range<usize>) -> Option<Range<usize>> {
     (start < end).then_some(start..end)
 }
 
+// All texts may link to notes.
 const OPTIONS: Options = Options::ENABLE_STRIKETHROUGH
     .union(Options::ENABLE_TABLES)
     .union(Options::ENABLE_TASKLISTS)
-    .union(Options::ENABLE_GFM);
+    .union(Options::ENABLE_GFM)
+    .union(Options::ENABLE_WIKILINKS);
 
 fn options(mode: MarkdownMode) -> Options {
     match mode {
         MarkdownMode::Block => OPTIONS,
-        // Project notes may start with front matter and link to each other.
-        MarkdownMode::Full => {
-            OPTIONS | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS | Options::ENABLE_WIKILINKS
-        }
+        // Project notes may start with front matter.
+        MarkdownMode::Full => OPTIONS | Options::ENABLE_YAML_STYLE_METADATA_BLOCKS,
     }
 }
 
@@ -809,20 +811,21 @@ mod tests {
     }
 
     #[test]
-    fn wiki_links_in_notes() {
+    fn wiki_links_in_all_texts() {
         let text = "[[infra/deployment]] and [[webshop/checkout-flow|checkout]]";
-        assert_eq!(
-            styled(text, MarkdownMode::Full),
-            [
-                ("[[", Markup),
-                ("infra/deployment", Link),
-                ("]]", Markup),
-                ("[[webshop/checkout-flow|", Markup),
-                ("checkout", Link),
-                ("]]", Markup),
-            ]
-        );
-        assert_eq!(styled(text, MarkdownMode::Block), []);
+        for mode in [MarkdownMode::Full, MarkdownMode::Block] {
+            assert_eq!(
+                styled(text, mode),
+                [
+                    ("[[", Markup),
+                    ("infra/deployment", Link),
+                    ("]]", Markup),
+                    ("[[webshop/checkout-flow|", Markup),
+                    ("checkout", Link),
+                    ("]]", Markup),
+                ]
+            );
+        }
     }
 
     #[test]
