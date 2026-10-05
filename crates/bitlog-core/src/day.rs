@@ -17,6 +17,7 @@ use crate::file::{check_format, parse_text};
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
 pub use edit::RemovedText;
+pub(crate) use sections::escaped_block_headings;
 pub use sections::trim_blank_lines;
 
 /// Front matter fields of format version 1. Everything else is kept as is.
@@ -581,6 +582,23 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn open_code_block_hides_no_block() {
+        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+                    - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"a\" }\n  \
+                    - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"a\" }\n\
+                    ---\n\n# 2026-01-05\n\n## A {#aaaa}\n\nFirst\n\n```\n\n<!-- open\n\n\
+                    ## B {#bbbb}\n\nSecond\n";
+        let (day, warnings) = Day::parse(text).unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(day.blocks[0].text, "First\n\n```\n\n<!-- open");
+        assert_eq!(
+            (day.blocks[1].title.as_str(), day.blocks[1].text.as_str()),
+            ("B", "Second")
+        );
+        assert_eq!(Day::parse(&day.to_markdown()).unwrap().0, day);
     }
 
     #[test]

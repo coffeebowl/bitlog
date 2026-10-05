@@ -198,6 +198,27 @@ mod tests {
     }
 
     #[test]
+    fn block_headings_in_code_stay_text() {
+        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+                    - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\" }\n  \
+                    - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"x\" }\n---\n";
+        let mut day = parse(text);
+        day.blocks[0].text = "```md\n## Copy {#bbbb}\n## Other {#zzzz}\n```".to_owned();
+        day.blocks[1].text = "Second".to_owned();
+        let written = day.to_markdown();
+        assert!(
+            written.contains("```md\n\\## Copy {#bbbb}\n## Other {#zzzz}\n```"),
+            "{written}"
+        );
+        let reread = parse(&written);
+        assert_eq!(reread.blocks[1], day.blocks[1]);
+        assert_eq!(
+            reread.blocks[0].text,
+            "```md\n\\## Copy {#bbbb}\n## Other {#zzzz}\n```"
+        );
+    }
+
+    #[test]
     fn duplicate_heading_stays_text() {
         // The second heading of block bbbb is text of aaaa. Written in order
         // of start times, it would come before the real one.

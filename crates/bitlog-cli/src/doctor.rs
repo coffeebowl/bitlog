@@ -66,6 +66,15 @@ pub fn doctor(vault: &Vault, fix: bool) -> Result<()> {
     {
         println!("\nConflict copies with contradictions have to be merged by hand.");
     }
+    if problems
+        .iter()
+        .any(|p| matches!(p, Problem::EscapedHeading { .. }))
+    {
+        println!(
+            "\nEscaped block headings have to be sorted out by hand: the text below them may \
+             belong to their block."
+        );
+    }
     process::exit(1);
 }
 

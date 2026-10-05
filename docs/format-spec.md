@@ -241,11 +241,15 @@ outline of the document belongs to BitLog:
   of the block, a single line. Without a title it reads `## {#id}`.
 - **Only** a level 2 heading that ends in `{#id}` and whose ID is listed in the
   front matter **counts as a block boundary.** It has to start at the beginning
-  of a line, outside code blocks, quotes and lists. All other headings belong
-  to the text of the preceding block (see block Markdown).
+  of a line, as `## `. The Markdown around it does not matter: it counts even
+  inside a code block, so that a code block left open cannot hide the blocks
+  after it. All other headings belong to the text of the preceding block (see
+  block Markdown).
 - If a block has more than one heading, the first one counts. The others are
   read as text, with a warning. BitLog escapes them on writing
-  (`\## Title {#id}`), so that they stay text when sections are reordered.
+  (`\## Title {#id}`), also in code blocks, so that they stay text when
+  sections are reordered. `bitlog doctor` reports escaped headings of blocks:
+  the text below them may belong to their block.
 - Blank lines around the day note and around a block text are layout, not
   text; BitLog writes exactly one blank line there.
 - The text below a block heading is the **block text**. It belongs to the user

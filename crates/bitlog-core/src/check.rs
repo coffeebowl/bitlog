@@ -5,6 +5,7 @@ use std::fmt;
 use chrono::NaiveDate;
 
 use crate::conflict::has_git_markers;
+use crate::day::escaped_block_headings;
 use crate::error::{ReadError, SaveError};
 use crate::markdown::{escape_headings, heading_lines};
 use crate::notes::{qualified, wiki_links};
@@ -32,6 +33,15 @@ pub enum Problem {
     Heading {
         date: NaiveDate,
         block: Option<BlockId>,
+        line: String,
+    },
+    /// The escaped heading of block `id` in the day note (`block` is `None`)
+    /// or a block text, as in `\## Title {#id}`. The text below it may
+    /// belong to block `id`.
+    EscapedHeading {
+        date: NaiveDate,
+        block: Option<BlockId>,
+        id: BlockId,
         line: String,
     },
     /// A conflict copy left by a sync tool, with what keeps it from being
@@ -104,6 +114,24 @@ impl fmt::Display for Problem {
                 block: None,
                 line,
             } => write!(f, "{date}: the day note has a heading: {line}"),
+            Self::EscapedHeading {
+                date,
+                block: Some(block),
+                id,
+                line,
+            } => write!(
+                f,
+                "{date}: the text of block {block} has an escaped heading of block {id}: {line}"
+            ),
+            Self::EscapedHeading {
+                date,
+                block: None,
+                id,
+                line,
+            } => write!(
+                f,
+                "{date}: the day note has an escaped heading of block {id}: {line}"
+            ),
             Self::Conflict {
                 copy,
                 contradictions,
@@ -218,6 +246,7 @@ impl Vault {
             _ => None,
         }));
         problems.extend(headings(day));
+        problems.extend(escaped_headings(day));
         problems.extend(short_links(day));
         problems
     }
@@ -259,12 +288,7 @@ fn short_links(day: &Day) -> Vec<Problem> {
 }
 
 fn headings(day: &Day) -> Vec<Problem> {
-    let texts = std::iter::once((None, &day.note)).chain(
-        day.blocks
-            .iter()
-            .map(|block| (Some(&block.id), &block.text)),
-    );
-    texts
+    texts(day)
         .flat_map(|(block, text)| {
             heading_lines(text)
                 .into_iter()
@@ -275,6 +299,31 @@ fn headings(day: &Day) -> Vec<Problem> {
                 })
         })
         .collect()
+}
+
+fn escaped_headings(day: &Day) -> Vec<Problem> {
+    let ids: Vec<BlockId> = day.blocks.iter().map(|block| block.id.clone()).collect();
+    texts(day)
+        .flat_map(|(block, text)| {
+            escaped_block_headings(text, &ids)
+                .into_iter()
+                .map(move |(id, line)| Problem::EscapedHeading {
+                    date: day.date,
+                    block: block.cloned(),
+                    id,
+                    line: line.to_owned(),
+                })
+        })
+        .collect()
+}
+
+/// The day note (without a block) and the block texts of `day`.
+fn texts(day: &Day) -> impl Iterator<Item = (Option<&BlockId>, &String)> {
+    std::iter::once((None, &day.note)).chain(
+        day.blocks
+            .iter()
+            .map(|block| (Some(&block.id), &block.text)),
+    )
 }
 
 #[cfg(test)]
@@ -371,6 +420,33 @@ mod tests {
              [[webshop/checkout-flow]] `[[code]]` [[a/b/c]]"
         );
         assert!(!vault.check().unwrap().iter().any(Problem::can_be_qualified));
+    }
+
+    #[test]
+    fn escaped_block_headings() {
+        let (_dir, vault) = sample_copy();
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.note = "\\## {#zz99}".to_owned();
+                day.blocks[0].text = "Mails\n\n\\## Review {#c3d4}  \n\nMoved.".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let escaped: Vec<String> = vault
+            .check()
+            .unwrap()
+            .iter()
+            .filter(|problem| matches!(problem, Problem::EscapedHeading { .. }))
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            escaped,
+            [
+                "2026-09-21: the text of block a1b2 has an escaped heading of block c3d4: \
+              \\## Review {#c3d4}"
+            ]
+        );
     }
 
     #[test]

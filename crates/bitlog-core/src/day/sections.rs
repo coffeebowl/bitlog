@@ -3,7 +3,6 @@
 use std::collections::HashSet;
 
 use chrono::NaiveDate;
-use pulldown_cmark::{Event, HeadingLevel, Parser, Tag};
 
 use super::DayWarning;
 use crate::BlockId;
@@ -56,28 +55,23 @@ struct MarkerHeading<'a> {
     marker: &'a str,
 }
 
-/// Finds the level 2 headings with an ID marker at the start of a line,
-/// outside code blocks and quotes.
+/// Finds the level 2 headings with an ID marker at the start of a line. The
+/// Markdown around them does not count: an open code block in one block text
+/// must not hide the blocks after it.
 fn marker_headings(text: &str) -> Vec<MarkerHeading<'_>> {
     let mut headings = Vec::new();
-    for (event, range) in Parser::new(text).into_offset_iter() {
-        let Event::Start(Tag::Heading {
-            level: HeadingLevel::H2,
-            ..
-        }) = event
-        else {
-            continue;
-        };
-        let at_line_start = range.start == 0 || text[..range.start].ends_with('\n');
-        let line = text[range.start..].lines().next().unwrap_or_default();
-        if let Some((title, marker)) = parse_heading(line).filter(|_| at_line_start) {
+    let mut start = 0;
+    for full_line in text.split_inclusive('\n') {
+        let line = full_line.trim_end_matches(['\n', '\r']);
+        if let Some((title, marker)) = parse_heading(line) {
             headings.push(MarkerHeading {
-                start: range.start,
-                end: range.start + line.len(),
+                start,
+                end: start + line.len(),
                 title,
                 marker,
             });
         }
+        start += full_line.len();
     }
     headings
 }
@@ -114,6 +108,23 @@ pub(super) fn escape_block_headings(text: &str, ids: &[BlockId]) -> String {
         }
     }
     escaped
+}
+
+/// The escaped headings of the blocks `ids` in `text`, as in
+/// `\## Title {#id}`, with the ids. A block heading becomes text like that
+/// as the second heading of its block, or when an open code block once hid
+/// it, and the text of its block may have come along.
+pub(crate) fn escaped_block_headings<'a>(
+    text: &'a str,
+    ids: &[BlockId],
+) -> Vec<(BlockId, &'a str)> {
+    text.lines()
+        .filter_map(|line| {
+            let (_, marker) = parse_heading(line.strip_prefix('\\')?)?;
+            let id = ids.iter().find(|id| id.as_str() == marker)?;
+            Some((id.clone(), line.trim_end()))
+        })
+        .collect()
 }
 
 /// Splits `## Title {#id}` into title and id.
