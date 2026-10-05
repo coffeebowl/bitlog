@@ -1,11 +1,13 @@
-//! Editing helpers: check boxes, list items, brackets, markers around the
-//! selection and tidying up tables.
+//! Editing helpers: check boxes, list items, brackets, fences of code
+//! blocks, markers around the selection and tidying up tables.
 
+use std::cell::Cell;
 use std::ops::Range;
+use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::pairs_bracket;
+use bitlog_core::{closing_fence, pairs_bracket};
 use gtk::{gdk, glib};
 
 use super::check_boxes::CheckBox;
@@ -116,6 +118,48 @@ impl MarkdownView {
             }
         ));
         self.add_controller(keys);
+    }
+
+    /// Closes the code block whose opening fence was just typed, with the
+    /// cursor after the opening one, for the language. Watches the typed
+    /// text rather than the keys, as `` ` `` is a dead key on many keyboards.
+    /// Only in user actions: Undo then takes the closing fence away with the
+    /// last mark of the opening one, and Redo brings it back by itself.
+    pub(super) fn close_fences(&self) {
+        let buffer = self.buffer();
+        let user_actions = Rc::new(Cell::new(0_u32));
+        buffer.connect_begin_user_action(glib::clone!(
+            #[strong]
+            user_actions,
+            move |_| user_actions.set(user_actions.get() + 1)
+        ));
+        buffer.connect_end_user_action(glib::clone!(
+            #[strong]
+            user_actions,
+            move |_| user_actions.set(user_actions.get().saturating_sub(1))
+        ));
+        // After GTK inserted the text, which moves `end` behind it.
+        buffer.connect_closure(
+            "insert-text",
+            true,
+            glib::closure_local!(
+                #[weak(rename_to = view)]
+                self,
+                move |buffer: gtk::TextBuffer, end: gtk::TextIter, typed: &str, _: i32| {
+                    let cursor = buffer.iter_at_mark(&buffer.get_insert());
+                    if user_actions.get() == 0 || !matches!(typed, "`" | "~") || end != cursor {
+                        return;
+                    }
+                    let (text, at) = lists::text_and_cursor(&buffer);
+                    if let Some(closing) = closing_fence(&text, view.mode(), at) {
+                        let typed_end = cursor.offset();
+                        let mut end = end;
+                        buffer.insert(&mut end, &closing);
+                        buffer.place_cursor(&buffer.iter_at_offset(typed_end));
+                    }
+                }
+            ),
+        );
     }
 
     /// Types `[` with the `]` closing it, where `pairs_bracket` says so, or

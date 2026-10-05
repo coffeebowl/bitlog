@@ -187,6 +187,7 @@ mod imp {
             view.follow_links_on_click();
             view.toggle_check_boxes_on_click();
             view.edit_by_keys();
+            view.close_fences();
             view.suggest_notes();
 
             let style_manager = adw::StyleManager::default();

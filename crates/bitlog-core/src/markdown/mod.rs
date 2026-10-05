@@ -8,8 +8,8 @@ mod tables;
 
 pub use code_blocks::CodeBlock;
 pub use edit::{
-    Continuation, continue_list, continue_quote, continue_table, nest_list_item, pairs_bracket,
-    typed_link_target,
+    Continuation, closing_fence, continue_list, continue_quote, continue_table, nest_list_item,
+    pairs_bracket, typed_link_target,
 };
 pub use headings::{escape_headings, heading_lines};
 pub use lists::ListIndent;

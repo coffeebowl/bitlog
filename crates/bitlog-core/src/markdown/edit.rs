@@ -1,5 +1,6 @@
-//! What Enter and Tab do in lists, quotes and tables, and `[` anywhere, as
-//! edits of the text, and which wiki link is being typed.
+//! What Enter and Tab do in lists, quotes and tables, `[` anywhere and the
+//! opening fence of a code block, as edits of the text, and which wiki link
+//! is being typed.
 
 use std::ops::Range;
 
@@ -236,6 +237,26 @@ pub fn pairs_bracket(text: &str, at: usize) -> bool {
         .is_none_or(|next| next.is_whitespace() || next == ']')
 }
 
+/// The closing fence for the opening fence of a code block just typed in
+/// `text`, up to `at`: to insert at `at`, with the indent of the opening
+/// one. Only if nothing follows on the line and the code block would run to
+/// the end of the text otherwise, so that a fence typed to close a code
+/// block stays alone.
+pub fn closing_fence(text: &str, mode: MarkdownMode, at: usize) -> Option<String> {
+    let line = line_start(text, at);
+    let fence = text[line..at].trim_start_matches(' ');
+    let rest_of_line = &text[at..next_line_start(text, at)];
+    if !matches!(fence, "```" | "~~~") || !rest_of_line.trim().is_empty() {
+        return None;
+    }
+    let opens_unclosed_block = markdown_formatting(text, mode)
+        .code_blocks
+        .iter()
+        .any(|block| matches!(block.fences.as_slice(), [opening] if opening.start == line));
+    let indent = &text[line..at - fence.len()];
+    opens_unclosed_block.then(|| format!("\n{indent}{fence}"))
+}
+
 /// The target of the wiki link being typed at `at` in `text`, as a byte
 /// range: from after its `[[` to the next `]`, `|`, `#` or the end of the
 /// line. `None` if `at` is in no wiki link, or after its `|` or `#`.
@@ -290,6 +311,25 @@ mod tests {
         assert!(pairs("[^]]"));
         assert!(!pairs("^word"));
         assert!(!pairs("^(x)"));
+    }
+
+    #[test]
+    fn fences_close_where_they_open_a_code_block() {
+        // With `^` for the cursor, after the fence just typed.
+        let closing = |text: &str| {
+            let at = text.find('^').expect("the text has a cursor");
+            closing_fence(&text.replace('^', ""), MarkdownMode::Block, at)
+        };
+        assert_eq!(closing("```^").as_deref(), Some("\n```"));
+        assert_eq!(closing("Text\n\n~~~^\nmore\n").as_deref(), Some("\n~~~"));
+        assert_eq!(closing("- Item\n\n  ```^").as_deref(), Some("\n  ```"));
+        // Closes the code block before it.
+        assert_eq!(closing("```\ncode\n```^"), None);
+        // Would close the code block after it.
+        assert_eq!(closing("```^\n\n```sh\ncode\n```"), None);
+        assert_eq!(closing("```^rust"), None);
+        assert_eq!(closing("````^"), None);
+        assert_eq!(closing("a ```^"), None);
     }
 
     /// What Enter does at the end of the line with `at` in `text`.
