@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use bitlog_core::{
     Continuation, Formatting, MarkdownMode, TaskItem, continue_list, continue_quote,
-    continue_table, nest_list_item,
+    continue_table, nest_list_item, renumbered_lists,
 };
 use gtk::prelude::*;
 use gtk::{glib, pango};
@@ -136,7 +136,8 @@ fn style_tasks(styling: &Styling, tasks: &[TaskItem], decorations: &mut Decorati
 }
 
 /// Nests the list item at the cursor of `view` one level `deeper` or less
-/// deep. Whether the cursor is in a list item, which then takes the key.
+/// deep, and numbers the lists around it again. Whether the cursor is in a
+/// list item, which then takes the key.
 pub(super) fn nest(view: &gtk::TextView, mode: MarkdownMode, deeper: bool) -> bool {
     let buffer = view.buffer();
     // Tab indents several selected lines as they are, as in code.
@@ -153,8 +154,24 @@ pub(super) fn nest(view: &gtk::TextView, mode: MarkdownMode, deeper: bool) -> bo
         view.error_bell();
         return true;
     }
-    let offsets = char_offsets(&text);
     buffer.begin_user_action();
+    replace(&buffer, &text, &edits);
+    renumber(&buffer, mode);
+    buffer.end_user_action();
+    true
+}
+
+/// Numbers the items of the lists at the cursor of `buffer` one after the
+/// other again, as an item came, went or moved.
+fn renumber(buffer: &gtk::TextBuffer, mode: MarkdownMode) {
+    let (text, at) = text_and_cursor(buffer);
+    replace(buffer, &text, &renumbered_lists(&text, mode, at));
+}
+
+/// Replaces the byte ranges of `text`, the text of `buffer`, given in
+/// order.
+fn replace(buffer: &gtk::TextBuffer, text: &str, edits: &[(Range<usize>, String)]) {
+    let offsets = char_offsets(text);
     // From the back, so that earlier offsets stay valid.
     for (range, replacement) in edits.iter().rev() {
         let mut start = buffer.iter_at_offset(offsets[range.start]);
@@ -162,8 +179,6 @@ pub(super) fn nest(view: &gtk::TextView, mode: MarkdownMode, deeper: bool) -> bo
         buffer.delete(&mut start, &mut end);
         buffer.insert(&mut start, replacement);
     }
-    buffer.end_user_action();
-    true
 }
 
 /// Whether `marker` is a bullet, not a number.
@@ -173,8 +188,9 @@ fn is_bullet(text: &str, marker: &Range<usize>) -> bool {
 
 /// Starts the next row of a table, list item or line of a quote after the
 /// one at the cursor of `view`, or ends the table, list or quote if the
-/// row, item or line is empty. Whether the cursor is in a table, or after
-/// the marker of a list item or quote, which then takes the key.
+/// row, item or line is empty. Numbered items after a new one count on.
+/// Whether the cursor is in a table, or after the marker of a list item or
+/// quote, which then takes the key.
 pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
     let buffer = view.buffer();
     if buffer.has_selection() {
@@ -190,7 +206,10 @@ pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
     let offsets = char_offsets(&text);
     buffer.begin_user_action();
     match continuation {
-        Continuation::Insert(next) => buffer.insert_at_cursor(&next),
+        Continuation::Insert(next) => {
+            buffer.insert_at_cursor(&next);
+            renumber(&buffer, mode);
+        }
         Continuation::End(marker) => {
             let mut start = buffer.iter_at_offset(offsets[marker.start]);
             let mut end = buffer.iter_at_offset(offsets[marker.end]);

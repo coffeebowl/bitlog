@@ -9,7 +9,7 @@ mod tables;
 pub use code_blocks::CodeBlock;
 pub use edit::{
     Continuation, closing_fence, continue_list, continue_quote, continue_table, nest_list_item,
-    pairs_bracket, pasted_link, toggled_tasks, typed_link_target,
+    pairs_bracket, pasted_link, renumbered_lists, toggled_tasks, typed_link_target,
 };
 pub use headings::{escape_headings, heading_lines};
 pub use lists::ListIndent;

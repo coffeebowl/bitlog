@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use super::lists::innermost_item;
+use super::lists::{ListItem, innermost_item};
 use super::{MarkdownMode, MarkdownStyle, line_start, lines, markdown_formatting, next_line_start};
 
 /// What Enter does in a list item, quote or table.
@@ -225,6 +225,96 @@ pub fn nest_list_item(
         );
     }
     Some(edits)
+}
+
+/// Numbers the items of numbered lists one after the other again, from the
+/// number of the first item of each list: of the outermost list with `at`
+/// in `text` and all lists nested in it, after an item came or went or
+/// moved. As the byte ranges of the numbers to replace, in order, and
+/// their new numbers.
+pub fn renumbered_lists(text: &str, mode: MarkdownMode, at: usize) -> Vec<(Range<usize>, String)> {
+    let items = markdown_formatting(text, mode).list_items;
+    let Some(top) = items
+        .iter()
+        .find(|item| item.depth == 1 && (item.range.start..=item.range.end).contains(&at))
+    else {
+        return Vec::new();
+    };
+    let outermost = list_of(text, &items, top);
+    let span = outermost[0].range.start..outermost[outermost.len() - 1].range.end;
+    let mut done = Vec::new();
+    let mut edits = Vec::new();
+    for item in items.iter().filter(|item| span.contains(&item.range.start)) {
+        if done.contains(&item.range.start) {
+            continue;
+        }
+        let list = list_of(text, &items, item);
+        done.extend(list.iter().map(|item| item.range.start));
+        let Some((_, first)) = number(text, list[0]) else {
+            continue;
+        };
+        for (item, wanted) in list.iter().zip(first..) {
+            if let Some((digits, number)) = number(text, item)
+                && number != wanted
+            {
+                edits.push((digits, wanted.to_string()));
+            }
+        }
+    }
+    edits.sort_by_key(|(range, _)| range.start);
+    edits
+}
+
+/// The items of the list of `item` among `items`: those as deep as it,
+/// with the same kind of marker, and nothing but blank lines and nested
+/// items between them.
+fn list_of<'a>(text: &str, items: &'a [ListItem], item: &'a ListItem) -> Vec<&'a ListItem> {
+    let kind = |item: &ListItem| {
+        text[item.range.start..item.content]
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .trim_end()
+            .to_owned()
+    };
+    let index = items
+        .iter()
+        .position(|other| other == item)
+        .expect("the item is one of the items");
+    let joins = |before: &ListItem, after: &ListItem| {
+        kind(before) == kind(after) && text[before.range.end..after.range.start].trim().is_empty()
+    };
+    let mut list = vec![item];
+    for before in items[..index]
+        .iter()
+        .rev()
+        .filter(|other| other.depth == item.depth)
+    {
+        if !joins(before, list[0]) {
+            break;
+        }
+        list.insert(0, before);
+    }
+    for after in items[index + 1..]
+        .iter()
+        .filter(|other| other.depth == item.depth)
+    {
+        if !joins(list[list.len() - 1], after) {
+            break;
+        }
+        list.push(after);
+    }
+    list
+}
+
+/// The digits of the marker of `item`, as in `12.`, and their number. `None`
+/// for bullets.
+fn number(text: &str, item: &ListItem) -> Option<(Range<usize>, u64)> {
+    let marker = &text[item.range.start..item.content];
+    let digits = marker.len()
+        - marker
+            .trim_start_matches(|c: char| c.is_ascii_digit())
+            .len();
+    let number = marker[..digits].parse().ok()?;
+    Some((item.range.start..item.range.start + digits, number))
 }
 
 /// Whether `[` typed at `at` in `text` comes with the `]` closing it, so
@@ -500,6 +590,39 @@ mod tests {
         assert_eq!(toggled("1. [ ]x", 0..0), ["1. [ ]x→1. [ ] [ ]x"]);
         // The line after the selection is not in it.
         assert_eq!(toggled("a\nb\nc", 2..4), ["b→- [ ] b"]);
+    }
+
+    #[test]
+    fn lists_are_numbered_again() {
+        // With `^` for the cursor; as the text with the new numbers.
+        let renumbered = |text: &str| {
+            let at = text.find('^').expect("the text has a cursor");
+            let mut text = text.replace('^', "");
+            for (range, number) in renumbered_lists(&text, MarkdownMode::Block, at)
+                .into_iter()
+                .rev()
+            {
+                text.replace_range(range, &number);
+            }
+            text
+        };
+        assert_eq!(
+            renumbered("1. a\n2. ^\n2. b\n3. c"),
+            "1. a\n2. \n3. b\n4. c"
+        );
+        assert_eq!(renumbered("3. a^\n3. b"), "3. a\n4. b");
+        assert_eq!(
+            renumbered("1. a\n   1. x\n   1. y\n\n   3. z\n1. b^"),
+            "1. a\n   1. x\n   2. y\n\n   3. z\n2. b"
+        );
+        assert_eq!(renumbered("- a^\n  1. x\n  1. y"), "- a\n  1. x\n  2. y");
+        // Other lists stay as they are.
+        assert_eq!(
+            renumbered("1. a^\n1. b\n\ntext\n\n1. c"),
+            "1. a\n2. b\n\ntext\n\n1. c"
+        );
+        assert_eq!(renumbered("1. a^\n1) b"), "1. a\n1) b");
+        assert_eq!(renumbered("text^\n\n1. a\n1. b"), "text\n\n1. a\n1. b");
     }
 
     /// What Enter does at the end of the line with `at` in `text`.
