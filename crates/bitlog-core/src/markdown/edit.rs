@@ -1,5 +1,5 @@
 //! What Enter and Tab do in lists, quotes and tables, and `[` anywhere, as
-//! edits of the text.
+//! edits of the text, and which wiki link is being typed.
 
 use std::ops::Range;
 
@@ -236,9 +236,46 @@ pub fn pairs_bracket(text: &str, at: usize) -> bool {
         .is_none_or(|next| next.is_whitespace() || next == ']')
 }
 
+/// The target of the wiki link being typed at `at` in `text`, as a byte
+/// range: from after its `[[` to the next `]`, `|`, `#` or the end of the
+/// line. `None` if `at` is in no wiki link, or after its `|` or `#`.
+pub fn typed_link_target(text: &str, at: usize) -> Option<Range<usize>> {
+    let ends = ['\n', '[', ']', '|', '#'];
+    let line = line_start(text, at);
+    let start = line + text[line..at].rfind("[[")? + "[[".len();
+    if text[start..at].contains(ends) {
+        return None;
+    }
+    let end = text[at..].find(ends).map_or(text.len(), |end| at + end);
+    Some(start..end)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn typed_link_targets() {
+        // With `^` for the cursor.
+        let target = |text: &str| {
+            let at = text.find('^').expect("the text has a cursor");
+            let text = text.replace('^', "");
+            typed_link_target(&text, at).map(|range| text[range].to_owned())
+        };
+        assert_eq!(target("See [[^]]").as_deref(), Some(""));
+        assert_eq!(
+            target("[[infra/Auth Mi^]] x").as_deref(),
+            Some("infra/Auth Mi")
+        );
+        assert_eq!(target("[[dep^loy|how]]").as_deref(), Some("deploy"));
+        assert_eq!(target("[[dep^loy").as_deref(), Some("deploy"));
+        assert_eq!(target("[[a]] and [[b^").as_deref(), Some("b"));
+        assert_eq!(target("[[a]] ^"), None);
+        assert_eq!(target("[[a|ho^w]]"), None);
+        assert_eq!(target("[[a#St^eps]]"), None);
+        assert_eq!(target("[[a\nb^"), None);
+        assert_eq!(target("[a^]"), None);
+    }
 
     #[test]
     fn brackets_pair_before_spaces_and_brackets() {

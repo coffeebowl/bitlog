@@ -7,7 +7,7 @@ use chrono::NaiveDate;
 use crate::conflict::has_git_markers;
 use crate::error::{ReadError, SaveError};
 use crate::markdown::{escape_headings, heading_lines};
-use crate::notes::wiki_links;
+use crate::notes::{qualified, wiki_links};
 use crate::{
     BlockId, ConflictCopy, Contradiction, Day, DayFile, DayWarning, NotePath, ProjectSlug, Vault,
 };
@@ -43,6 +43,14 @@ pub enum Problem {
     /// A note with the markers of a failed Git merge. Other files with them
     /// cannot be read.
     GitMarkers(NotePath),
+    /// A wiki link in a block text without its project, as in `[[name]]`,
+    /// which points nowhere in a day file. It used to point to a note of
+    /// the block's project.
+    ShortLink {
+        date: NaiveDate,
+        block: BlockId,
+        link: String,
+    },
     /// A wiki link in a note, on line `line` counted from 1, that points to
     /// no note, as it is written.
     BrokenLink {
@@ -56,6 +64,11 @@ impl Problem {
     /// Whether [`Vault::escape_headings`] solves it.
     pub fn can_be_escaped(&self) -> bool {
         matches!(self, Self::Heading { .. })
+    }
+
+    /// Whether [`Vault::qualify_links`] solves it.
+    pub fn can_be_qualified(&self) -> bool {
+        matches!(self, Self::ShortLink { .. })
     }
 
     /// Whether [`Vault::merge_conflict`] solves it.
@@ -102,6 +115,10 @@ impl fmt::Display for Problem {
                 let reasons: Vec<String> = contradictions.iter().map(ToString::to_string).collect();
                 write!(f, "; {}", reasons.join(", "))
             }
+            Self::ShortLink { date, block, link } => write!(
+                f,
+                "{date}: the text of block {block} has a wiki link without its project: {link}"
+            ),
             Self::GitMarkers(note) => write!(f, "{note}: Git conflict markers"),
             Self::BrokenLink { note, line, link } => {
                 write!(f, "{note}:{line}: the wiki link {link} points to no note")
@@ -160,6 +177,24 @@ impl Vault {
         Ok(())
     }
 
+    /// Names the project of their block in the short wiki links of the
+    /// block texts of the day `date`, as in `[[infra/deployment]]`, the
+    /// note they used to point to.
+    pub fn qualify_links(&self, date: NaiveDate) -> Result<(), SaveError> {
+        let Some(file) = self.load_day(date)? else {
+            return Ok(());
+        };
+        self.update_day(&file, |day| {
+            for block in &mut day.blocks {
+                if let Some(text) = qualified(&block.text, &block.project) {
+                    block.text = text;
+                }
+            }
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     fn check_day(&self, file: &DayFile) -> Vec<Problem> {
         let day = &file.day;
         let date = day.date;
@@ -183,6 +218,7 @@ impl Vault {
             _ => None,
         }));
         problems.extend(headings(day));
+        problems.extend(short_links(day));
         problems
     }
 
@@ -202,6 +238,24 @@ impl Vault {
             })
             .collect()
     }
+}
+
+/// The short wiki links in the block texts of `day`. Those in the day note
+/// never pointed anywhere.
+fn short_links(day: &Day) -> Vec<Problem> {
+    day.blocks
+        .iter()
+        .flat_map(|block| {
+            wiki_links(&block.text, Some(&block.project))
+                .into_iter()
+                .filter(|link| link.note.is_some() && link.is_short(&block.text))
+                .map(|link| Problem::ShortLink {
+                    date: day.date,
+                    block: block.id.clone(),
+                    link: block.text[link.span].to_owned(),
+                })
+        })
+        .collect()
 }
 
 fn headings(day: &Day) -> Vec<Problem> {
@@ -276,6 +330,47 @@ mod tests {
                 "projects/infra/notes/Links.md:4: the wiki link [[a/b/c]] points to no note",
             ]
         );
+    }
+
+    #[test]
+    fn short_links_get_their_project() {
+        let (_dir, vault) = sample_copy();
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.note = "[[deployment]]".to_owned();
+                // Block m1n2 belongs to infra.
+                day.blocks[5].text = "[[deployment#Steps|how]] [[Missing]] \
+                                      [[webshop/checkout-flow]] `[[code]]` [[a/b/c]]"
+                    .to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let problems = vault.check().unwrap();
+        let short: Vec<String> = problems
+            .iter()
+            .filter(|problem| problem.can_be_qualified())
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(
+            short,
+            [
+                "2026-09-21: the text of block m1n2 has a wiki link without its project: \
+                 [[deployment#Steps|how]]",
+                "2026-09-21: the text of block m1n2 has a wiki link without its project: \
+                 [[Missing]]",
+            ]
+        );
+
+        vault.qualify_links(date(21)).unwrap();
+        let day = vault.load_day(date(21)).unwrap().unwrap().day;
+        assert_eq!(day.note, "[[deployment]]");
+        assert_eq!(
+            day.blocks[5].text,
+            "[[infra/deployment#Steps|how]] [[infra/Missing]] \
+             [[webshop/checkout-flow]] `[[code]]` [[a/b/c]]"
+        );
+        assert!(!vault.check().unwrap().iter().any(Problem::can_be_qualified));
     }
 
     #[test]

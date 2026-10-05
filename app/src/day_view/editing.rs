@@ -171,15 +171,14 @@ impl DayView {
         }
     }
 
-    /// Marks the wiki links of the day note and the block shown again,
-    /// after notes were added or removed elsewhere.
+    /// Marks the wiki links of the day note and the block texts again, as
+    /// the notes are now. Day files belong to no project, not even in a
+    /// block.
     pub fn update_links(&self) {
         let imp = self.imp();
         let existing = existing_notes(&self.vault());
         imp.note_view.set_wiki_links(None, existing.clone());
-        if let Some(block) = self.shown_block() {
-            imp.block_text.set_wiki_links(Some(block.project), existing);
-        }
+        imp.block_text.set_wiki_links(None, existing);
     }
 
     /// The block shown in the panel, as saved.

@@ -144,6 +144,7 @@ impl MarkdownView {
         cursor.backward_char();
         buffer.place_cursor(&cursor);
         buffer.end_user_action();
+        self.suggest_notes_now();
         true
     }
 

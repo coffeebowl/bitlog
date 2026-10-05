@@ -11,7 +11,6 @@ use gtk::{gio, glib};
 use super::DayView;
 use crate::config;
 use crate::format::{format_span, format_time};
-use crate::note_view::existing_notes;
 use crate::project_picker::{project_markup, project_popover};
 
 impl DayView {
@@ -222,8 +221,6 @@ impl DayView {
                 }
             ),
         )));
-        imp.block_text
-            .set_wiki_links(Some(block.project.clone()), existing_notes(&vault));
         if is_other || !imp.block_text.shows(&block.text) {
             imp.block_text.set_markdown(&block.text);
         }

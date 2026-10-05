@@ -55,7 +55,7 @@ pub struct WikiLink {
 
 impl WikiLink {
     /// Whether the target leaves out the project, as in `[[deployment]]`.
-    fn is_short(&self, text: &str) -> bool {
+    pub(crate) fn is_short(&self, text: &str) -> bool {
         !text[self.range.clone()].contains('/')
     }
 }
@@ -86,6 +86,17 @@ pub fn wiki_links(text: &str, project: Option<&ProjectSlug>) -> Vec<WikiLink> {
         .collect()
 }
 
+/// The target of a wiki link to `note` in text of the project `project`:
+/// the name alone in a note of the same project, as in `[[deployment]]`,
+/// else with the project, as in `[[infra/deployment]]`.
+pub fn link_target(note: &NotePath, project: Option<&ProjectSlug>) -> String {
+    if project == Some(note.project()) {
+        note.name().to_owned()
+    } else {
+        format!("{}/{}", note.project(), note.name())
+    }
+}
+
 fn note_path(target: &str, project: Option<&ProjectSlug>) -> Option<NotePath> {
     match target.split_once('/') {
         Some((slug, name)) => NotePath::new(slug.parse().ok()?, name).ok(),
@@ -103,12 +114,28 @@ pub(crate) fn relink_day(day: &mut Day, target: &impl Fn(&NotePath) -> Option<No
         changed = true;
     }
     for block in &mut day.blocks {
-        if let Some(text) = relinked(&block.text, Some(&block.project), target) {
+        if let Some(text) = relinked(&block.text, None, target) {
             block.text = text;
             changed = true;
         }
     }
     changed
+}
+
+/// `text` of a block of the project `project` with its short wiki links
+/// naming that project, where they pointed before day files belonged to no
+/// project, or `None` if it has none.
+pub(crate) fn qualified(text: &str, project: &ProjectSlug) -> Option<String> {
+    let mut qualified = text.to_owned();
+    let mut changed = false;
+    // From the end, so that the ranges before stay valid.
+    for link in wiki_links(text, Some(project)).iter().rev() {
+        if link.note.is_some() && link.is_short(text) {
+            qualified.insert_str(link.range.start, &format!("{project}/"));
+            changed = true;
+        }
+    }
+    changed.then_some(qualified)
 }
 
 /// `text` of the project `project` with its wiki links pointing to the note
@@ -497,6 +524,21 @@ mod tests {
     }
 
     #[test]
+    fn link_targets_are_short_in_the_same_project() {
+        let note = note("projects/infra/notes/Auth Middleware.md");
+        let target = |project: Option<&str>| link_target(&note, project.map(slug).as_ref());
+        assert_eq!(target(Some("infra")), "Auth Middleware");
+        assert_eq!(target(Some("webshop")), "infra/Auth Middleware");
+        assert_eq!(target(None), "infra/Auth Middleware");
+        // What the parser reads back.
+        let text = format!("[[{}]]", target(Some("webshop")));
+        assert_eq!(
+            wiki_links(&text, Some(&slug("webshop")))[0].note,
+            Some(note)
+        );
+    }
+
+    #[test]
     fn short_links_need_a_project() {
         let links = wiki_links("[[infra/deployment]] [[deployment]]", None);
         let notes: Vec<_> = links.into_iter().map(|link| link.note).collect();
@@ -562,10 +604,10 @@ mod tests {
         let file = vault.load_day(date(21)).unwrap().unwrap();
         vault
             .update_day(&file, |day| {
-                // A short link in the day note points nowhere.
+                // Short links point nowhere in day files, even in a block
+                // of the note's project, like m1n2.
                 day.note = "See [[deployment]] and [[infra/deployment|steps]].".to_owned();
-                // Block m1n2 belongs to infra.
-                day.blocks[5].text = "See [[deployment#Steps]].".to_owned();
+                day.blocks[5].text = "See [[infra/deployment#Steps]], [[deployment]].".to_owned();
                 Ok(())
             })
             .unwrap();
@@ -573,7 +615,10 @@ mod tests {
         let renamed = vault.rename_note(&deployment, "Deploy", true).unwrap();
         let day = vault.load_day(date(21)).unwrap().unwrap().day;
         assert_eq!(day.note, "See [[deployment]] and [[infra/Deploy|steps]].");
-        assert_eq!(day.blocks[5].text, "See [[Deploy#Steps]].");
+        assert_eq!(
+            day.blocks[5].text,
+            "See [[infra/Deploy#Steps]], [[deployment]]."
+        );
         let day = vault.load_day(date(23)).unwrap().unwrap().day;
         assert!(
             day.blocks
@@ -584,7 +629,10 @@ mod tests {
         // Without updating, days stay as they are.
         vault.rename_note(&renamed, "deployment", false).unwrap();
         let day = vault.load_day(date(21)).unwrap().unwrap().day;
-        assert_eq!(day.blocks[5].text, "See [[Deploy#Steps]].");
+        assert_eq!(
+            day.blocks[5].text,
+            "See [[infra/Deploy#Steps]], [[deployment]]."
+        );
     }
 
     #[test]

@@ -36,6 +36,7 @@ const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/04-links.sql")),
     M::up(include_str!("migrations/05-no-pinned.sql")),
     M::up(include_str!("migrations/06-no-work-hours.sql")),
+    M::up(include_str!("migrations/07-day-links.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
@@ -722,8 +723,8 @@ mod tests {
                 Found::Note(note_path("webshop", "payment-provider")),
             ]
         );
-        // A short link in a block text points to the block's project, and
-        // to nothing in the day note.
+        // A short link points nowhere in day files, even in a block of the
+        // note's project.
         let file = vault.load_day(date(21)).unwrap().unwrap();
         vault
             .update_day(&file, |day| {
@@ -739,7 +740,6 @@ mod tests {
                 Found::Note(note_path("webshop", "checkout-flow")),
                 block(23, "cc33"),
                 Found::DayNote(date(21)),
-                block(21, "m1n2"),
             ]
         );
     }
@@ -795,6 +795,21 @@ mod tests {
                 .len(),
             2
         );
+    }
+
+    #[test]
+    fn day_links_are_read_again() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut connection, 6).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO files VALUES ('daily/2026/09/2026-09-23.md', 0, 0, 0);
+                 INSERT INTO files VALUES ('projects/infra/notes/deployment.md', 0, 0, 0);",
+            )
+            .unwrap();
+        MIGRATIONS.to_latest(&mut connection).unwrap();
+        let index = Index { connection };
+        assert_eq!(count(&index, "files"), 1);
     }
 
     #[test]

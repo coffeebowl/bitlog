@@ -60,13 +60,14 @@ pub enum Command {
         command: TaskCommand,
     },
     /// Check for sync conflict copies, all days for unknown projects,
-    /// overlapping blocks and headings in texts, and all notes for broken
-    /// wiki links and Git conflict markers. Exits with 1 if something is
-    /// left.
+    /// overlapping blocks, headings in texts and wiki links without their
+    /// project in block texts, and all notes for broken wiki links and Git
+    /// conflict markers. Exits with 1 if something is left.
     Doctor {
         /// Merge conflict copies into their originals where nothing
         /// contradicts, then escape headings in block texts and day notes,
-        /// so that they read as plain text
+        /// so that they read as plain text, and name the project of their
+        /// block in wiki links without one
         #[arg(long)]
         fix: bool,
     },

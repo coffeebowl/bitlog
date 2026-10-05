@@ -111,7 +111,8 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
             date: day.date,
             id: block.id.clone(),
         };
-        insert_links(tx, &source, &block.text, Some(&block.project))?;
+        // Day files belong to no project, not even in a block.
+        insert_links(tx, &source, &block.text, None)?;
     }
     Ok(())
 }

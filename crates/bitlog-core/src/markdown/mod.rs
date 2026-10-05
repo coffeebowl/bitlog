@@ -9,6 +9,7 @@ mod tables;
 pub use code_blocks::CodeBlock;
 pub use edit::{
     Continuation, continue_list, continue_quote, continue_table, nest_list_item, pairs_bracket,
+    typed_link_target,
 };
 pub use headings::{escape_headings, heading_lines};
 pub use lists::ListIndent;
@@ -359,6 +360,7 @@ fn style_element(
     styles: &mut Vec<(Range<usize>, MarkdownStyle)>,
 ) -> Vec<InlineMarkup> {
     let range = frame.range.clone();
+    let children = shown_children(text, frame);
     let style = match &frame.tag {
         Tag::Strong => Some(MarkdownStyle::Strong),
         Tag::Emphasis => Some(MarkdownStyle::Emphasis),
@@ -374,7 +376,7 @@ fn style_element(
             return Vec::new();
         }
         Tag::Link { .. } => {
-            for child in &frame.children {
+            for child in &children {
                 styles.push((child.clone(), MarkdownStyle::Link));
             }
             None
@@ -386,7 +388,7 @@ fn style_element(
     }
     let mut markup = Vec::new();
     let mut escapes = Vec::new();
-    for gap in gaps(range.clone(), &frame.children) {
+    for gap in gaps(range.clone(), &children) {
         if let Some(trimmed) = trim(text, gap.clone()) {
             // A backslash that escapes the character after it.
             let is_escape = &text[trimmed.clone()] == "\\"
@@ -435,6 +437,27 @@ fn style_element(
         escapes.push(InlineMarkup { element, markup });
     }
     escapes
+}
+
+/// The children of `frame` as shown. A wiki link without text of its own
+/// shows its target without the project, which is markup: `[[infra/deployment]]`
+/// shows as `deployment`.
+fn shown_children(text: &str, frame: &Frame) -> Vec<Range<usize>> {
+    let mut children = frame.children.clone();
+    let is_bare_wiki_link = matches!(
+        frame.tag,
+        Tag::Link {
+            link_type: LinkType::WikiLink { has_pothole: false },
+            ..
+        }
+    );
+    if is_bare_wiki_link && let Some(first) = children.first_mut() {
+        let target = text[first.clone()].split('#').next().unwrap_or_default();
+        if let Some(slash) = target.find('/') {
+            first.start += slash + 1;
+        }
+    }
+    children
 }
 
 /// The `>` at the start of the lines of `range`, in a quote. Not those in
@@ -812,20 +835,40 @@ mod tests {
 
     #[test]
     fn wiki_links_in_all_texts() {
-        let text = "[[infra/deployment]] and [[webshop/checkout-flow|checkout]]";
+        // The project is markup, unless the link has a text of its own.
+        let text = "[[infra/deployment]] and [[webshop/checkout-flow|checkout]] \
+                    [[deployment#Steps]] [[infra/deployment#Steps/Rollback]]";
         for mode in [MarkdownMode::Full, MarkdownMode::Block] {
             assert_eq!(
                 styled(text, mode),
                 [
-                    ("[[", Markup),
-                    ("infra/deployment", Link),
+                    ("[[infra/", Markup),
+                    ("deployment", Link),
                     ("]]", Markup),
                     ("[[webshop/checkout-flow|", Markup),
                     ("checkout", Link),
                     ("]]", Markup),
+                    ("[[", Markup),
+                    ("deployment#Steps", Link),
+                    ("]]", Markup),
+                    ("[[infra/", Markup),
+                    ("deployment#Steps/Rollback", Link),
+                    ("]]", Markup),
                 ]
             );
         }
+        let hidden: Vec<Vec<&str>> = markdown_formatting(text, MarkdownMode::Block)
+            .inline_markup
+            .iter()
+            .map(|inline| {
+                inline
+                    .markup
+                    .iter()
+                    .map(|range| &text[range.clone()])
+                    .collect()
+            })
+            .collect();
+        assert_eq!(hidden[0], ["[[infra/", "]]"]);
     }
 
     #[test]

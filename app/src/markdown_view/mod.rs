@@ -2,6 +2,7 @@ mod callouts;
 mod check_boxes;
 mod code_blocks;
 mod code_highlight;
+mod completion;
 mod decorations;
 mod diagrams;
 mod editing;
@@ -186,6 +187,7 @@ mod imp {
             view.follow_links_on_click();
             view.toggle_check_boxes_on_click();
             view.edit_by_keys();
+            view.suggest_notes();
 
             let style_manager = adw::StyleManager::default();
             set_style_scheme(&view, &style_manager);
@@ -286,7 +288,8 @@ glib::wrapper! {
     /// a language, or diagrams when they are in Mermaid. Tables are grids,
     /// their cells cut off if too wide, and rules are lines, but show their
     /// Markdown while the cursor is in them, tables in a monospace font with
-    /// the columns lined up. Enter continues lists, quotes and tables.
+    /// the columns lined up. Enter continues lists, quotes and tables, and
+    /// typing a wiki link proposes notes.
     ///
     /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
     /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces.

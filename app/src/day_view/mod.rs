@@ -18,7 +18,6 @@ use crate::alert::show_error;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs::confirm_delete;
-use crate::note_view::existing_notes;
 use crate::project_picker::project_popover;
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
@@ -277,9 +276,7 @@ impl DayView {
         let imp = self.imp();
         self.action_set_enabled("day.new-block", true);
         self.action_set_enabled("day.delete", true);
-        // The day note belongs to no project.
-        imp.note_view
-            .set_wiki_links(None, existing_notes(&self.vault()));
+        self.update_links();
         self.show_details(&file.day);
         let is_today = file.day.date == Local::now().date_naive();
         imp.timeline.set_day(&self.vault(), &file.day, is_today);
