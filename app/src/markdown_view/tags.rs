@@ -17,7 +17,7 @@ pub(super) const BROKEN_LINK: &str = "broken-link";
 /// All of the text, with the default line height.
 pub(super) const BODY: &str = "body";
 /// Of all text, as a share of the height of the font.
-const LINE_HEIGHT: f32 = 1.3;
+pub(super) const LINE_HEIGHT: f32 = 1.3;
 /// Hides syntax that something else is drawn for, like bullets.
 pub(super) const CONCEALED: &str = "concealed";
 /// Hides syntax until the cursor is at it, taking no space.
@@ -188,12 +188,17 @@ pub(super) fn get_or_add(
 /// The name of a tag that spaces characters out by `pixels`, added unless
 /// it is there already. GTK takes no negative spacing, so less is none.
 pub(super) fn spacing(buffer: &gtk::TextBuffer, pixels: i32) -> String {
-    let pixels = pixels.max(0);
-    let name = format!("spacing {pixels}");
+    spacing_units(buffer, pixels * pango::SCALE)
+}
+
+/// Like `spacing`, in Pango units.
+pub(super) fn spacing_units(buffer: &gtk::TextBuffer, units: i32) -> String {
+    let units = units.max(0);
+    let name = format!("spacing {units}");
     get_or_add(buffer, &name, || {
         gtk::TextTag::builder()
             .name(&name)
-            .letter_spacing(pixels * pango::SCALE)
+            .letter_spacing(units)
             .build()
     });
     name

@@ -1,11 +1,12 @@
-//! What Enter and Tab do in lists and quotes, as edits of the text.
+//! What Enter and Tab do in lists, quotes and tables, as edits of the
+//! text.
 
 use std::ops::Range;
 
 use super::lists::innermost_item;
 use super::{MarkdownMode, MarkdownStyle, line_start, lines, markdown_formatting, next_line_start};
 
-/// What Enter does in a list item or quote.
+/// What Enter does in a list item, quote or table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Continuation {
     /// Starts the next item or line of the quote: inserts this at the
@@ -16,6 +17,13 @@ pub enum Continuation {
     End(Range<usize>),
     /// Nests the empty item less deep.
     Outdent,
+    /// Replaces the range with `before` and `after`, with the cursor
+    /// between them.
+    Replace {
+        range: Range<usize>,
+        before: String,
+        after: String,
+    },
 }
 
 /// What Enter does with the cursor at `at` in `text`, if it is after the
@@ -87,6 +95,60 @@ pub fn continue_quote(text: &str, mode: MarkdownMode, at: usize) -> Option<Conti
         return Some(Continuation::End(line..line_end));
     }
     Some(Continuation::Insert(format!("\n{}", &content[..prefix])))
+}
+
+/// What Enter does with the cursor at `at` in `text`, if it is in a row of
+/// a table: start a new row below, or below the delimiter row in the
+/// header, with the cursor in its first cell. In an empty last row, it
+/// ends the table: the row becomes a blank line, as a line right after a
+/// table continues it, and the cursor goes to the line after, as indented
+/// as the table. `None` if the
+/// cursor is in no table, or in one in a quote.
+pub fn continue_table(text: &str, mode: MarkdownMode, at: usize) -> Option<Continuation> {
+    let tables = markdown_formatting(text, mode).tables;
+    let lines = tables.iter().find(|lines| {
+        lines
+            .iter()
+            .any(|line| line.range.start <= at && at <= line.range.end)
+    })?;
+    let index = lines
+        .iter()
+        .position(|line| line.range.start <= at && at <= line.range.end)?;
+    let line = &lines[index];
+    let start = line_start(text, line.range.start);
+    let indent = &text[start..start + text[start..].len() - text[start..].trim_start().len()];
+    if text[start..line.range.end].trim_start().starts_with('>') {
+        return None;
+    }
+    let cells = line.all_cells(text);
+    let is_empty = cells
+        .iter()
+        .all(|cell| text[cell.clone()].trim().is_empty());
+    if is_empty && index >= 2 && index == lines.len() - 1 {
+        return Some(Continuation::Replace {
+            range: start..line.range.end,
+            before: format!("\n{indent}"),
+            after: String::new(),
+        });
+    }
+    let header = &lines[0];
+    let columns = header.all_cells(text).len().max(1);
+    let opens = header
+        .pipes
+        .first()
+        .is_some_and(|&pipe| text[header.range.start..pipe].trim().is_empty());
+    let closes = header
+        .pipes
+        .last()
+        .is_some_and(|&pipe| text[pipe + 1..header.range.end].trim().is_empty());
+    let below = &lines[index.max(1)];
+    let open = if opens { "| " } else { "" };
+    let close = if closes { " |" } else { "" };
+    Some(Continuation::Replace {
+        range: below.range.end..below.range.end,
+        before: format!("\n{indent}{open}"),
+        after: format!("{}{close}", " | ".repeat(columns - 1)),
+    })
 }
 
 /// How to nest the list item on the line of `at` in `text` one level
@@ -185,6 +247,64 @@ mod tests {
         assert_eq!(enter("> a\n> "), Some(End(4..6)));
         assert_eq!(enter("a > b"), None);
         assert_eq!(enter("```\n> code\n```"), None);
+    }
+
+    #[test]
+    fn enter_continues_tables() {
+        /// `text` after Enter at `at`, with `^` for the cursor.
+        fn enter(text: &str, at: &str) -> Option<String> {
+            let at = text.find(at).expect("the text has it");
+            let Continuation::Replace {
+                range,
+                before,
+                after,
+            } = continue_table(text, MarkdownMode::Block, at)?
+            else {
+                panic!("tables only replace");
+            };
+            let mut text = text.to_owned();
+            text.replace_range(range, &format!("{before}^{after}"));
+            Some(text)
+        }
+        let table = "| a | b |\n|---|---|\n| c | d |\n\nText\n";
+        assert_eq!(
+            enter(table, "c").as_deref(),
+            Some("| a | b |\n|---|---|\n| c | d |\n| ^ |  |\n\nText\n")
+        );
+        // Not between the header and the delimiter row.
+        assert_eq!(
+            enter(table, "a").as_deref(),
+            Some("| a | b |\n|---|---|\n| ^ |  |\n| c | d |\n\nText\n")
+        );
+        // An empty last row ends the table.
+        let empty = "| a | b |\n|---|---|\n|  |  |";
+        assert_eq!(
+            enter(&format!("{empty}\n\nText"), "|  |").as_deref(),
+            Some("| a | b |\n|---|---|\n\n^\n\nText")
+        );
+        assert_eq!(
+            enter(&format!("{empty}\n- a"), "|  |").as_deref(),
+            Some("| a | b |\n|---|---|\n\n^\n- a")
+        );
+        assert_eq!(
+            enter(empty, "|  |").as_deref(),
+            Some("| a | b |\n|---|---|\n\n^")
+        );
+        // Without outer pipes, and indented in a list item.
+        assert_eq!(
+            enter("a | b\n--|--\nc | d\n", "c").as_deref(),
+            Some("a | b\n--|--\nc | d\n^ | \n")
+        );
+        assert_eq!(
+            enter("- x\n\n  | a |\n  |---|\n", "a").as_deref(),
+            Some("- x\n\n  | a |\n  |---|\n  | ^ |\n")
+        );
+        assert_eq!(
+            enter("- x\n\n  | a |\n  |---|\n  |  |\n", "|  |").as_deref(),
+            Some("- x\n\n  | a |\n  |---|\n\n  ^\n")
+        );
+        assert_eq!(enter("> | a |\n> |---|\n", "a"), None);
+        assert_eq!(enter("Text\n", "Text"), None);
     }
 
     #[test]

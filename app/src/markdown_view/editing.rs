@@ -1,5 +1,5 @@
-//! Editing helpers: check boxes, list items and markers around the
-//! selection.
+//! Editing helpers: check boxes, list items, markers around the selection
+//! and tidying up tables.
 
 use std::ops::Range;
 
@@ -8,6 +8,7 @@ use adw::subclass::prelude::*;
 use gtk::{gdk, glib};
 
 use super::check_boxes::CheckBox;
+use super::tables::TidiedTable;
 use super::{MarkdownView, lists};
 
 impl MarkdownView {
@@ -52,9 +53,32 @@ impl MarkdownView {
         self.add_controller(click);
     }
 
+    /// Tidies up a table the cursor left, when idle, as the text may be
+    /// changing, unless the table changed since.
+    pub(super) fn queue_tidy(&self, tidied: TidiedTable) {
+        glib::idle_add_local_once(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move || {
+                let buffer = view.buffer();
+                let (table, text) = &tidied.table;
+                let mut start = buffer.iter_at_offset(table.start);
+                let mut end = buffer.iter_at_offset(table.end);
+                if !view.is_editable() || buffer.text(&start, &end, true) != text.as_str() {
+                    return;
+                }
+                buffer.begin_user_action();
+                buffer.delete(&mut start, &mut end);
+                buffer.insert(&mut start, &tidied.tidied);
+                buffer.end_user_action();
+            }
+        ));
+    }
+
     /// In list items, Tab nests the item deeper, Shift+Tab less deep, and
-    /// Enter starts the next item, before the view would handle the keys.
-    /// Shift+Enter still only breaks the line.
+    /// Enter starts the next item, as it starts the next row in tables,
+    /// before the view would handle the keys. Shift+Enter still only
+    /// breaks the line.
     pub(super) fn edit_lists_by_keys(&self) {
         let keys = gtk::EventControllerKey::new();
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);

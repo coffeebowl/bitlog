@@ -78,35 +78,49 @@ impl MarkdownView {
         self.iter_at_location(x, y)
     }
 
-    /// A click on a link follows it, as in the "Hypertext" demo of GTK, and
-    /// the pointer shows where that is possible.
+    /// A click on a link follows it, and the pointer shows where that is
+    /// possible. The view does not see the click: the cursor would go
+    /// there and show the Markdown, which moves the text under the pointer,
+    /// in tables by whole lines, and the view would take that for
+    /// selecting. Shift+click still selects.
     pub(super) fn follow_links_on_click(&self) {
         let click = gtk::GestureClick::builder()
             .button(gdk::BUTTON_PRIMARY)
+            .propagation_phase(gtk::PropagationPhase::Capture)
             .build();
-        // The link under the pointer as the button goes down: the text may
-        // move before it goes up, as the cursor reveals the markup.
+        // The link under the pointer as the button goes down.
         let pressed = Rc::new(RefCell::new(None));
         click.connect_pressed(glib::clone!(
             #[weak(rename_to = view)]
             self,
             #[strong]
             pressed,
-            move |_, _, x, y| {
-                let link = view.iter_at(x, y).and_then(|iter| view.link_at(&iter));
+            move |click, presses, x, y| {
+                let shift = click
+                    .current_event_state()
+                    .contains(gdk::ModifierType::SHIFT_MASK);
+                let link = (presses == 1 && !shift)
+                    .then(|| view.iter_at(x, y).and_then(|iter| view.link_at(&iter)))
+                    .flatten();
+                if link.is_some() {
+                    click.set_state(gtk::EventSequenceState::Claimed);
+                }
                 pressed.replace(link);
+            }
+        ));
+        // Dragging is no click on a link.
+        click.connect_stopped(glib::clone!(
+            #[strong]
+            pressed,
+            move |_| {
+                pressed.take();
             }
         ));
         click.connect_released(glib::clone!(
             #[weak(rename_to = view)]
             self,
-            move |_, presses, _, _| {
-                let link = pressed.take();
-                // Selecting text is no click on a link.
-                if presses != 1 || view.buffer().has_selection() {
-                    return;
-                }
-                if let Some(target) = link {
+            move |_, _, _, _| {
+                if let Some(target) = pressed.take() {
                     view.follow_link(target);
                 }
             }

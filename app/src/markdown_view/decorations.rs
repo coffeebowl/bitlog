@@ -14,7 +14,7 @@ use super::check_boxes::CheckBox;
 use super::code_blocks::CodeCard;
 use super::diagrams::DiagramCard;
 use super::styling::{Styling, holds};
-use super::tables::Grid;
+use super::tables::{DelimiterDashes, Fit, Grid, TidiedTable};
 use super::{GRID_ALPHA, MARKUP_ALPHA, lists, tags};
 use crate::colors::with_alpha;
 
@@ -40,10 +40,18 @@ pub(super) struct Decorations {
     pub(super) callouts: Vec<CalloutCard>,
     /// Tables drawn as grids, not those being edited.
     pub(super) grids: Vec<Grid>,
+    /// The dashes drawn across the delimiter row of the table being
+    /// edited, but not while that row is.
+    pub(super) delimiter_dashes: Vec<DelimiterDashes>,
+    /// Tables as they are tidied up once the cursor leaves them, of those
+    /// not tidy yet.
+    pub(super) tidied_tables: Vec<TidiedTable>,
+    pub(super) table_fits: Vec<Fit>,
     pub(super) check_boxes: Vec<CheckBox>,
-    /// Tables, rules, code blocks, the markers of callouts, the check
-    /// boxes of tasks and inline elements, which show their Markdown while
-    /// the cursor is at them, without the last line break.
+    /// Tables and their delimiter rows, rules, code blocks, the markers of
+    /// callouts, the check boxes of tasks and inline elements, which show
+    /// their Markdown while the cursor is at them, without the last line
+    /// break.
     pub(super) revealable: Vec<Range<i32>>,
     /// The hidden markup of inline elements, as sorted byte ranges.
     pub(super) hidden: Vec<Range<usize>>,
@@ -97,9 +105,20 @@ impl Decorations {
     }
 
     /// Whether a diagram has another height in `view` than it has room
-    /// for, as the view changed its width.
+    /// for, or a table fits it otherwise, as the view changed its width.
     pub(super) fn misfit(&self, view: &gtk::TextView) -> bool {
         self.diagrams.iter().any(|card| card.misfits(view))
+            || self.table_fits.iter().any(|fit| fit.misfits(view))
+    }
+
+    /// How to tidy up the table the cursor left, as what it is at went
+    /// from `before` to `now`.
+    pub(super) fn left_table(&self, before: &[i32], now: &[i32]) -> Option<TidiedTable> {
+        self.tidied_tables
+            .iter()
+            .map(|tidied| (tidied.table.0.start, tidied))
+            .find(|(start, _)| before.contains(start) && !now.contains(start))
+            .map(|(_, tidied)| tidied.clone())
     }
 
     /// The check box at `x`, `y` in `view`, in buffer coordinates.
@@ -141,6 +160,9 @@ impl Decorations {
         }
         for grid in &self.grids {
             grid.snapshot(view, snapshot, &visible);
+        }
+        for dashes in &self.delimiter_dashes {
+            dashes.snapshot(view, snapshot, &visible);
         }
         for check_box in &self.check_boxes {
             check_box.snapshot(view, snapshot);

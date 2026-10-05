@@ -7,10 +7,10 @@ mod lists;
 mod tables;
 
 pub use code_blocks::CodeBlock;
-pub use edit::{Continuation, continue_list, continue_quote, nest_list_item};
+pub use edit::{Continuation, continue_list, continue_quote, continue_table, nest_list_item};
 pub use headings::{escape_headings, heading_lines};
 pub use lists::ListIndent;
-pub use tables::TableLine;
+pub use tables::{TableLine, tidied_table};
 
 use std::cmp::Reverse;
 use std::ops::Range;

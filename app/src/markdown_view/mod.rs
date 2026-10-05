@@ -223,7 +223,7 @@ mod imp {
             tags::update(self.obj().upcast_ref());
         }
 
-        /// Makes room for diagrams again as they fit the new width.
+        /// Fits diagrams and tables to the new width.
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
             self.parent_size_allocate(width, height, baseline);
             let view = self.obj();
@@ -283,9 +283,10 @@ glib::wrapper! {
     /// Markdown with live formatting: the syntax stays visible, but dimmed,
     /// except for the markers of bullets and quotes, which are drawn as
     /// bullets and bars. Code blocks are cards, highlighted when they name
-    /// a language, or diagrams when they are in Mermaid. Tables are grids
-    /// and rules are lines, but show their Markdown while the cursor is in
-    /// them, with the columns lined up.
+    /// a language, or diagrams when they are in Mermaid. Tables are grids,
+    /// their cells cut off if too wide, and rules are lines, but show their
+    /// Markdown while the cursor is in them, tables in a monospace font with
+    /// the columns lined up. Enter continues lists, quotes and tables.
     ///
     /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
     /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces.
@@ -393,7 +394,9 @@ impl MarkdownView {
         lists::style(&styling, &formatting, &mut decorations);
         tables::style(&styling, &formatting, &mut decorations);
         imp.highlighter.apply(&styling, &formatting.code_blocks);
-        imp.revealed.replace(decorations.revealed(styling.cursor));
+        let revealed = decorations.revealed(styling.cursor);
+        let before = imp.revealed.replace(revealed.clone());
+        let left_table = decorations.left_table(&before, &revealed);
         imp.decorations.replace(decorations);
 
         let mut links = Vec::new();
@@ -416,6 +419,12 @@ impl MarkdownView {
         self.queue_draw();
         for request in missing {
             self.render_diagram(request);
+        }
+        if let Some(tidied) = left_table
+            && self.is_editable()
+            && !imp.loading.get()
+        {
+            self.queue_tidy(tidied);
         }
     }
 

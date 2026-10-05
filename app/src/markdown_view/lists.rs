@@ -6,7 +6,8 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use bitlog_core::{
-    Continuation, Formatting, MarkdownMode, TaskItem, continue_list, continue_quote, nest_list_item,
+    Continuation, Formatting, MarkdownMode, TaskItem, continue_list, continue_quote,
+    continue_table, nest_list_item,
 };
 use gtk::prelude::*;
 use gtk::{glib, pango};
@@ -170,17 +171,19 @@ fn is_bullet(text: &str, marker: &Range<usize>) -> bool {
     matches!(text[marker.clone()].trim_end(), "-" | "*" | "+")
 }
 
-/// Starts the next list item after the one at the cursor of `view`, or the
-/// next line of a quote, or ends the list or quote if the item or line is
-/// empty. Whether the cursor is after the marker of a list item or quote,
-/// which then takes the key.
+/// Starts the next row of a table, list item or line of a quote after the
+/// one at the cursor of `view`, or ends the table, list or quote if the
+/// row, item or line is empty. Whether the cursor is in a table, or after
+/// the marker of a list item or quote, which then takes the key.
 pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
     let buffer = view.buffer();
     if buffer.has_selection() {
         return false;
     }
     let (text, at) = text_and_cursor(&buffer);
-    let continuation = continue_list(&text, mode, at).or_else(|| continue_quote(&text, mode, at));
+    let continuation = continue_table(&text, mode, at)
+        .or_else(|| continue_list(&text, mode, at))
+        .or_else(|| continue_quote(&text, mode, at));
     let Some(continuation) = continuation else {
         return false;
     };
@@ -195,6 +198,18 @@ pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
         }
         Continuation::Outdent => {
             nest(view, mode, false);
+        }
+        Continuation::Replace {
+            range,
+            before,
+            after,
+        } => {
+            let mut start = buffer.iter_at_offset(offsets[range.start]);
+            let mut end = buffer.iter_at_offset(offsets[range.end]);
+            buffer.delete(&mut start, &mut end);
+            let cursor = start.offset() + before.chars().count() as i32;
+            buffer.insert(&mut start, &format!("{before}{after}"));
+            buffer.place_cursor(&buffer.iter_at_offset(cursor));
         }
     }
     buffer.end_user_action();
