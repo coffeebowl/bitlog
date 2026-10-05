@@ -83,7 +83,7 @@ impl MarkdownView {
     /// Enter starts the next item, as it starts the next row in tables,
     /// before the view would handle the keys. Shift+Enter still only
     /// breaks the line. Brackets come in pairs, so that wiki links are
-    /// quick to type.
+    /// quick to type, and markers typed over a selection go around it.
     pub(super) fn edit_by_keys(&self) {
         let keys = gtk::EventControllerKey::new();
         keys.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -109,7 +109,9 @@ impl MarkdownView {
                     gdk::Key::bracketleft => view.type_bracket(),
                     gdk::Key::bracketright => view.skip_bracket(),
                     gdk::Key::BackSpace => view.delete_brackets(),
-                    _ => false,
+                    key => {
+                        wrapping(key).is_some_and(|(open, close)| view.wrap_selection(open, close))
+                    }
                 };
                 if is_handled {
                     glib::Propagation::Stop
@@ -219,22 +221,34 @@ impl MarkdownView {
         self.scroll_mark_onscreen(&buffer.get_insert());
     }
 
+    /// Puts the selection between `open` and `close`, and keeps it
+    /// selected, so that `*` typed twice makes it bold. Whether there is
+    /// one.
+    fn wrap_selection(&self, open: &str, close: &str) -> bool {
+        let buffer = self.buffer();
+        let Some((start, end)) = buffer.selection_bounds() else {
+            return false;
+        };
+        let (start, end) = (start.offset(), end.offset());
+        let length = i32::try_from(open.chars().count()).expect("markers are short");
+        buffer.begin_user_action();
+        buffer.insert(&mut buffer.iter_at_offset(end), close);
+        buffer.insert(&mut buffer.iter_at_offset(start), open);
+        buffer.select_range(
+            &buffer.iter_at_offset(start + length),
+            &buffer.iter_at_offset(end + length),
+        );
+        buffer.end_user_action();
+        true
+    }
+
     /// Types `[` with the `]` closing it, where `pairs_bracket` says so, or
     /// puts the selection in brackets. Whether that took the key.
     fn type_bracket(&self) -> bool {
-        let buffer = self.buffer();
-        if let Some((start, end)) = buffer.selection_bounds() {
-            let (start, end) = (start.offset(), end.offset());
-            buffer.begin_user_action();
-            buffer.insert(&mut buffer.iter_at_offset(end), "]");
-            buffer.insert(&mut buffer.iter_at_offset(start), "[");
-            buffer.select_range(
-                &buffer.iter_at_offset(start + 1),
-                &buffer.iter_at_offset(end + 1),
-            );
-            buffer.end_user_action();
+        if self.wrap_selection("[", "]") {
             return true;
         }
+        let buffer = self.buffer();
         let (text, at) = lists::text_and_cursor(&buffer);
         if !pairs_bracket(&text, at) {
             return false;
@@ -333,5 +347,20 @@ impl MarkdownView {
         };
         buffer.select_range(&buffer.iter_at_offset(start), &buffer.iter_at_offset(end));
         buffer.end_user_action();
+    }
+}
+
+/// What the key `key` puts around a selection, instead of replacing it.
+/// Dead keys, like `` ` `` on German keyboards, do so right away then: there
+/// is no letter to put an accent on.
+fn wrapping(key: gdk::Key) -> Option<(&'static str, &'static str)> {
+    match key {
+        gdk::Key::asterisk => Some(("*", "*")),
+        gdk::Key::underscore => Some(("_", "_")),
+        gdk::Key::grave | gdk::Key::dead_grave => Some(("`", "`")),
+        gdk::Key::asciitilde | gdk::Key::dead_tilde => Some(("~", "~")),
+        gdk::Key::parenleft => Some(("(", ")")),
+        gdk::Key::quotedbl => Some(("\"", "\"")),
+        _ => None,
     }
 }
