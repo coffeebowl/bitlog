@@ -19,7 +19,8 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, wiki_links,
+    MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, trim_blank_lines,
+    wiki_links,
 };
 use glib::SignalHandlerId;
 use glib::subclass::Signal;
@@ -344,9 +345,12 @@ impl MarkdownView {
     }
 
     /// Whether the view shows `text` as saved, which may differ only by
-    /// headings not escaped yet.
+    /// headings not escaped yet and by the blank lines and spaces around it
+    /// that saving drops. Otherwise showing the saved text would take away
+    /// the space after a new list marker while it is being typed.
     pub fn shows(&self, text: &str) -> bool {
-        self.text() == text || self.markdown() == text
+        let markdown = self.markdown();
+        self.text() == text || markdown == text || trim_blank_lines(&markdown) == text
     }
 
     fn text(&self) -> String {

@@ -17,6 +17,7 @@ use crate::file::{check_format, parse_text};
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
 pub use edit::RemovedText;
+pub use sections::trim_blank_lines;
 
 /// Front matter fields of format version 1. Everything else is kept as is.
 const KNOWN_FIELDS: [&str; 7] = [

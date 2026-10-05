@@ -136,7 +136,7 @@ fn strip_date_heading(text: &str, date: NaiveDate) -> &str {
 
 /// Removes the blank lines around a text. They belong to the layout of the
 /// file, not to the text.
-pub(super) fn trim_blank_lines(text: &str) -> &str {
+pub fn trim_blank_lines(text: &str) -> &str {
     let mut start = 0;
     for line in text.split_inclusive('\n') {
         if !line.trim().is_empty() {

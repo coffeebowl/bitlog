@@ -18,7 +18,7 @@ use std::ops::Range;
 use pulldown_cmark::{BlockQuoteKind, CodeBlockKind, Event, LinkType, Options, Parser, Tag};
 
 use self::code_blocks::code_block;
-use self::lists::{ListItem, list_indents, list_item};
+use self::lists::{ListItem, add_typed_items, list_indents, list_item};
 use self::tables::table_lines;
 
 /// Which Markdown a text may use, see "Block Markdown" in the format spec.
@@ -207,6 +207,7 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
             parent.children.push(range);
         }
     }
+    add_typed_items(text, &mut formatting);
     // Outer ranges first.
     formatting
         .styles
@@ -328,7 +329,11 @@ fn list_marker(
     let content = &text[marker.clone()];
     let style = match list.tag {
         Tag::List(None) => {
-            matches!(content, "-" | "*" | "+").then(|| MarkdownStyle::Bullet(depth(stack)))?
+            // Only once a space follows, so that a bullet does not appear
+            // over the cursor while it is being typed.
+            let is_bullet =
+                matches!(content, "-" | "*" | "+") && text[marker.end..].starts_with([' ', '\t']);
+            is_bullet.then(|| MarkdownStyle::Bullet(depth(stack)))?
         }
         Tag::List(Some(_)) => {
             let is_number = content.strip_suffix(['.', ')']).is_some_and(|digits| {
