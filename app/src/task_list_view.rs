@@ -26,7 +26,7 @@ mod imp {
         /// The task list shown, `None` if it cannot be read.
         pub tasks: RefCell<Option<TaskList>>,
         /// One row per open task, in front of `new_task`.
-        pub rows: RefCell<Vec<(TaskId, gtk::ListBoxRow)>>,
+        pub rows: RefCell<Vec<TaskRow>>,
         /// Whether rows are being replaced.
         pub showing: Cell<bool>,
         /// Whether the heading is shown; not on the task page, which has it
@@ -116,6 +116,34 @@ glib::wrapper! {
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
+/// The row of an open task, with the entry its title is edited in.
+#[derive(Debug)]
+pub struct TaskRow {
+    id: TaskId,
+    row: gtk::ListBoxRow,
+    title: gtk::Entry,
+}
+
+impl TaskRow {
+    fn has_focus(&self) -> bool {
+        self.row
+            .state_flags()
+            .contains(gtk::StateFlags::FOCUS_WITHIN)
+    }
+}
+
+/// Where the focus was in the rows of open tasks, so that it can be put
+/// back once they are replaced.
+#[derive(Debug)]
+struct Focus {
+    task: TaskId,
+    /// Where the cursor was in the title, if the focus was there.
+    cursor: Option<i32>,
+    /// The title typed but not saved yet, which is saved when the title is
+    /// left.
+    typed: Option<glib::GString>,
+}
+
 /// The id a task action is called with.
 fn today() -> NaiveDate {
     Local::now().date_naive()
@@ -165,8 +193,12 @@ impl TaskListView {
         }
     }
 
+    /// Shows `tasks` in new rows. The list is shown anew whenever the file
+    /// may have changed, also while a title is being typed in: the focus
+    /// and what is typed then stay with their task.
     fn show(&self, tasks: TaskList) {
         let imp = self.imp();
+        let focus = self.focus();
         imp.showing.set(true);
         self.remove_rows();
         imp.error_label.set_visible(false);
@@ -177,10 +209,13 @@ impl TaskListView {
             let row = self.task_row(task, today);
             let index =
                 i32::try_from(rows.len()).expect("a task list is far shorter than i32::MAX");
-            imp.list.insert(&row, index);
-            rows.push((task.id.clone(), row));
+            imp.list.insert(&row.row, index);
+            rows.push(row);
         }
         imp.rows.replace(rows);
+        if let Some(focus) = focus {
+            self.restore_focus(focus);
+        }
 
         let finished: Vec<&Task> = tasks
             .tasks()
@@ -199,18 +234,99 @@ impl TaskListView {
         imp.showing.set(false);
     }
 
-    /// Moves the focus to the row of the open task `id`. Returns whether
-    /// there is one.
+    /// Moves the focus to the row of the open task `id`, unless it is in
+    /// there already. Returns whether there is such a row.
     pub fn focus_task(&self, id: &TaskId) -> bool {
-        let rows = self.imp().rows.borrow();
-        let row = rows.iter().find(|(task, _)| task == id).map(|(_, row)| row);
-        row.is_some_and(|row| row.grab_focus())
+        // Not borrowed while the focus moves, which runs handlers that may
+        // replace the rows.
+        let row = self
+            .imp()
+            .rows
+            .borrow()
+            .iter()
+            .find(|row| row.id == *id)
+            .map(|row| (row.row.clone(), row.has_focus()));
+        match row {
+            Some((row, has_focus)) => has_focus || row.grab_focus(),
+            None => false,
+        }
+    }
+
+    /// Where the focus is in the rows of open tasks, if it is there.
+    fn focus(&self) -> Option<Focus> {
+        let imp = self.imp();
+        let rows = imp.rows.borrow();
+        let row = rows.iter().find(|row| row.has_focus())?;
+        let in_title = row
+            .title
+            .state_flags()
+            .contains(gtk::StateFlags::FOCUS_WITHIN);
+        let text = row.title.text();
+        let saved = imp
+            .tasks
+            .borrow()
+            .as_ref()
+            .and_then(|tasks| tasks.task(&row.id))
+            .is_some_and(|task| task.title == text);
+        Some(Focus {
+            task: row.id.clone(),
+            cursor: in_title.then(|| row.title.position()),
+            // Only what was typed: a title changed elsewhere is shown as
+            // it is now unless it was being edited.
+            typed: (!saved).then_some(text),
+        })
+    }
+
+    /// Puts `focus`, taken from the rows replaced, back into the row of its
+    /// task, if that is still open.
+    fn restore_focus(&self, focus: Focus) {
+        let title = self
+            .imp()
+            .rows
+            .borrow()
+            .iter()
+            .find(|row| row.id == focus.task)
+            .map(|row| row.title.clone());
+        let Some(title) = title else {
+            return;
+        };
+        // The row keeps the title as saved, so the text typed still counts
+        // as a change and is saved when the title is left, onto the file as
+        // it is now.
+        if let Some(typed) = &focus.typed {
+            title.set_text(typed);
+        }
+        match focus.cursor {
+            Some(cursor) => {
+                // Typing goes on where it was, rather than replacing the
+                // whole title, which grabbing the focus would select.
+                title.grab_focus_without_selecting();
+                title.set_position(cursor);
+            }
+            None => {
+                self.focus_task(&focus.task);
+            }
+        }
     }
 
     fn remove_rows(&self) {
         let imp = self.imp();
-        for (_, row) in imp.rows.take() {
-            imp.list.remove(&row);
+        // A widget removed with the focus in it is freed while the window
+        // still points to it as its focus. The next key goes to freed
+        // memory, the next click makes `Root::focus` panic and the app
+        // abort. This happened when a sync changed the task list while a
+        // title was being typed in, so the focus is taken out first. Leaving
+        // a title in `show` saves nothing, as it puts back what is typed.
+        let has_focus = imp.rows.borrow().iter().any(TaskRow::has_focus)
+            || imp
+                .finished_list
+                .state_flags()
+                .contains(gtk::StateFlags::FOCUS_WITHIN);
+        if let Some(root) = self.root().filter(|_| has_focus) {
+            root.set_focus(None::<&gtk::Widget>);
+        }
+        for row in imp.rows.take() {
+            imp.list.remove(&row.row);
         }
         imp.finished_list.remove_all();
     }
@@ -240,7 +356,7 @@ impl TaskListView {
 
     /// An open task: drag it, tick it off, edit its title and due date, move
     /// or drop it.
-    fn task_row(&self, task: &Task, today: NaiveDate) -> gtk::ListBoxRow {
+    fn task_row(&self, task: &Task, today: NaiveDate) -> TaskRow {
         let handle = drag_handle();
         let title = gtk::Entry::builder()
             .text(&task.title)
@@ -299,27 +415,41 @@ impl TaskListView {
         let save_title = glib::clone!(
             #[weak(rename_to = view)]
             self,
-            #[weak]
-            title,
             #[strong(rename_to = id)]
             task.id,
             #[strong(rename_to = saved)]
             task.title,
-            move || {
-                // Leaving rows as they are replaced is no edit.
-                if !view.imp().showing.get() && title.text() != saved {
-                    view.update(|tasks| tasks.set_title(&id, &title.text()));
+            move |text: glib::GString| {
+                if text != saved {
+                    view.update(|tasks| tasks.set_title(&id, &text));
                 }
             }
         );
         let focus = gtk::EventControllerFocus::new();
         focus.connect_leave(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            #[weak]
+            title,
             #[strong]
             save_title,
-            move |_| save_title()
+            move |_| {
+                // Leaving rows as they are replaced is no edit: `show` puts
+                // back what is typed.
+                if view.imp().showing.get() {
+                    return;
+                }
+                // Saving replaces the rows, so it waits until GTK has moved
+                // the focus: rows freed while it does so leave it walking
+                // freed widgets. The text is taken now, as the row may be
+                // gone by then, replaced after a click on a check box.
+                let text = title.text();
+                let save_title = save_title.clone();
+                glib::idle_add_local_once(move || save_title(text));
+            }
         ));
         title.add_controller(focus);
-        title.connect_activate(move |_| save_title());
+        title.connect_activate(move |title| save_title(title.text()));
         let id = task.id.clone();
         let on_drop = glib::clone!(
             #[weak(rename_to = view)]
@@ -332,7 +462,11 @@ impl TaskListView {
         );
         let accepts = |dragged: &str| dragged.parse::<TaskId>().is_ok();
         make_movable(&row, &handle, task.id.to_string(), accepts, on_drop);
-        row
+        TaskRow {
+            id: task.id.clone(),
+            row,
+            title,
+        }
     }
 
     /// A button showing when the task is due, which lets the user change it.
@@ -457,11 +591,10 @@ impl TaskListView {
         let Some(index) = position.and_then(|index| index.checked_add_signed(steps)) else {
             return;
         };
+        // `show` keeps the focus in the row, as when moving with Alt+Up
+        // while typing the title; from the menu it comes back here.
         if self.update(|tasks| tasks.move_task(id, index)) {
-            let rows = self.imp().rows.borrow();
-            if let Some((_, row)) = rows.iter().find(|(shown, _)| shown == id) {
-                row.grab_focus();
-            }
+            self.focus_task(id);
         }
     }
 
