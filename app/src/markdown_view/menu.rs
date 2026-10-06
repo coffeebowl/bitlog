@@ -1,5 +1,5 @@
 //! The context menu of editable texts: GTK's entries, then formatting with
-//! its shortcuts, so they can be found and learned, and the Markdown help.
+//! its shortcuts, so they can be found and learned, and the help on Markdown.
 
 use gettextrs::gettext;
 use gtk::gio;

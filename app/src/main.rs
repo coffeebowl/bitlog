@@ -10,7 +10,7 @@ mod day_view;
 mod format;
 mod git_page;
 mod heatmap;
-mod markdown_help_dialog;
+mod help_dialog;
 mod markdown_view;
 mod miniature;
 mod note_dialogs;
@@ -39,6 +39,7 @@ use adw::prelude::*;
 use gettextrs::{bind_textdomain_codeset, bindtextdomain, gettext, textdomain};
 use gtk::{gio, glib};
 
+use crate::help_dialog::HelpDialog;
 use crate::window::Window;
 
 fn main() -> glib::ExitCode {
@@ -73,9 +74,15 @@ fn main() -> glib::ExitCode {
     let about = gio::ActionEntry::builder("about")
         .activate(|app: &adw::Application, _, _| show_about(app))
         .build();
-    app.add_action_entries([quit, about]);
+    let help = gio::ActionEntry::builder("help")
+        .activate(|app: &adw::Application, _, _| {
+            HelpDialog::new(None).present(app.active_window().as_ref());
+        })
+        .build();
+    app.add_action_entries([quit, about, help]);
     app.set_accels_for_action("app.quit", &["<Control>q"]);
     app.set_accels_for_action("window.close", &["<Control>w"]);
+    app.set_accels_for_action("app.help", &["F1"]);
     app.set_accels_for_action("win.open-vault", &["<Control>o"]);
     // The same keys as in GNOME Calendar.
     app.set_accels_for_action("win.previous", &["<Alt>Left"]);

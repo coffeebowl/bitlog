@@ -1,0 +1,40 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BitLogHelpDialog: Adw.Dialog {
+  title: _("Help");
+  content-width: 560;
+  content-height: 640;
+  width-request: 360;
+  height-request: 294;
+
+  child: Adw.NavigationView navigation_view {
+    Adw.NavigationPage {
+      title: _("Help");
+      tag: "overview";
+
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {}
+
+        content: Adw.PreferencesPage {
+          Adw.PreferencesGroup topics {}
+
+          Adw.PreferencesGroup {
+            Adw.ActionRow {
+              title: _("Keyboard Shortcuts");
+              activatable: true;
+              action-name: "app.shortcuts";
+
+              [suffix]
+              Adw.ShortcutLabel {
+                accelerator: "<Control>question";
+                valign: center;
+              }
+            }
+          }
+        };
+      };
+    }
+  };
+}

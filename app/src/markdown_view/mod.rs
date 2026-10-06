@@ -42,7 +42,7 @@ use self::images::Location;
 use self::links::Target;
 use self::styling::Styling;
 use crate::colors::with_alpha;
-use crate::markdown_help_dialog::MarkdownHelpDialog;
+use crate::help_dialog::{self, HelpDialog};
 
 /// How much Markdown syntax is dimmed, as the alpha of the text colour.
 const MARKUP_ALPHA: f32 = 0.45;
@@ -138,7 +138,7 @@ mod imp {
                 EDIT_ACTIONS[3],
             );
             klass.install_action("markdown.help", None, |view, _, _| {
-                MarkdownHelpDialog::new().present(Some(view));
+                HelpDialog::new(Some(help_dialog::MARKDOWN)).present(Some(view));
             });
             // Enter alone starts a new line.
             klass.install_action("markdown.follow-link", None, |view, _, _| {

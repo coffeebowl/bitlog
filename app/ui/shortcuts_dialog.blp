@@ -1,0 +1,150 @@
+using Gtk 4.0;
+using Adw 1;
+
+// Loaded by AdwApplication, which opens it with Ctrl+?. Items with an action
+// show the keys the app sets for it.
+Adw.ShortcutsDialog shortcuts_dialog {
+  Adw.ShortcutsSection {
+    title: _("General");
+
+    Adw.ShortcutsItem {
+      title: _("Search and Commands");
+      action-name: "win.search";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Open Vault");
+      action-name: "win.open-vault";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Preferences");
+      action-name: "win.preferences";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Help");
+      action-name: "app.help";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Keyboard Shortcuts");
+      accelerator: "<Control>question";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Main Menu");
+      accelerator: "F10";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Close Window");
+      action-name: "window.close";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Quit");
+      action-name: "app.quit";
+    }
+  }
+
+  Adw.ShortcutsSection {
+    title: _("Days, Calendar and Reports");
+
+    Adw.ShortcutsItem {
+      title: _("Go Back");
+      subtitle: _("A day, week, month or year");
+      action-name: "win.previous";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Go Forward");
+      subtitle: _("A day, week, month or year");
+      action-name: "win.next";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Today");
+      action-name: "win.today";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("New Block");
+      action-name: "win.new-block";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Open Block");
+      subtitle: _("In the timeline");
+      accelerator: "Return";
+    }
+  }
+
+  Adw.ShortcutsSection {
+    title: _("Tasks");
+
+    Adw.ShortcutsItem {
+      title: _("Move Task Up");
+      accelerator: "<Alt>Up";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Move Task Down");
+      accelerator: "<Alt>Down";
+    }
+  }
+
+  Adw.ShortcutsSection {
+    title: _("Texts");
+
+    Adw.ShortcutsItem {
+      title: _("Bold");
+      accelerator: "<Control>b";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Italic");
+      accelerator: "<Control>i";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Code");
+      accelerator: "<Control>e";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Toggle Task");
+      accelerator: "<Control>l";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Follow Link");
+      accelerator: "<Control>Return";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Indent List Item");
+      accelerator: "Tab";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Outdent List Item");
+      accelerator: "<Shift>Tab";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Undo");
+      accelerator: "<Control>z";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Redo");
+      accelerator: "<Shift><Control>z";
+    }
+
+    Adw.ShortcutsItem {
+      title: _("Insert Emoji");
+      accelerator: "<Control>semicolon";
+    }
+  }
+}

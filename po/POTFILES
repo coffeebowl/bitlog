@@ -8,6 +8,12 @@ app/src/day_view/mod.rs
 app/src/format.rs
 app/src/git_page.rs
 app/src/heatmap.rs
+app/src/help_dialog/figures/day.rs
+app/src/help_dialog/figures/markdown.rs
+app/src/help_dialog/figures/mod.rs
+app/src/help_dialog/figures/projects.rs
+app/src/help_dialog/figures/tasks.rs
+app/src/help_dialog/topics.rs
 app/src/main.rs
 app/src/markdown_view/adding_images.rs
 app/src/markdown_view/callouts.rs
@@ -34,7 +40,7 @@ app/ui/commit_dialog.blp
 app/ui/conflict_dialog.blp
 app/ui/day_view.blp
 app/ui/git_page.blp
-app/ui/markdown_help_dialog.blp
+app/ui/help_dialog.blp
 app/ui/note_view.blp
 app/ui/notes_page.blp
 app/ui/preferences_dialog.blp
@@ -43,6 +49,7 @@ app/ui/project_view.blp
 app/ui/projects_page.blp
 app/ui/reports_page.blp
 app/ui/search_dialog.blp
+app/ui/shortcuts_dialog.blp
 app/ui/standup_dialog.blp
 app/ui/sync_conflict_dialog.blp
 app/ui/task_list_view.blp
