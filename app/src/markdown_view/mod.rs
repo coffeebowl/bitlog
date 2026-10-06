@@ -11,6 +11,7 @@ mod editing;
 mod images;
 mod links;
 mod lists;
+mod menu;
 mod styling;
 mod tables;
 mod tags;
@@ -41,6 +42,7 @@ use self::images::Location;
 use self::links::Target;
 use self::styling::Styling;
 use crate::colors::with_alpha;
+use crate::markdown_help_dialog::MarkdownHelpDialog;
 
 /// How much Markdown syntax is dimmed, as the alpha of the text colour.
 const MARKUP_ALPHA: f32 = 0.45;
@@ -135,6 +137,9 @@ mod imp {
                 gdk::ModifierType::CONTROL_MASK,
                 EDIT_ACTIONS[3],
             );
+            klass.install_action("markdown.help", None, |view, _, _| {
+                MarkdownHelpDialog::new().present(Some(view));
+            });
             // Enter alone starts a new line.
             klass.install_action("markdown.follow-link", None, |view, _, _| {
                 let buffer = view.buffer();
@@ -218,6 +223,7 @@ mod imp {
             view.link_pasted_addresses();
             view.add_dropped_images();
             view.suggest_notes();
+            view.add_menu();
 
             let style_manager = adw::StyleManager::default();
             set_style_scheme(&view, &style_manager);
@@ -324,7 +330,8 @@ glib::wrapper! {
     /// typing a wiki link proposes notes.
     ///
     /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
-    /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces.
+    /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces;
+    /// the context menu has these and explains the Markdown.
     pub struct MarkdownView(ObjectSubclass<imp::MarkdownView>)
         @extends sourceview5::View, gtk::TextView, gtk::Widget,
         @implements gtk::Accessible, gtk::AccessibleText, gtk::Buildable,

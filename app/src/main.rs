@@ -10,6 +10,7 @@ mod day_view;
 mod format;
 mod git_page;
 mod heatmap;
+mod markdown_help_dialog;
 mod markdown_view;
 mod miniature;
 mod note_dialogs;

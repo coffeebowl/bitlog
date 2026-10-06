@@ -11,6 +11,7 @@ app/src/heatmap.rs
 app/src/main.rs
 app/src/markdown_view/adding_images.rs
 app/src/markdown_view/callouts.rs
+app/src/markdown_view/menu.rs
 app/src/note_dialogs.rs
 app/src/note_view.rs
 app/src/notes_page.rs
@@ -33,6 +34,7 @@ app/ui/commit_dialog.blp
 app/ui/conflict_dialog.blp
 app/ui/day_view.blp
 app/ui/git_page.blp
+app/ui/markdown_help_dialog.blp
 app/ui/note_view.blp
 app/ui/notes_page.blp
 app/ui/preferences_dialog.blp
