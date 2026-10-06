@@ -83,6 +83,7 @@ pub struct Formatting {
     pub tasks: Vec<TaskItem>,
     /// Links to web pages and mail addresses, which open in other apps.
     pub web_links: Vec<WebLink>,
+    pub images: Vec<ImageLink>,
     pub callouts: Vec<Callout>,
     /// The lines of each table: the header, the delimiter row, the body.
     pub tables: Vec<Vec<TableLine>>,
@@ -106,6 +107,17 @@ pub struct WebLink {
     /// Like `https://example.com`, or `mailto:anna@example.com` for a
     /// mail address.
     pub url: String,
+}
+
+/// An image, like `![Login form](../../../images/login.png)`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageLink {
+    /// All of it.
+    pub range: Range<usize>,
+    /// Like `../../../images/login.png`, as written, see [`image_path`](crate::image_path).
+    pub destination: String,
+    /// Whether it is in a table, whose cells the app shows as text.
+    pub in_table: bool,
 }
 
 /// What a callout is about, as GitHub has them.
@@ -255,6 +267,15 @@ fn end_element(
             formatting.code_blocks.push(code_block(text, frame, info));
         }
         Tag::Table(_) => formatting.tables.push(table_lines(text, &frame.range)),
+        Tag::Image { dest_url, .. } => {
+            if let Some(range) = trim(text, frame.range.clone()) {
+                formatting.images.push(ImageLink {
+                    range,
+                    destination: dest_url.to_string(),
+                    in_table: stack.iter().any(|frame| matches!(frame.tag, Tag::Table(_))),
+                });
+            }
+        }
         Tag::Link {
             link_type,
             dest_url,
@@ -295,14 +316,20 @@ fn web_url(link_type: LinkType, destination: &str) -> Option<String> {
     if link_type == LinkType::Email {
         return Some(format!("mailto:{destination}"));
     }
-    // A scheme, like `https:`, before any `/`.
-    let scheme = &destination[..destination.find(':')?];
-    let has_scheme = scheme.len() > 1
-        && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
-        && scheme
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'));
-    has_scheme.then(|| destination.to_owned())
+    has_scheme(destination).then(|| destination.to_owned())
+}
+
+/// Whether `destination` starts with a scheme, like `https:`, before any
+/// `/`, rather than being a path.
+pub(crate) fn has_scheme(destination: &str) -> bool {
+    destination.find(':').is_some_and(|colon| {
+        let scheme = &destination[..colon];
+        scheme.len() > 1
+            && scheme.starts_with(|c: char| c.is_ascii_alphabetic())
+            && scheme
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+    })
 }
 
 /// How deep a list item inside the elements of `stack` is nested, from 1.
@@ -700,6 +727,36 @@ mod tests {
                 ("[a](https://example.com)", "https://example.com"),
                 ("<anna@example.org>", "mailto:anna@example.org"),
                 ("<https://c.d>", "https://c.d"),
+            ]
+        );
+    }
+
+    #[test]
+    fn images_also_in_tables() {
+        let text = "![Login](../../../images/login.png) and ![](<a b.png>)\n\n\
+                    | Screen |\n| --- |\n| ![](table.png) |\n";
+        let formatting = markdown_formatting(text, MarkdownMode::Block);
+        let images: Vec<(&str, &str, bool)> = formatting
+            .images
+            .iter()
+            .map(|image| {
+                (
+                    &text[image.range.clone()],
+                    image.destination.as_str(),
+                    image.in_table,
+                )
+            })
+            .collect();
+        assert_eq!(
+            images,
+            [
+                (
+                    "![Login](../../../images/login.png)",
+                    "../../../images/login.png",
+                    false
+                ),
+                ("![](<a b.png>)", "a b.png", false),
+                ("![](table.png)", "table.png", true),
             ]
         );
     }

@@ -93,7 +93,7 @@ enum Preview {
 
 /// An image as read, to be shown in the main thread, which alone may hold
 /// a pixbuf or texture.
-struct Image {
+pub(crate) struct Image {
     width: i32,
     height: i32,
     format: gdk::MemoryFormat,
@@ -103,7 +103,7 @@ struct Image {
 }
 
 impl Image {
-    fn new(pixbuf: &gdk_pixbuf::Pixbuf) -> Option<Self> {
+    pub(crate) fn new(pixbuf: &gdk_pixbuf::Pixbuf) -> Option<Self> {
         Some(Self {
             width: pixbuf.width(),
             height: pixbuf.height(),
@@ -115,6 +115,17 @@ impl Image {
             pixels: pixbuf.read_pixel_bytes(),
             stride: usize::try_from(pixbuf.rowstride()).ok()?,
         })
+    }
+
+    pub(crate) fn texture(&self) -> gdk::Texture {
+        gdk::MemoryTexture::new(
+            self.width,
+            self.height,
+            self.format,
+            &self.pixels,
+            self.stride,
+        )
+        .upcast()
     }
 }
 
@@ -149,15 +160,8 @@ fn show_preview(
 
 /// `image`, covering the page.
 fn picture(image: &Image) -> gtk::Picture {
-    let texture = gdk::MemoryTexture::new(
-        image.width,
-        image.height,
-        image.format,
-        &image.pixels,
-        image.stride,
-    );
     gtk::Picture::builder()
-        .paintable(&texture)
+        .paintable(&image.texture())
         .content_fit(gtk::ContentFit::Cover)
         .vexpand(true)
         .build()

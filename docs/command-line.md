@@ -52,7 +52,9 @@ bitlog export remote                                     # remote work days per 
 
 bitlog doctor             # sync conflict copies, unknown projects, overlaps, headings in
                           # texts, wiki links without their project in block texts,
-                          # broken wiki links and Git conflict markers in notes
+                          # broken wiki links and Git conflict markers in notes,
+                          # links to missing images or out of the vault,
+                          # unused and duplicate images
 bitlog doctor --fix       # merge conflict copies without contradictions,
                           # escape those headings so they read as text,
                           # name the block's project in those wiki links

@@ -41,11 +41,11 @@ impl Vault {
         check_empty(root)?;
         let mut config: DocumentMut = CONFIG.parse().expect("the default config is valid TOML");
         config["name"] = toml_edit::value(name);
-        write_atomic(&root.join("bitlog.toml"), &config.to_string())?;
+        write_atomic(&root.join("bitlog.toml"), config.to_string())?;
         write_atomic(&root.join("README.md"), README)?;
         write_atomic(&root.join("templates/note.md"), NOTE_TEMPLATE)?;
         for project in Project::defaults(today) {
-            write_atomic(&Project::path(root, &project.slug), &project.to_toml())?;
+            write_atomic(&Project::path(root, &project.slug), project.to_toml())?;
         }
         for (file, entry) in IGNORE_ENTRIES {
             add_line(&root.join(file), entry)?;
@@ -76,7 +76,7 @@ fn add_line(path: &Path, line: &str) -> Result<(), SaveError> {
     } else {
         "\n"
     };
-    write_atomic(path, &format!("{text}{separator}{line}\n"))
+    write_atomic(path, format!("{text}{separator}{line}\n"))
 }
 
 #[cfg(test)]

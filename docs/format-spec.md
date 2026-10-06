@@ -21,6 +21,7 @@ at any time.
 | Project | Something time is spent on | `projects/<slug>/project.toml` |
 | Project note | A Markdown note belonging to a project | `projects/<slug>/notes/*.md` |
 | Project asset | Any other file kept with a project, such as a PDF or an image | `projects/<slug>/assets/**` |
+| Image | A picture shown in day notes, block texts and project notes | `images/**` |
 | Task | An item on the global task list | `tasks.toml` |
 
 A block refers to its project by slug. A project note belongs to its project
@@ -53,6 +54,7 @@ my-vault/
   projects/project-a/project.toml
   projects/project-a/notes/auth-middleware.md
   projects/project-a/assets/scans/offer.pdf  # any files, in any subfolders
+  images/login-form.png              # images shown in texts
   templates/note.md
   exports/                           # generated, may be overwritten
   .bitlog/                         # local, never sync
@@ -218,8 +220,8 @@ Block texts and the day note use a restricted subset of Markdown, because the
 outline of the document belongs to BitLog:
 
 - **Allowed:** paragraphs, lists and task lists, code blocks, inline code,
-  bold, italic, strikethrough, links, block quotes, tables, tags (`#tag`,
-  without a space after the hash).
+  bold, italic, strikethrough, links, images (see "Images"), block quotes,
+  tables, tags (`#tag`, without a space after the hash).
 - **Not intended:** headings of any level, both `# Text` and setext headings
   (`===` or `---` below a line of text).
 - **In the app:** The editor offers no headings. Typed heading syntax is shown
@@ -465,7 +467,35 @@ replaces only the link targets and keeps the rest of each link.
   is anything in them. Sync conflict copies are assets of their own.
 - An asset added under a name that is taken gets a number before its
   extension, as in `offer (2).pdf`.
-- Nothing links to assets. Renaming or removing one changes nothing else.
+- BitLog keeps no links to assets. Renaming or removing one changes
+  nothing else, not even an image link to it (see "Images").
+
+## Images
+
+- Texts show images with Markdown image links whose target is a path
+  relative to the file of the text, with `/` between folders:
+  `![Login form](../../../images/login-form.png)`. Day files and project
+  notes are both three folders deep, so this path is the same in all texts.
+- Images live in `images/`, which may have subfolders. Any other image of
+  the vault can be shown as well, such as a project asset:
+  `![](../assets/scans/rack.jpg)` in a project note.
+- A target that leaves the vault, an absolute path and a web address show
+  no image. Spaces in a target are written `%20`, or the whole target is
+  put in angle brackets: `![](<../../../images/login form.png>)`.
+- BitLog adds images to `images/` itself, not to its subfolders. An added
+  file keeps its name, with a number before its extension if the name is
+  taken, as in `login (2).png`. A file that lies in the vault already is
+  linked where it is. A pasted image without a name is named after
+  the time it was pasted, as in `2026-10-06 12-34-56.png`. An image whose
+  content is in `images/` or its subfolders already is linked rather than
+  added again, the first by path if several have it.
+- BitLog writes image links without alternative text, the target in angle
+  brackets if it has spaces or parentheses, each on a line of its own.
+- `bitlog doctor` reports image links to files of the vault that are
+  missing, and links to images outside the vault, such as absolute paths:
+  they show nothing and lead elsewhere on other devices. It also reports
+  images in `images/` that no text shows, unless a text cannot be read, and
+  images there with the same content.
 
 ## Exports: `exports/`
 

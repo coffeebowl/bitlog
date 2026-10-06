@@ -12,9 +12,12 @@ use crate::miniature::Miniature;
 
 /// The lines of a note its miniature formats at most, more than fit.
 const PREVIEW_LINES: usize = 50;
+/// How wide the miniature of a note reads its images at most, in pixels of
+/// its page, which is shown far smaller.
+const PREVIEW_IMAGE_WIDTH: i32 = 270;
 
 /// The text of `note`, or none if it cannot be read.
-pub fn note_text(vault: &Vault, note: &NotePath) -> String {
+fn note_text(vault: &Vault, note: &NotePath) -> String {
     vault.load_note(note).map_or_else(
         |err| {
             glib::g_warning!("bitlog", "{err}");
@@ -36,12 +39,16 @@ pub fn note_preview() -> MarkdownView {
     // Clicks go to the card, which opens the note.
     preview.set_can_target(false);
     preview.set_focusable(false);
+    preview.set_image_width(PREVIEW_IMAGE_WIDTH);
     preview
 }
 
-/// Shows the start of `text` in `preview`, unless it shows it already.
-pub fn show_preview(preview: &MarkdownView, text: &str) {
-    let text = preview_text(without_front_matter(text).trim_start_matches(['\r', '\n']));
+/// Shows the start of the text of `note` in `preview`, its images
+/// included, unless it shows it already.
+pub fn show_preview(preview: &MarkdownView, vault: &Vault, note: &NotePath) {
+    preview.set_location(vault.root(), &vault.note_path(note));
+    let text = note_text(vault, note);
+    let text = preview_text(without_front_matter(&text).trim_start_matches(['\r', '\n']));
     if !preview.shows(text) {
         preview.set_markdown(text);
     }

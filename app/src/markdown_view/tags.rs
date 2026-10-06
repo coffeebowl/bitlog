@@ -8,6 +8,7 @@ use gtk::glib::translate::IntoGlib;
 use gtk::prelude::*;
 use gtk::{gdk, pango};
 
+use super::styling::Styling;
 use super::{CODE_ALPHA, MARKUP_ALPHA};
 use crate::colors::with_alpha;
 
@@ -36,6 +37,9 @@ pub(super) const TASK_DONE: &str = "task-done";
 /// Text in no colour. Pango takes an alpha of 0 for none, which draws the
 /// text opaque, so this is the least alpha it keeps.
 pub(super) const INVISIBLE: gdk::RGBA = gdk::RGBA::new(0.0, 0.0, 0.0, 2.0 / 65535.0);
+/// The line breaks of lines that `hide_line` hides, and the last line.
+const SHRUNK_LINE_BREAK: &str = "shrunk-line-break";
+const SHRUNK_LINE_BREAK_SCALE: f64 = 0.05;
 /// The space between a code block and its code.
 const CODE_BLOCK_PADDING: i32 = 12;
 /// The space above and below the code of a code block without its fences.
@@ -225,6 +229,33 @@ pub(super) fn apply_to_lines(buffer: &gtk::TextBuffer, name: &str, range: Range<
         end.forward_line();
     }
     buffer.apply_tag_by_name(name, &start, &end);
+}
+
+/// Hides the text of the `line` of `styling`, with its line break, as
+/// something else is drawn for it. The line break stays, but shrunk to
+/// about a pixel: after lines hidden with their line breaks, GTK takes the
+/// pointer for a place off the end of a line and aborts. The last line has
+/// no line break, so its text is shrunk instead: hidden, it would keep the
+/// height of a line.
+pub(super) fn hide_line(styling: &Styling, line: Range<usize>) {
+    // Last, so that it wins over the other tags.
+    get_or_add(&styling.buffer, SHRUNK_LINE_BREAK, || {
+        gtk::TextTag::builder()
+            .name(SHRUNK_LINE_BREAK)
+            .foreground_rgba(&INVISIBLE)
+            .scale(SHRUNK_LINE_BREAK_SCALE)
+            .build()
+    });
+    let text_end = line.start
+        + styling.text[line.clone()]
+            .trim_end_matches(['\r', '\n'])
+            .len();
+    if text_end == line.end {
+        styling.tag(SHRUNK_LINE_BREAK, &line);
+    } else {
+        styling.tag(HIDDEN, &(line.start..text_end));
+        styling.tag(SHRUNK_LINE_BREAK, &(text_end..line.end));
+    }
 }
 
 /// Applies the tag named `name` to the characters of `range`.

@@ -1,7 +1,8 @@
-//! Following links: wiki links to notes of the vault, and web links that
-//! other apps open.
+//! Following links: wiki links to notes of the vault, and web links and
+//! images that other apps open.
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -18,9 +19,26 @@ pub(super) enum Target {
     Note(Option<NotePath>),
     /// A web page or mail address, which another app opens.
     Web(String),
+    /// An image, which another app shows.
+    File(PathBuf),
 }
 
 impl MarkdownView {
+    /// Where the link at `x`, `y` in widget coordinates leads, if there is
+    /// one: an image drawn there, or a link in the text.
+    fn link_at_point(&self, x: f64, y: f64) -> Option<Target> {
+        self.restyle_if_queued();
+        let (buffer_x, buffer_y) =
+            self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
+        let image = self
+            .imp()
+            .decorations
+            .borrow()
+            .image_at(self.upcast_ref(), buffer_x, buffer_y)
+            .map(|card| Target::File(card.path.clone()));
+        image.or_else(|| self.iter_at(x, y).and_then(|iter| self.link_at(&iter)))
+    }
+
     /// Where the link at `iter` leads, if there is one.
     fn link_at(&self, iter: &gtk::TextIter) -> Option<Target> {
         self.restyle_if_queued();
@@ -39,8 +57,8 @@ impl MarkdownView {
         }
     }
 
-    /// Opens a note of the vault, or another app for a web page or mail
-    /// address.
+    /// Opens a note of the vault, or another app for a web page, a mail
+    /// address or an image.
     fn follow_link(&self, target: Target) {
         match target {
             Target::Note(Some(note)) => {
@@ -56,11 +74,19 @@ impl MarkdownView {
                     |_| {},
                 );
             }
+            Target::File(path) => {
+                let window = self.root().and_downcast::<gtk::Window>();
+                gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(
+                    window.as_ref(),
+                    None::<&gio::Cancellable>,
+                    |_| {},
+                );
+            }
         }
     }
 
     /// The text at `x`, `y` in widget coordinates, if there is any.
-    fn iter_at(&self, x: f64, y: f64) -> Option<gtk::TextIter> {
+    pub(super) fn iter_at(&self, x: f64, y: f64) -> Option<gtk::TextIter> {
         let (x, y) = self.window_to_buffer_coords(gtk::TextWindowType::Widget, x as i32, y as i32);
         // Below the text of a line, GTK takes the pointer for the end of the
         // line, counting its hidden text as shown, and aborts if it has any.
@@ -100,7 +126,7 @@ impl MarkdownView {
                     .current_event_state()
                     .contains(gdk::ModifierType::SHIFT_MASK);
                 let link = (presses == 1 && !shift)
-                    .then(|| view.iter_at(x, y).and_then(|iter| view.link_at(&iter)))
+                    .then(|| view.link_at_point(x, y))
                     .flatten();
                 if link.is_some() {
                     click.set_state(gtk::EventSequenceState::Claimed);
@@ -131,9 +157,7 @@ impl MarkdownView {
             #[weak(rename_to = view)]
             self,
             move |_, x, y| {
-                let on_link = view
-                    .iter_at(x, y)
-                    .is_some_and(|iter| view.link_at(&iter).is_some());
+                let on_link = view.link_at_point(x, y).is_some();
                 let on_check_box = view.is_editable() && view.check_box_at(x, y).is_some();
                 let pointer = on_link || on_check_box;
                 view.set_cursor_from_name(Some(if pointer { "pointer" } else { "text" }));

@@ -1,6 +1,7 @@
 //! What is drawn beside the text: bars beside quotes, bullets over the
 //! markers of list items and lines for rules, and what the other modules
-//! add, like the cards of code blocks, diagrams and the grids of tables.
+//! add, like the cards of code blocks, diagrams, images and the grids of
+//! tables.
 //! And the syntax that is hidden until the cursor is at it.
 
 use std::ops::Range;
@@ -13,6 +14,7 @@ use super::callouts::CalloutCard;
 use super::check_boxes::CheckBox;
 use super::code_blocks::CodeCard;
 use super::diagrams::DiagramCard;
+use super::images::ImageCard;
 use super::styling::{Styling, holds};
 use super::tables::{DelimiterDashes, Fit, Grid, TidiedTable};
 use super::{GRID_ALPHA, MARKUP_ALPHA, lists, tags};
@@ -37,6 +39,9 @@ pub(super) struct Decorations {
     pub(super) code_blocks: Vec<CodeCard>,
     /// Code blocks drawn as diagrams, not those being edited.
     pub(super) diagrams: Vec<DiagramCard>,
+    pub(super) images: Vec<ImageCard>,
+    /// For the images of the last line, below the text.
+    pub(super) room_below_text: i32,
     pub(super) callouts: Vec<CalloutCard>,
     /// Tables drawn as grids, not those being edited.
     pub(super) grids: Vec<Grid>,
@@ -49,9 +54,9 @@ pub(super) struct Decorations {
     pub(super) table_fits: Vec<Fit>,
     pub(super) check_boxes: Vec<CheckBox>,
     /// Tables and their delimiter rows, rules, code blocks, the markers of
-    /// callouts, the check boxes of tasks and inline elements, which show
-    /// their Markdown while the cursor is at them, without the last line
-    /// break.
+    /// callouts, the check boxes of tasks, images, lines of nothing but
+    /// images and inline elements, which show their Markdown while the
+    /// cursor is at them, without the last line break.
     pub(super) revealable: Vec<Range<i32>>,
     /// The hidden markup of inline elements, as sorted byte ranges.
     pub(super) hidden: Vec<Range<usize>>,
@@ -104,10 +109,12 @@ impl Decorations {
             .collect()
     }
 
-    /// Whether a diagram has another height in `view` than it has room
-    /// for, or a table fits it otherwise, as the view changed its width.
+    /// Whether a diagram or image has another height in `view` than it has
+    /// room for, or a table fits it otherwise, as the view changed its
+    /// width.
     pub(super) fn misfit(&self, view: &gtk::TextView) -> bool {
         self.diagrams.iter().any(|card| card.misfits(view))
+            || self.images.iter().any(|card| card.misfits(view))
             || self.table_fits.iter().any(|fit| fit.misfits(view))
     }
 
@@ -128,6 +135,11 @@ impl Decorations {
             .find(|check_box| check_box.contains(view, x, y))
     }
 
+    /// The image at `x`, `y` in `view`, in buffer coordinates.
+    pub(super) fn image_at(&self, view: &gtk::TextView, x: i32, y: i32) -> Option<&ImageCard> {
+        self.images.iter().find(|card| card.contains(view, x, y))
+    }
+
     /// Draws what goes below the text, in buffer coordinates.
     pub(super) fn snapshot_below(&self, view: &gtk::TextView, snapshot: &gtk::Snapshot) {
         let visible = view.visible_rect();
@@ -137,6 +149,9 @@ impl Decorations {
             card.snapshot(view, snapshot, &visible);
         }
         for card in &self.diagrams {
+            card.snapshot(view, snapshot, &visible);
+        }
+        for card in &self.images {
             card.snapshot(view, snapshot, &visible);
         }
         for range in &self.quotes {

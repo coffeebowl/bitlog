@@ -277,6 +277,11 @@ impl DayView {
         self.action_set_enabled("day.new-block", true);
         self.action_set_enabled("day.delete", true);
         self.update_links();
+        let vault = self.vault();
+        let path = vault.day_path(file.day.date);
+        for view in [&*imp.note_view, &*imp.block_text] {
+            view.set_location(vault.root(), &path);
+        }
         self.show_details(&file.day);
         let is_today = file.day.date == Local::now().date_naive();
         imp.timeline.set_day(&self.vault(), &file.day, is_today);

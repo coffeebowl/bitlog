@@ -102,10 +102,11 @@ pub(crate) fn parse_toml<T: DeserializeOwned>(text: &str) -> Result<(T, Document
     Ok((value, document, content_hash(text)))
 }
 
-/// Writes `text` to `path` so that readers, sync tools included, see either
-/// the old or the new content, never a part of it. Creates missing folders.
-pub(crate) fn write_atomic(path: &Path, text: &str) -> Result<(), SaveError> {
-    replace_atomic(path, |file| file.write_all(text.as_bytes()))
+/// Writes `content` to `path` so that readers, sync tools included, see
+/// either the old or the new content, never a part of it. Creates missing
+/// folders.
+pub(crate) fn write_atomic(path: &Path, content: impl AsRef<[u8]>) -> Result<(), SaveError> {
+    replace_atomic(path, |file| file.write_all(content.as_ref()))
 }
 
 /// Copies the file `source` to `path` the way [`write_atomic`] writes.

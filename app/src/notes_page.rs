@@ -12,7 +12,7 @@ use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
-use crate::cards::{note_card, note_preview, note_text, show_preview};
+use crate::cards::{note_card, note_preview, show_preview};
 use crate::colors::color_dot;
 use crate::config;
 use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
@@ -319,7 +319,7 @@ impl NotesPage {
                     details,
                 }
             });
-            show_preview(&card.preview, &note_text(vault, &listed.note));
+            show_preview(&card.preview, vault, &listed.note);
             kept.insert(listed.note.clone(), card);
         }
         *cards = kept;

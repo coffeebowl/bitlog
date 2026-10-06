@@ -10,6 +10,7 @@ mod error;
 mod file;
 mod git_log;
 mod id;
+mod images;
 mod init;
 mod markdown;
 mod notes;
@@ -39,9 +40,10 @@ pub use git_log::{
     short_id,
 };
 pub use id::{AssetPath, BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
+pub use images::{ImageProblem, add_image, add_pasted_image, image_link, image_path};
 pub use init::CreateError;
 pub use markdown::{
-    Callout, CalloutKind, CodeBlock, Continuation, Formatting, InlineMarkup, ListIndent,
+    Callout, CalloutKind, CodeBlock, Continuation, Formatting, ImageLink, InlineMarkup, ListIndent,
     MarkdownMode, MarkdownStyle, TableLine, TaskItem, WebLink, closing_fence, continue_list,
     continue_quote, continue_table, escape_headings, markdown_formatting, nest_list_item,
     pairs_bracket, pasted_link, renumbered_lists, tidied_table, toggled_tasks, typed_link_target,

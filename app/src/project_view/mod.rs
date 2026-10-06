@@ -14,7 +14,7 @@ use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use gtk::{gdk, glib};
 
-use crate::cards::{asset_card, note_card, note_preview, note_text, show_preview};
+use crate::cards::{asset_card, note_card, note_preview, show_preview};
 use crate::colors;
 use crate::format::{
     format_duration, format_full_date, format_range, format_share, format_weekday_date,
@@ -297,7 +297,7 @@ impl ProjectView {
             .into_iter()
             .map(|note| {
                 let preview = note_preview();
-                show_preview(&preview, &note_text(vault, &note));
+                show_preview(&preview, vault, &note);
                 imp.notes_grid.append(&note_card(&note, &preview, None));
                 (note, preview)
             })
@@ -356,7 +356,7 @@ impl ProjectView {
             return;
         };
         for (note, preview) in &*imp.notes.borrow() {
-            show_preview(preview, &note_text(&vault, note));
+            show_preview(preview, &vault, note);
         }
     }
 }

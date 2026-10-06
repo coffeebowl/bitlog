@@ -1,13 +1,16 @@
 //! Finding what is odd in a vault, for `bitlog doctor`.
 
+use std::collections::HashSet;
 use std::fmt;
+use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
 
 use crate::conflict::has_git_markers;
 use crate::day::escaped_block_headings;
 use crate::error::{ReadError, SaveError};
-use crate::markdown::{escape_headings, heading_lines};
+use crate::images::{ImageProblem, check_image_links, duplicates, image_files};
+use crate::markdown::{MarkdownMode, escape_headings, heading_lines};
 use crate::notes::{qualified, wiki_links};
 use crate::{
     BlockId, ConflictCopy, Contradiction, Day, DayFile, DayWarning, NotePath, ProjectSlug, Vault,
@@ -68,6 +71,28 @@ pub enum Problem {
         line: usize,
         link: String,
     },
+    /// An image link in the day note (`block` is `None`) or a block text,
+    /// as it is written.
+    BadImage {
+        date: NaiveDate,
+        block: Option<BlockId>,
+        image: String,
+        problem: ImageProblem,
+    },
+    /// An image link in a note, on line `line` counted from 1, as it is
+    /// written.
+    BadNoteImage {
+        note: NotePath,
+        line: usize,
+        image: String,
+        problem: ImageProblem,
+    },
+    /// An image in `images/` that no text shows, as a path relative to the
+    /// vault. Only looked for if all texts could be read.
+    UnusedImage(String),
+    /// Images in `images/` with the same content, as paths relative to the
+    /// vault.
+    DuplicateImages(Vec<String>),
 }
 
 impl Problem {
@@ -151,15 +176,51 @@ impl fmt::Display for Problem {
             Self::BrokenLink { note, line, link } => {
                 write!(f, "{note}:{line}: the wiki link {link} points to no note")
             }
+            Self::BadImage {
+                date,
+                block,
+                image,
+                problem,
+            } => {
+                match block {
+                    Some(block) => write!(f, "{date}: the text of block {block}")?,
+                    None => write!(f, "{date}: the day note")?,
+                }
+                match problem {
+                    ImageProblem::Missing => write!(f, " shows a missing image: {image}"),
+                    ImageProblem::OutsideVault => {
+                        write!(f, " links to an image outside the vault: {image}")
+                    }
+                }
+            }
+            Self::BadNoteImage {
+                note,
+                line,
+                image,
+                problem,
+            } => {
+                write!(f, "{note}:{line}: the image {image} is ")?;
+                match problem {
+                    ImageProblem::Missing => write!(f, "missing"),
+                    ImageProblem::OutsideVault => write!(f, "outside the vault"),
+                }
+            }
+            Self::UnusedImage(image) => write!(f, "{image}: shown in no text"),
+            Self::DuplicateImages(images) => {
+                write!(f, "{}: the same image", images.join(", "))
+            }
         }
     }
 }
 
 impl Vault {
     /// Checks for sync conflict copies, then all day files, oldest first,
-    /// then the notes of all projects.
+    /// then the notes of all projects, then the images.
     pub fn check(&self) -> Result<Vec<Problem>, ReadError> {
         let mut problems = Vec::new();
+        // The images the texts show, and whether all texts could be read.
+        let mut shown = HashSet::new();
+        let mut all_read = true;
         for copy in self.conflict_copies()? {
             match self.contradictions(&copy) {
                 Ok(contradictions) => problems.push(Problem::Conflict {
@@ -171,21 +232,48 @@ impl Vault {
         }
         for date in self.all_days()? {
             match self.load_day(date) {
-                Ok(Some(file)) => problems.extend(self.check_day(&file)),
+                Ok(Some(file)) => problems.extend(self.check_day(&file, &mut shown)),
                 Ok(None) => {}
-                Err(err) => problems.push(Problem::Unreadable(err)),
+                Err(err) => {
+                    all_read = false;
+                    problems.push(Problem::Unreadable(err));
+                }
             }
         }
         for note in self.all_notes() {
             let note = note?;
             match self.load_note(&note) {
                 Ok(file) if has_git_markers(&file.text) => {
+                    all_read = false;
                     problems.push(Problem::GitMarkers(note));
                 }
-                Ok(file) => problems.extend(self.broken_links(&note, &file.text)),
-                Err(err) => problems.push(Problem::Unreadable(err)),
+                Ok(file) => {
+                    problems.extend(self.broken_links(&note, &file.text));
+                    problems.extend(self.check_note_images(&note, &file.text, &mut shown));
+                }
+                Err(err) => {
+                    all_read = false;
+                    problems.push(Problem::Unreadable(err));
+                }
             }
         }
+        let files = image_files(self.root())?;
+        if all_read {
+            problems.extend(
+                files
+                    .iter()
+                    .filter(|image| !shown.contains(*image))
+                    .map(|image| Problem::UnusedImage(relative(self.root(), image))),
+            );
+        }
+        problems.extend(duplicates(&files).iter().map(|group| {
+            Problem::DuplicateImages(
+                group
+                    .iter()
+                    .map(|image| relative(self.root(), image))
+                    .collect(),
+            )
+        }));
         Ok(problems)
     }
 
@@ -223,7 +311,8 @@ impl Vault {
         Ok(())
     }
 
-    fn check_day(&self, file: &DayFile) -> Vec<Problem> {
+    /// Checks the day of `file`, and adds the images it shows to `shown`.
+    fn check_day(&self, file: &DayFile, shown: &mut HashSet<PathBuf>) -> Vec<Problem> {
         let day = &file.day;
         let date = day.date;
         let mut problems: Vec<Problem> = day
@@ -248,7 +337,39 @@ impl Vault {
         problems.extend(headings(day));
         problems.extend(escaped_headings(day));
         problems.extend(short_links(day));
+        let path = self.day_path(date);
+        for (block, text) in texts(day) {
+            let (bad, images) = check_image_links(self.root(), &path, text, MarkdownMode::Block);
+            shown.extend(images);
+            problems.extend(bad.into_iter().map(|(image, problem)| Problem::BadImage {
+                date,
+                block: block.cloned(),
+                image: text[image].to_owned(),
+                problem,
+            }));
+        }
         problems
+    }
+
+    /// Checks the image links of `note` with `text`, and adds the images it
+    /// shows to `shown`.
+    fn check_note_images(
+        &self,
+        note: &NotePath,
+        text: &str,
+        shown: &mut HashSet<PathBuf>,
+    ) -> Vec<Problem> {
+        let (bad, images) =
+            check_image_links(self.root(), &self.note_path(note), text, MarkdownMode::Full);
+        shown.extend(images);
+        bad.into_iter()
+            .map(|(image, problem)| Problem::BadNoteImage {
+                note: note.clone(),
+                line: text[..image.start].matches('\n').count() + 1,
+                image: text[image].to_owned(),
+                problem,
+            })
+            .collect()
     }
 
     fn broken_links(&self, note: &NotePath, text: &str) -> Vec<Problem> {
@@ -317,6 +438,16 @@ fn escaped_headings(day: &Day) -> Vec<Problem> {
         .collect()
 }
 
+/// `path` relative to the vault at `root`, with `/` between folders.
+fn relative(root: &Path, path: &Path) -> String {
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let parts: Vec<_> = relative
+        .components()
+        .map(|part| part.as_os_str().to_string_lossy())
+        .collect();
+    parts.join("/")
+}
+
 /// The day note (without a block) and the block texts of `day`.
 fn texts(day: &Day) -> impl Iterator<Item = (Option<&BlockId>, &String)> {
     std::iter::once((None, &day.note)).chain(
@@ -377,6 +508,55 @@ mod tests {
             [
                 "projects/infra/notes/Links.md:1: the wiki link [[Missing]] points to no note",
                 "projects/infra/notes/Links.md:4: the wiki link [[a/b/c]] points to no note",
+            ]
+        );
+    }
+
+    #[test]
+    fn image_problems() {
+        let (_dir, vault) = sample_copy();
+        let images = vault.root().join("images");
+        fs::create_dir_all(&images).unwrap();
+        fs::write(images.join("there.png"), "there").unwrap();
+        fs::write(images.join("copy of there.png"), "there").unwrap();
+        fs::write(images.join("unused.png"), "unused").unwrap();
+        let note = vault
+            .create_note(&"infra".parse().unwrap(), "Images", date(26))
+            .unwrap();
+        fs::write(
+            vault.note_path(&note),
+            "![](../../../images/there.png)\n\n| a |\n| - |\n| ![](gone.png) |\n\n\
+             ![](https://example.com/a.png) `![](code.png)`\n\
+             ![](../../../../outside.png)\n",
+        )
+        .unwrap();
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.note = "![](../../../images/there.png) ![](../../../images/gone.png)".into();
+                day.blocks[1].text =
+                    "![x](<../../../images/also gone.png>) ![](/home/anna/x.png)".into();
+                Ok(())
+            })
+            .unwrap();
+        let images: Vec<String> = messages(&vault)
+            .into_iter()
+            .filter(|message| message.contains("image"))
+            .collect();
+        assert_eq!(
+            images,
+            [
+                "2026-09-21: the day note shows a missing image: ![](../../../images/gone.png)",
+                "2026-09-21: the text of block c3d4 shows a missing image: \
+                 ![x](<../../../images/also gone.png>)",
+                "2026-09-21: the text of block c3d4 links to an image outside the vault: \
+                 ![](/home/anna/x.png)",
+                "projects/infra/notes/Images.md:5: the image ![](gone.png) is missing",
+                "projects/infra/notes/Images.md:8: the image ![](../../../../outside.png) \
+                 is outside the vault",
+                "images/copy of there.png: shown in no text",
+                "images/unused.png: shown in no text",
+                "images/copy of there.png, images/there.png: the same image",
             ]
         );
     }

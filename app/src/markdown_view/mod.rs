@@ -1,3 +1,4 @@
+mod adding_images;
 mod callouts;
 mod check_boxes;
 mod code_blocks;
@@ -5,7 +6,9 @@ mod code_highlight;
 mod completion;
 mod decorations;
 mod diagrams;
+mod drawings;
 mod editing;
+mod images;
 mod links;
 mod lists;
 mod styling;
@@ -15,6 +18,7 @@ mod tags;
 use std::cell::{Cell, RefCell};
 use std::collections::HashSet;
 use std::ops::Range;
+use std::path::Path;
 use std::sync::OnceLock;
 
 use adw::prelude::*;
@@ -32,7 +36,8 @@ use sourceview5::subclass::prelude::*;
 use self::code_highlight::CodeHighlighter;
 pub use self::code_highlight::{Highlighting, Themes, themes};
 use self::decorations::Decorations;
-use self::diagrams::Diagrams;
+use self::drawings::{Drawing, Drawings};
+use self::images::Location;
 use self::links::Target;
 use self::styling::Styling;
 use crate::colors::with_alpha;
@@ -94,7 +99,15 @@ mod imp {
         /// Whether the text is to be formatted again when idle, as it
         /// changed or the view changed its width.
         pub restyle_queued: Cell<bool>,
-        pub(super) diagrams: Diagrams,
+        pub(super) diagrams: Drawings<diagrams::Request>,
+        /// Where the text is saved, unless it is not.
+        pub(super) location: RefCell<Option<Location>>,
+        pub(super) images: Drawings<images::Request>,
+        /// How wide images are read at most, in pixels of the view.
+        pub(super) image_width: Cell<i32>,
+        /// What the bottom margin of the view has more than it was given,
+        /// for the images of the last line.
+        pub(super) room_below_text: Cell<i32>,
         pub highlighter: CodeHighlighter,
     }
 
@@ -158,6 +171,7 @@ mod imp {
             let view = self.obj();
             view.set_editable(false);
             view.set_cursor_visible(false);
+            self.image_width.set(images::READ_WIDTH);
             for action in EDIT_ACTIONS {
                 view.action_set_enabled(action, false);
             }
@@ -200,7 +214,9 @@ mod imp {
             view.toggle_check_boxes_on_click();
             view.edit_by_keys();
             view.close_fences();
+            view.paste_images();
             view.link_pasted_addresses();
+            view.add_dropped_images();
             view.suggest_notes();
 
             let style_manager = adw::StyleManager::default();
@@ -299,7 +315,9 @@ glib::wrapper! {
     /// Markdown with live formatting: the syntax stays visible, but dimmed,
     /// except for the markers of bullets and quotes, which are drawn as
     /// bullets and bars. Code blocks are cards, highlighted when they name
-    /// a language, or diagrams when they are in Mermaid. Tables are grids,
+    /// a language, or diagrams when they are in Mermaid. Images of the
+    /// vault are drawn below their lines, once the view knows where its text
+    /// is saved. Tables are grids,
     /// their cells cut off if too wide, and rules are lines, but show their
     /// Markdown while the cursor is in them, tables in a monospace font with
     /// the columns lined up. Enter continues lists, quotes and tables, and
@@ -340,6 +358,25 @@ impl MarkdownView {
             .wiki_links
             .replace(Some(WikiLinks { project, existing }));
         self.restyle();
+    }
+
+    /// Draws the images that the text links to, as it is saved in `file`
+    /// of the vault at `root`.
+    pub fn set_location(&self, root: &Path, file: &Path) {
+        let location = Location {
+            root: root.to_owned(),
+            file: file.to_owned(),
+        };
+        let before = self.imp().location.replace(Some(location.clone()));
+        if before != Some(location) {
+            self.restyle();
+        }
+    }
+
+    /// Reads images at most `width` pixels wide, rather than as wide as the
+    /// widest text, for a view that is shown smaller.
+    pub fn set_image_width(&self, width: i32) {
+        self.imp().image_width.set(width);
     }
 
     pub fn connect_wiki_link_activated(&self, callback: impl Fn(&NotePath) + 'static) {
@@ -411,13 +448,30 @@ impl MarkdownView {
         callouts::style(&styling, &formatting, &mut decorations);
         lists::style(&styling, &formatting, &mut decorations);
         tables::style(&styling, &formatting, &mut decorations);
+        let unread = images::style(
+            &styling,
+            &formatting,
+            &mut decorations,
+            &imp.images,
+            imp.location.borrow().as_ref(),
+            imp.image_width.get(),
+        );
         imp.highlighter.apply(&styling, &formatting.code_blocks);
         let revealed = decorations.revealed(styling.cursor);
         let before = imp.revealed.replace(revealed.clone());
         let left_table = decorations.left_table(&before, &revealed);
+        let room = decorations.room_below_text;
+        let added = imp.room_below_text.replace(room);
+        if room != added {
+            self.set_bottom_margin(self.bottom_margin() - added + room);
+        }
+        let mut links: Vec<_> = decorations
+            .images
+            .iter()
+            .map(|card| (card.range.clone(), Target::File(card.path.clone())))
+            .collect();
         imp.decorations.replace(decorations);
 
-        let mut links = Vec::new();
         if let Some(wiki) = &*imp.wiki_links.borrow() {
             for link in wiki_links(&text, wiki.project.as_ref()) {
                 if !link
@@ -436,7 +490,22 @@ impl MarkdownView {
         imp.links.replace(links);
         self.queue_draw();
         for request in missing {
-            self.render_diagram(request);
+            let job = request.clone();
+            self.draw_later(
+                request,
+                move || job.render(),
+                diagrams::Image::drawing,
+                |imp| &imp.diagrams,
+            );
+        }
+        for request in unread {
+            let job = request.clone();
+            self.draw_later(
+                request,
+                move || job.read(),
+                images::ReadImage::drawing,
+                |imp| &imp.images,
+            );
         }
         if let Some(tidied) = left_table
             && self.is_editable()
@@ -477,21 +546,27 @@ impl MarkdownView {
         }
     }
 
-    /// Draws the diagram of `request` in the background, and formats the
-    /// text again when it is ready, if the text still has it.
-    fn render_diagram(&self, request: diagrams::Request) {
+    /// Makes the drawing for `request` with `make` in the background, ready
+    /// to be drawn once `drawing` turned it into one, and formats the text
+    /// again, if it still has it, as `drawings` of the view tell.
+    fn draw_later<R, T>(
+        &self,
+        request: R,
+        make: impl FnOnce() -> Option<T> + Send + 'static,
+        drawing: fn(T) -> Drawing,
+        drawings: fn(&imp::MarkdownView) -> &Drawings<R>,
+    ) where
+        R: Clone + Eq + std::hash::Hash + 'static,
+        T: Send + 'static,
+    {
         let view = self.downgrade();
         glib::spawn_future_local(async move {
-            let job = request.clone();
-            // The renderer is young: a panic only fails the diagram.
-            let image = gio::spawn_blocking(move || job.render())
-                .await
-                .ok()
-                .flatten();
+            // The Mermaid renderer is young: a panic only fails the drawing.
+            let made = gio::spawn_blocking(make).await.ok().flatten();
             let Some(view) = view.upgrade() else {
                 return;
             };
-            if view.imp().diagrams.finish(request, image) {
+            if drawings(view.imp()).finish(request, made.map(drawing)) {
                 view.restyle();
             }
         });

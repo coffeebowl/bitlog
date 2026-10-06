@@ -1,30 +1,25 @@
 //! Mermaid diagrams: code blocks in `mermaid` are drawn as their diagram
 //! while the cursor is elsewhere, but as code while it is in them or when
 //! the diagram cannot be drawn. Diagrams are drawn in the background and
-//! kept while the text has them.
+//! kept while the text has them, see `drawings`.
 
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::{Arc, LazyLock};
 
 use bitlog_core::Formatting;
 use gtk::prelude::*;
-use gtk::{gdk, glib, graphene, gsk};
+use gtk::{gdk, glib};
 use mermaid_rs_renderer::{RenderOptions, Theme};
 use resvg::{tiny_skia, usvg};
 
-use super::decorations::{Decorations, line_span, text_edges};
+use super::decorations::Decorations;
+use super::drawings::{Drawing, Drawings, LineMark, State};
 use super::styling::Styling;
-use super::{CORNER_RADIUS, tags};
+use super::tags;
 
 /// The language of the code blocks drawn as diagrams.
 const LANGUAGE: &str = "mermaid";
-/// Shrinks the line breaks of code blocks drawn as diagrams.
-const LINE_BREAK_TAG: &str = "diagram-line-break";
-/// Leaves line breaks about a pixel high.
-const LINE_BREAK_SCALE: f64 = 0.05;
 /// The space above and below a diagram.
 const PADDING: i32 = 8;
 /// That of the app, rather than that of Mermaid.
@@ -61,34 +56,14 @@ pub(super) struct Image {
     height: f32,
 }
 
-/// A diagram ready to be drawn.
-#[derive(Debug)]
-pub(super) struct Diagram {
-    texture: gdk::Texture,
-    /// In pixels of the view, as large as Mermaid draws it.
-    width: f32,
-    height: f32,
-}
-
-#[derive(Debug)]
-enum State {
-    Pending,
-    Failed,
-    Done(Rc<Diagram>),
-}
-
-/// The diagrams of the text as last styled, by their code.
-#[derive(Debug, Default)]
-pub(super) struct Diagrams(RefCell<HashMap<Request, State>>);
-
-/// A code block drawn as its diagram, in characters.
+/// A code block drawn as its diagram.
 #[derive(Debug)]
 pub(super) struct DiagramCard {
-    /// Of the whole code block.
+    /// Of the whole code block, in characters.
     pub(super) range: Range<i32>,
-    /// The start of the line of the opening fence, where the diagram is.
-    line: i32,
-    diagram: Rc<Diagram>,
+    /// The line of the opening fence, where the diagram is.
+    line: LineMark,
+    diagram: Rc<Drawing>,
     /// How high the diagram is drawn, the room for it in the text.
     height: i32,
 }
@@ -96,18 +71,16 @@ pub(super) struct DiagramCard {
 /// Draws the Mermaid code blocks of `formatting` as diagrams, but for the
 /// one the cursor is in and those whose diagram is not ready or cannot be
 /// drawn, and adds their cards to `decorations`. Returns the diagrams to
-/// draw, which `Diagrams::finish` takes when they are ready.
+/// draw.
 pub(super) fn style(
     styling: &Styling,
     formatting: &Formatting,
     decorations: &mut Decorations,
-    diagrams: &Diagrams,
+    diagrams: &Drawings<Request>,
 ) -> Vec<Request> {
     let dark = adw::StyleManager::default().is_dark();
     let scale = styling.view.scale_factor();
-    let mut known = diagrams.0.take();
-    let mut kept = HashMap::new();
-    let mut missing = Vec::new();
+    let mut pass = diagrams.pass();
     for block in &formatting.code_blocks {
         let Some(opening) = block.fences.first() else {
             continue;
@@ -123,18 +96,10 @@ pub(super) fn style(
         // Not drawn while it is being edited, but kept in case it is left
         // as it was.
         if styling.is_at(&block.range) {
-            if let Some(state) = known.remove(&request) {
-                kept.insert(request, state);
-            }
+            pass.keep(request);
             continue;
         }
-        let state = kept.entry(request.clone()).or_insert_with(|| {
-            known.remove(&request).unwrap_or_else(|| {
-                missing.push(request);
-                State::Pending
-            })
-        });
-        let State::Done(diagram) = state else {
+        let State::Done(diagram) = pass.state(request) else {
             continue;
         };
         let height = diagram.fit(styling.view).1.round() as i32;
@@ -146,36 +111,22 @@ pub(super) fn style(
         conceal(styling, opening, end, height);
         decorations.diagrams.push(DiagramCard {
             range: styling.chars(&block.range),
-            line: styling.offset(opening.start),
-            diagram: Rc::clone(diagram),
+            line: LineMark::new(&styling.buffer, styling.offset(opening.start)),
+            diagram,
             height,
         });
     }
-    diagrams.0.replace(kept);
-    missing
+    pass.end()
 }
 
 /// Hides the code block from the `opening` fence to `end`, and makes room
 /// for a diagram `height` high above it.
 fn conceal(styling: &Styling, opening: &Range<usize>, end: usize, height: i32) {
     let buffer = &styling.buffer;
-    // Last, so that it wins over the other tags.
-    tags::get_or_add(buffer, LINE_BREAK_TAG, || {
-        gtk::TextTag::builder()
-            .name(LINE_BREAK_TAG)
-            .foreground_rgba(&tags::INVISIBLE)
-            .scale(LINE_BREAK_SCALE)
-            .build()
-    });
-    // Line breaks stay, but shrunk: after lines hidden with their line
-    // breaks, GTK takes the pointer for a place off the end of a line and
-    // aborts.
     let mut start = opening.start;
     for line in styling.text[opening.start..end].split_inclusive('\n') {
         let line_end = start + line.len();
-        let text_end = start + line.trim_end_matches(['\r', '\n']).len();
-        styling.tag(tags::HIDDEN, &(start..text_end));
-        styling.tag(LINE_BREAK_TAG, &(text_end..line_end));
+        tags::hide_line(styling, start..line_end);
         start = line_end;
     }
     let name = format!("diagram {height}");
@@ -187,22 +138,6 @@ fn conceal(styling: &Styling, opening: &Range<usize>, end: usize, height: i32) {
     });
     let line = styling.offset(opening.start);
     tags::apply_to_lines(buffer, &name, line..line);
-}
-
-impl Diagrams {
-    /// Keeps the diagram `image` drawn for `request`, or that it cannot be
-    /// drawn. Returns whether the text still has it.
-    pub(super) fn finish(&self, request: Request, image: Option<Image>) -> bool {
-        let mut states = self.0.borrow_mut();
-        let Some(state @ State::Pending) = states.get_mut(&request) else {
-            return false;
-        };
-        *state = match image {
-            Some(image) => State::Done(Rc::new(Diagram::new(image))),
-            None => State::Failed,
-        };
-        true
-    }
 }
 
 impl Request {
@@ -248,34 +183,17 @@ impl Request {
     }
 }
 
-impl Diagram {
-    fn new(image: Image) -> Self {
+impl Image {
+    /// The diagram, ready to be drawn as large as Mermaid draws it.
+    pub(super) fn drawing(self) -> Drawing {
         let texture = gdk::MemoryTexture::new(
-            image.pixel_width as i32,
-            image.pixel_height as i32,
+            self.pixel_width as i32,
+            self.pixel_height as i32,
             gdk::MemoryFormat::R8g8b8a8Premultiplied,
-            &glib::Bytes::from_owned(image.pixels),
-            image.pixel_width as usize * 4,
+            &glib::Bytes::from_owned(self.pixels),
+            self.pixel_width as usize * 4,
         );
-        Self {
-            texture: texture.upcast(),
-            width: image.width,
-            height: image.height,
-        }
-    }
-
-    /// How wide and high the diagram is drawn in `view`: as large as
-    /// Mermaid draws it, but no wider than the text.
-    fn fit(&self, view: &gtk::TextView) -> (f32, f32) {
-        let (left, right) = text_edges(view, &view.visible_rect());
-        let available = right - left;
-        // Before the view has a size, it has no room.
-        let scale = if available > 0.0 {
-            (available / self.width).min(1.0)
-        } else {
-            1.0
-        };
-        (self.width * scale, self.height * scale)
+        Drawing::new(texture.upcast(), self.width, self.height)
     }
 }
 
@@ -286,23 +204,17 @@ impl DiagramCard {
         self.diagram.fit(view).1.round() as i32 != self.height
     }
 
-    /// Draws the diagram in the middle of the text, in buffer coordinates.
+    /// Draws the diagram in the room above its line, in buffer coordinates.
     pub(super) fn snapshot(
         &self,
         view: &gtk::TextView,
         snapshot: &gtk::Snapshot,
         visible: &gdk::Rectangle,
     ) {
-        let Some((top, _)) = line_span(view, &(self.line..self.line + 1), visible) else {
-            return;
-        };
-        let (left, right) = text_edges(view, visible);
-        let (width, height) = self.diagram.fit(view);
-        let x = left + ((right - left - width) / 2.0).round();
-        let bounds = graphene::Rect::new(x, top + PADDING as f32, width, height);
-        snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bounds, CORNER_RADIUS));
-        snapshot.append_texture(&self.diagram.texture, &bounds);
-        snapshot.pop();
+        let (top, _) = self.line.line_span(view);
+        if let Some(bounds) = self.diagram.bounds(view, top + PADDING as f32, visible) {
+            self.diagram.snapshot(snapshot, &bounds);
+        }
     }
 }
 

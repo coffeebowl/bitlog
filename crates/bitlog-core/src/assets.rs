@@ -129,7 +129,7 @@ impl Vault {
 }
 
 /// `name` with `number` added before its extension, as in `plan (2).pdf`.
-fn numbered(name: &str, number: u32) -> String {
+pub(crate) fn numbered(name: &str, number: u32) -> String {
     match name.rsplit_once('.') {
         Some((stem, extension)) => format!("{stem} ({number}).{extension}"),
         None => format!("{name} ({number})"),

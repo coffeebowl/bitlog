@@ -150,6 +150,9 @@ impl NoteView {
         imp.menu_button.set_menu_model(Some(&note_menu(note)));
         imp.editor
             .set_wiki_links(Some(note.project().clone()), existing_notes(&self.vault()));
+        let vault = self.vault();
+        imp.editor
+            .set_location(vault.root(), &vault.note_path(note));
         // A new note starts with an empty undo history.
         imp.editor.set_markdown(&file.text);
         imp.file.replace(Some(file));
