@@ -1,4 +1,6 @@
 use std::cell::RefCell;
+use std::fs;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
@@ -8,13 +10,14 @@ use bitlog_core::{
     Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError, Task, TaskId,
     TaskList, TaskStatus, Vault, VaultChange,
 };
+use chrono::{DateTime, Local};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::glib;
 
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
-use crate::format::{format_full_date, format_span, kind_name};
+use crate::format::{format_full_date, format_span, format_time, format_weekday_date, kind_name};
 
 mod imp {
     use super::*;
@@ -30,6 +33,12 @@ mod imp {
         pub window_title: TemplateChild<adw::WindowTitle>,
         #[template_child]
         pub rows: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub original_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub copy_row: TemplateChild<adw::ActionRow>,
+        #[template_child]
+        pub day_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub merge_button: TemplateChild<gtk::Button>,
     }
@@ -93,7 +102,19 @@ impl SyncConflictDialog {
         let versions = vault.conflict_versions(&copy)?;
         let dialog: Self = glib::Object::new();
         let imp = dialog.imp();
-        imp.window_title.set_subtitle(&file_title(&vault, &copy.of));
+        // With the weekday, which helps to remember the day.
+        let title = match copy.of {
+            VaultChange::Day(date) => format_weekday_date(date, Local::now().date_naive()),
+            ref of => file_title(&vault, of),
+        };
+        imp.window_title.set_subtitle(&title);
+        imp.original_row
+            .set_subtitle(&changed(&vault.original_path(&copy)));
+        imp.copy_row
+            .set_subtitle(&changed(&vault.root().join(&copy.path)));
+        if let ConflictVersions::Days(ours, _) = &versions {
+            dialog.show_blocks(&vault, ours, &contradictions);
+        }
         let mut choices = Vec::new();
         for contradiction in contradictions {
             let row = describe(&vault, &versions, &contradiction);
@@ -119,6 +140,37 @@ impl SyncConflictDialog {
             false,
             glib::closure_local!(move |_: &Self| callback()),
         );
+    }
+
+    /// Lists the blocks of `day`, the original, and marks those that
+    /// `contradictions` name.
+    fn show_blocks(&self, vault: &Vault, day: &Day, contradictions: &[Contradiction]) {
+        let group = &self.imp().day_group;
+        for block in &day.blocks {
+            let row = adw::ActionRow::builder()
+                .title(block_name(vault, block))
+                .subtitle(format!(
+                    "{} · {}",
+                    format_span(block.start, block.end),
+                    vault.project_name(&block.project)
+                ))
+                .use_markup(false)
+                .build();
+            let differs = contradictions.iter().any(|contradiction| {
+                matches!(contradiction, Contradiction::Block(id) | Contradiction::BlockText(id)
+                    if *id == block.id)
+            });
+            if differs {
+                row.add_suffix(
+                    &gtk::Label::builder()
+                        .label(gettext("Differs"))
+                        .css_classes(["caption-heading", "warning"])
+                        .build(),
+                );
+            }
+            group.add(&row);
+        }
+        group.set_visible(!day.blocks.is_empty());
     }
 
     /// Adds a row for `row` and returns the toggles that decide it.
@@ -185,6 +237,23 @@ impl SyncConflictDialog {
                 show_error(self, &gettext("Cannot Merge"), &err.to_string());
             }
         }
+    }
+}
+
+/// When the file at `path` was last changed, as its file system says, or
+/// that it is missing.
+fn changed(path: &Path) -> String {
+    match fs::metadata(path).and_then(|metadata| metadata.modified()) {
+        Ok(time) => {
+            let time = DateTime::<Local>::from(time);
+            let today = Local::now().date_naive();
+            // Translators: When a file was last changed, as in "Changed Fri,
+            // Sep 25 at 18:00".
+            gettext("Changed {date} at {time}")
+                .replace("{date}", &format_weekday_date(time.date_naive(), today))
+                .replace("{time}", &format_time(time.time()))
+        }
+        Err(_) => gettext("Missing"),
     }
 }
 

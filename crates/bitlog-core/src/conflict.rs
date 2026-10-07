@@ -207,7 +207,8 @@ impl Vault {
         Ok(())
     }
 
-    fn original_path(&self, copy: &ConflictCopy) -> PathBuf {
+    /// Where the original of `copy` is, or would be if it is missing.
+    pub fn original_path(&self, copy: &ConflictCopy) -> PathBuf {
         let name = copy
             .path
             .file_name()

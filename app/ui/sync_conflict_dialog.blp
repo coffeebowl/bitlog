@@ -18,6 +18,24 @@ template $BitLogSyncConflictDialog: Adw.Dialog {
       Adw.PreferencesGroup rows {
         description: _("This file was changed on two devices at once. Where the two versions differ, choose the one to keep; everything else is merged.");
       }
+
+      Adw.PreferencesGroup {
+        title: _("Versions");
+
+        Adw.ActionRow original_row {
+          title: _("Original");
+        }
+
+        Adw.ActionRow copy_row {
+          title: _("Copy");
+        }
+      }
+
+      Adw.PreferencesGroup day_group {
+        title: _("This Day");
+        description: _("The blocks of the original.");
+        visible: false;
+      }
     };
 
     [bottom]
