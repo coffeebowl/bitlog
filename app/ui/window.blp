@@ -93,7 +93,6 @@ template $BitLogWindow: Adw.ApplicationWindow {
               [top]
               Adw.Banner conflict_banner {
                 button-label: _("_Resolve");
-                action-name: "win.resolve-conflict";
               }
 
               content: ScrolledWindow {
@@ -238,6 +237,11 @@ menu primary_menu {
     item {
       label: _("_Preferences");
       action: "win.preferences";
+    }
+
+    item {
+      label: _("_Check Vault…");
+      action: "win.check-vault";
     }
 
     item {

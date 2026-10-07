@@ -262,6 +262,10 @@ fn vault() -> Topic {
             Block::Text(gettext(
                 "BitLog notices changes made elsewhere and shows them right away. When a sync tool leaves conflict copies, BitLog merges those that do not contradict the original; the others wait in the sidebar to be resolved. Conflict markers of Git are resolved with Git.",
             )),
+            Block::Heading(gettext("Checking the Vault")),
+            Block::Text(gettext(
+                "Files edited elsewhere may not fit together. <b>Check Vault</b> in the main menu lists what it finds: files that can’t be read, overlapping blocks, blocks of unknown projects, broken links, missing or unused images and more. Each problem takes you to its place so you can solve it yourself; some, like headings typed into a block text elsewhere, can also be fixed right there. Severe problems are reported as soon as the vault is opened. On the command line, <tt>bitlog doctor</tt> does the same.",
+            )),
         ],
     }
 }

@@ -6,9 +6,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{
-    BlockId, ConflictCopy, NotePath, ProjectSlug, ProjectStatus, TaskId, Vault, VaultWatcher,
-};
+use bitlog_core::{BlockId, NotePath, ProjectSlug, ProjectStatus, TaskId, Vault, VaultWatcher};
 use bitlog_index::Found;
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
@@ -27,11 +25,13 @@ use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
 use crate::style_switcher;
 use crate::tasks_page::TasksPage;
+use crate::vault_check_dialog::VaultCheckDialog;
 use crate::widgets::param;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 19] = [
+const VAULT_ACTIONS: [&str; 20] = [
     "win.preferences",
+    "win.check-vault",
     "win.previous",
     "win.next",
     "win.today",
@@ -117,8 +117,6 @@ mod imp {
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub watcher: RefCell<Option<VaultWatcher>>,
         pub index: RefCell<SearchIndex>,
-        /// The sync conflict copies that need a decision.
-        pub conflicts: RefCell<Vec<ConflictCopy>>,
     }
 
     impl Default for Window {
@@ -150,7 +148,6 @@ mod imp {
                 vault: RefCell::default(),
                 watcher: RefCell::default(),
                 index: RefCell::default(),
-                conflicts: RefCell::default(),
             }
         }
     }
@@ -172,9 +169,14 @@ mod imp {
             klass.install_action("win.show-reports", None, |window, _, _| {
                 window.show_reports();
             });
-            klass.install_action("win.resolve-conflict", None, |window, _, _| {
-                window.resolve_conflict();
-            });
+            klass.install_action(
+                "win.resolve-conflict",
+                Some(glib::VariantTy::STRING),
+                |window, _, copy| {
+                    let copy: PathBuf = param(copy, "sync conflict copies");
+                    window.resolve_conflict(&copy);
+                },
+            );
             klass.install_action("win.previous", None, |window, _, _| window.step(-1));
             klass.install_action("win.next", None, |window, _, _| window.step(1));
             klass.install_action("win.today", None, |window, _, _| window.step_to_today());
@@ -212,6 +214,9 @@ mod imp {
             klass.install_action("win.search", None, |window, _, _| window.search());
             klass.install_action("win.preferences", None, |window, _, _| {
                 window.show_preferences();
+            });
+            klass.install_action("win.check-vault", None, |window, _, _| {
+                window.check_vault();
             });
             klass.install_action(
                 "win.show-block",
@@ -514,6 +519,21 @@ impl Window {
             #[weak(rename_to = window)]
             self,
             move |dialog| window.save_preferences(dialog)
+        ));
+        dialog.present(Some(self));
+    }
+
+    fn check_vault(&self) {
+        if self.visible_dialog().is_some() {
+            return;
+        }
+        // So that the check sees what was just typed.
+        self.save_texts_now();
+        let dialog = VaultCheckDialog::new(self.vault());
+        dialog.connect_days_changed(glib::clone!(
+            #[weak(rename_to = window)]
+            self,
+            move || window.imp().day_view.reload()
         ));
         dialog.present(Some(self));
     }

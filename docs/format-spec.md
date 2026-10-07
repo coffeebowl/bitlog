@@ -494,8 +494,8 @@ replaces only the link targets and keeps the rest of each link.
 - `bitlog doctor` reports image links to files of the vault that are
   missing, and links to images outside the vault, such as absolute paths:
   they show nothing and lead elsewhere on other devices. It also reports
-  images in `images/` that no text shows, unless a text cannot be read, and
-  images there with the same content.
+  images in `images/` that no text shows, unless a text cannot be read (it
+  then says so), and images there with the same content.
 
 ## Exports: `exports/`
 

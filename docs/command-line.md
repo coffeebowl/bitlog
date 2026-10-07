@@ -66,4 +66,6 @@ bitlog doctor --fix       # merge conflict copies without contradictions,
 which they create and bring up to date by themselves. It is never synced and
 can be deleted at any time.
 
+`doctor` finds the same problems as Check Vault in the app's main menu.
+
 `bitlog --help` lists all commands.

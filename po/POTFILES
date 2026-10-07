@@ -32,6 +32,8 @@ app/src/standup_dialog.rs
 app/src/style_switcher.rs
 app/src/sync_conflict_dialog.rs
 app/src/task_list_view.rs
+app/src/vault_check_dialog/mod.rs
+app/src/vault_check_dialog/problems.rs
 app/src/widgets.rs
 app/src/window/mod.rs
 app/src/window/vault.rs
@@ -54,6 +56,7 @@ app/ui/standup_dialog.blp
 app/ui/sync_conflict_dialog.blp
 app/ui/task_list_view.blp
 app/ui/tasks_page.blp
+app/ui/vault_check_dialog.blp
 app/ui/window.blp
 data/dev.bitlog.BitLog.desktop.in
 data/dev.bitlog.BitLog.gschema.xml

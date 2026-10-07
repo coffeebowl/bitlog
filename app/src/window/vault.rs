@@ -15,6 +15,7 @@ use crate::alert::show_error;
 use crate::format::plural;
 use crate::search_index::SearchIndex;
 use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
+use crate::vault_check_dialog::count_severe;
 
 impl Window {
     /// Opens the vault of the last session, if there is one.
@@ -106,6 +107,7 @@ impl Window {
             self.action_set_enabled(action, true);
         }
         self.check_conflicts();
+        self.report_severe_problems();
         imp.settings
             .set_string("last-vault", &gio::File::for_path(path).uri())
             .expect("the last vault can be stored");
@@ -229,14 +231,32 @@ impl Window {
             )
             .replace("{count}", &open.len().to_string()),
         );
+        if let Some(first) = open.first() {
+            let banner = &imp.conflict_banner;
+            // The target first, as the action takes one.
+            banner.set_action_target_value(Some(&first.path.to_string_lossy().to_variant()));
+            banner.set_action_name(Some("win.resolve-conflict"));
+        }
         imp.conflict_banner.set_revealed(!open.is_empty());
-        imp.conflicts.replace(open);
     }
 
-    /// Lets the user resolve the first sync conflict that needs a decision.
-    pub(super) fn resolve_conflict(&self) {
-        let imp = self.imp();
-        let Some(copy) = imp.conflicts.borrow().first().cloned() else {
+    /// Lets the user resolve the sync conflict of the copy at `path`,
+    /// relative to the vault.
+    pub(super) fn resolve_conflict(&self, path: &Path) {
+        let copy = match self.vault().conflict_copies() {
+            Ok(copies) => copies.into_iter().find(|copy| copy.path == path),
+            Err(err) => {
+                show_error(
+                    self,
+                    &gettext("Cannot Read Sync Conflict"),
+                    &err.to_string(),
+                );
+                return;
+            }
+        };
+        // Resolved meanwhile, by sync or on another device.
+        let Some(copy) = copy else {
+            self.check_conflicts();
             return;
         };
         self.save_texts_now();
@@ -259,6 +279,47 @@ impl Window {
                 &err.to_string(),
             ),
         }
+    }
+
+    /// Checks the vault in the background and reports severe problems,
+    /// which may go unnoticed for long otherwise.
+    fn report_severe_problems(&self) {
+        let vault = self.vault();
+        let path = self.imp().vault_path.borrow().clone();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = window)]
+            self,
+            async move {
+                let severe = count_severe(&vault).await;
+                // Another vault may be open by now.
+                if *window.imp().vault_path.borrow() != path {
+                    return;
+                }
+                match severe {
+                    Ok(0) => {}
+                    Ok(count) => window.show_severe_problems(count),
+                    Err(err) => glib::g_warning!("bitlog", "{err}"),
+                }
+            }
+        ));
+    }
+
+    /// Tells about `count` severe problems in the vault, to be looked at in
+    /// the vault check.
+    fn show_severe_problems(&self, count: usize) {
+        let toast = adw::Toast::builder()
+            .title(
+                ngettext(
+                    "{count} severe problem found",
+                    "{count} severe problems found",
+                    plural(count),
+                )
+                .replace("{count}", &count.to_string()),
+            )
+            .button_label(gettext("_Show"))
+            .action_name("win.check-vault")
+            .build();
+        self.imp().toast_overlay.add_toast(toast);
     }
 
     /// Shows the files of `changes` as they are now.

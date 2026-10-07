@@ -16,7 +16,8 @@ use crate::{
     BlockId, ConflictCopy, Contradiction, Day, DayFile, DayWarning, NotePath, ProjectSlug, Vault,
 };
 
-/// Something in a vault that needs a look.
+/// Something in a vault that needs a look. `bitlog doctor` and the app's
+/// vault check show the same problems and fixes; keep them in step.
 #[derive(Debug)]
 pub enum Problem {
     /// A day file or note that cannot be read at all.
@@ -90,6 +91,8 @@ pub enum Problem {
     /// An image in `images/` that no text shows, as a path relative to the
     /// vault. Only looked for if all texts could be read.
     UnusedImage(String),
+    /// Unused images were not looked for, as some texts could not be read.
+    UnusedImagesUnchecked,
     /// Images in `images/` with the same content, as paths relative to the
     /// vault.
     DuplicateImages(Vec<String>),
@@ -206,6 +209,10 @@ impl fmt::Display for Problem {
                 }
             }
             Self::UnusedImage(image) => write!(f, "{image}: shown in no text"),
+            Self::UnusedImagesUnchecked => write!(
+                f,
+                "images/: unused images are only looked for when all texts can be read"
+            ),
             Self::DuplicateImages(images) => {
                 write!(f, "{}: the same image", images.join(", "))
             }
@@ -265,6 +272,8 @@ impl Vault {
                     .filter(|image| !shown.contains(*image))
                     .map(|image| Problem::UnusedImage(relative(self.root(), image))),
             );
+        } else if !files.is_empty() {
+            problems.push(Problem::UnusedImagesUnchecked);
         }
         problems.extend(duplicates(&files).iter().map(|group| {
             Problem::DuplicateImages(
@@ -558,6 +567,19 @@ mod tests {
                 "images/unused.png: shown in no text",
                 "images/copy of there.png, images/there.png: the same image",
             ]
+        );
+    }
+
+    #[test]
+    fn unused_images_need_all_texts() {
+        let (_dir, vault) = sample_copy();
+        let images = vault.root().join("images");
+        fs::create_dir_all(&images).unwrap();
+        fs::write(images.join("unused.png"), "unused").unwrap();
+        fs::write(vault.day_path(date(26)), "no front matter").unwrap();
+        assert_eq!(
+            messages(&vault).last().unwrap(),
+            "images/: unused images are only looked for when all texts can be read"
         );
     }
 
