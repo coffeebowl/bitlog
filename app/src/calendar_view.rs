@@ -13,10 +13,11 @@ use gtk::{glib, pango};
 use crate::colors::{color_dot, project_color, project_hex};
 use crate::format::{
     format_date, format_duration, format_full_date, format_month, format_month_year, format_range,
-    format_short_date, format_short_duration, format_weekday_day, kind_name,
+    format_short_date, format_short_duration, kind_name,
 };
 use crate::share_bar::ShareBar;
 use crate::week_chart::{ChartDay, WeekChart};
+use crate::week_progress::WeekProgress;
 
 /// How much of a day the month shows, by the room there is.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -56,6 +57,10 @@ mod imp {
         #[template_child]
         pub week_total: TemplateChild<gtk::Label>,
         #[template_child]
+        pub week_pace: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub week_progress: TemplateChild<WeekProgress>,
+        #[template_child]
         pub week_chart: TemplateChild<WeekChart>,
         #[template_child]
         pub legend: TemplateChild<gtk::FlowBox>,
@@ -69,6 +74,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             WeekChart::ensure_type();
+            WeekProgress::ensure_type();
             klass.bind_template();
         }
 
@@ -301,6 +307,7 @@ impl CalendarView {
         let mut target = 0.0;
         let mut per_project = BTreeMap::new();
         let mut days = Vec::new();
+        let mut plan = Vec::new();
         for offset in 0..7 {
             let date = first + Days::new(offset);
             // Unreadable days count as empty here, the month view shows why.
@@ -319,16 +326,18 @@ impl CalendarView {
                 _ => vault.config().week.target_hours_on(date.weekday()) as f32,
             };
             target += target_hours;
+            let target_time = TimeDelta::minutes((f64::from(target_hours) * 60.0).round() as i64);
+            plan.push((date, working_time, target_time));
             for (slug, time) in &times {
                 *per_project.entry(slug.clone()).or_insert(TimeDelta::zero()) += *time;
             }
             days.push(ChartDay {
-                label: format_weekday_day(date),
+                date,
+                is_today: date == today,
                 segments: times
                     .iter()
                     .map(|(slug, time)| (project_color(&vault, slug), hours(*time)))
                     .collect(),
-                working_hours: (date <= today).then(|| hours(working_time)),
                 target_hours,
             });
         }
@@ -344,6 +353,7 @@ impl CalendarView {
         } else {
             format_duration(worked)
         });
+        self.show_pace(worked, target_time, balance(&plan, today));
 
         imp.legend.remove_all();
         let mut per_project: Vec<_> = per_project.into_iter().collect();
@@ -364,6 +374,29 @@ impl CalendarView {
             imp.legend.append(&label);
         }
     }
+
+    /// The progress of the week towards `target`, with a mark where it
+    /// should be by today and how far ahead or behind that it is.
+    fn show_pace(
+        &self,
+        worked: TimeDelta,
+        target: TimeDelta,
+        balance: Option<(TimeDelta, TimeDelta)>,
+    ) {
+        let imp = self.imp();
+        let has_target = target > TimeDelta::zero();
+        imp.week_progress.set_visible(has_target);
+        imp.week_pace.set_visible(has_target && balance.is_some());
+        if !has_target {
+            return;
+        }
+        imp.week_progress
+            .set(worked, target, balance.map(|(expected, _)| expected));
+        let Some((_, balance)) = balance else {
+            return;
+        };
+        imp.week_pace.set_label(&pace_text(balance));
+    }
 }
 
 fn hours(time: TimeDelta) -> f32 {
@@ -379,6 +412,45 @@ fn week_number(week: NaiveDate) -> u32 {
         .expect("every week has a Thursday")
         .iso_week()
         .week()
+}
+
+/// How far ahead of the target or behind it `balance` is, as in
+/// "2 h 15 min behind".
+fn pace_text(balance: TimeDelta) -> String {
+    let time = format_duration(balance.abs());
+    match balance.num_minutes().signum() {
+        // Translators: Hours worked in a week short of its target so far, as
+        // in "2 h 15 min behind".
+        -1 => gettext("{time} behind").replace("{time}", &time),
+        // Translators: Hours worked in a week beyond its target so far, as in
+        // "1 h 30 min ahead".
+        1 => gettext("{time} ahead").replace("{time}", &time),
+        // Translators: A week that has met its target so far, to the minute.
+        _ => gettext("On track"),
+    }
+}
+
+/// The target of the days of a week as far as it has come by `today`, and
+/// the hours worked against it, `None` for a week still to come. Today
+/// counts only as far as it has been worked, so that it is not behind before
+/// it is over; hours logged ahead for days to come count as worked. `days`
+/// holds the date, the hours worked and the target of each day.
+fn balance(
+    days: &[(NaiveDate, TimeDelta, TimeDelta)],
+    today: NaiveDate,
+) -> Option<(TimeDelta, TimeDelta)> {
+    let (mut expected, mut worked) = (TimeDelta::zero(), TimeDelta::zero());
+    for (date, hours, target) in days {
+        worked += *hours;
+        if *date < today {
+            expected += *target;
+        } else if *date == today {
+            expected += (*hours).min(*target);
+        }
+    }
+    days.first()
+        .is_some_and(|(first, ..)| *first <= today)
+        .then(|| (expected, worked - expected))
 }
 
 /// A cell for `date` with its hours, projects, location and kind, which
@@ -573,6 +645,29 @@ const PROJECTS_SHOWN: usize = 3;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn balance_counts_today_only_as_far_as_worked() {
+        let hours = TimeDelta::hours;
+        let monday = NaiveDate::from_ymd_opt(2026, 9, 28).unwrap();
+        let mut week: Vec<_> = (0..7)
+            .map(|offset| {
+                let target = if offset < 5 { hours(8) } else { hours(0) };
+                let worked = if offset < 3 { hours(7) } else { hours(0) };
+                (monday + Days::new(offset), worked, target)
+            })
+            .collect();
+        let wednesday = monday + Days::new(2);
+        // Two days short an hour each, today not over yet.
+        assert_eq!(balance(&week, wednesday), Some((hours(23), hours(-2))));
+        // A meeting logged for Friday already.
+        week[4].1 = hours(1);
+        assert_eq!(balance(&week, wednesday), Some((hours(23), hours(-1))));
+        // A week gone by against all of its target.
+        let next_monday = monday + Days::new(7);
+        assert_eq!(balance(&week, next_monday), Some((hours(40), hours(-18))));
+        assert_eq!(balance(&week, monday - Days::new(1)), None);
+    }
 
     #[test]
     fn weeks_are_numbered_by_their_thursday() {

@@ -34,6 +34,7 @@ mod tasks_page;
 mod timeline;
 mod vault_check_dialog;
 mod week_chart;
+mod week_progress;
 mod widgets;
 mod window;
 

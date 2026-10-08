@@ -145,13 +145,34 @@ template $BitLogCalendarView: Adw.NavigationPage {
                 orientation: vertical;
                 spacing: 18;
 
-                Label week_total {
-                  xalign: 0;
-                  wrap: true;
+                Box {
+                  orientation: vertical;
+                  spacing: 6;
 
-                  styles [
-                    "title-3",
-                  ]
+                  Box {
+                    spacing: 12;
+
+                    Label week_total {
+                      xalign: 0;
+                      hexpand: true;
+                      wrap: true;
+
+                      styles [
+                        "title-3",
+                      ]
+                    }
+
+                    Label week_pace {
+                      valign: center;
+
+                      styles [
+                        "dim-label",
+                        "numeric",
+                      ]
+                    }
+                  }
+
+                  $BitLogWeekProgress week_progress {}
                 }
 
                 $BitLogWeekChart week_chart {}

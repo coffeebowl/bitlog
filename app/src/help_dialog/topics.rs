@@ -146,6 +146,9 @@ fn reports() -> Topic {
             Block::Text(gettext(
                 "The calendar shows how long you worked each day of a month, or a week as a chart. The reports break down a week, month or year by project and category. Target hours are set in the preferences and divided among your workdays.",
             )),
+            Block::Text(gettext(
+                "Above the chart of a week, a bar shows your hours against its target. Its mark shows where you should be by today: it moves on with each workday, and with the hours you log today. Hours missing up to the mark show in red, hours beyond it in green.",
+            )),
             Block::Heading(gettext("Export")),
             Block::Text(gettext(
                 "From the reports, you can export your blocks or your remote work days as CSV, for a timesheet for example, or a week as a Markdown report. Exports are saved in the exports folder of the vault.",

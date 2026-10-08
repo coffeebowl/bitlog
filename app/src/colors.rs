@@ -67,6 +67,16 @@ pub fn mix(parts: &[(gdk::RGBA, f32)], lightness: f32) -> gdk::RGBA {
     gdk::RGBA::new(red, green, blue, 1.0)
 }
 
+/// A pastel of `color`, lighter and less colorful, in Oklab: project colors
+/// look loud in large areas. Light on dark themes too, where darker shades
+/// look muddy.
+pub fn pastel(color: &gdk::RGBA) -> gdk::RGBA {
+    let [lightness, a, b] = oklab(color);
+    let lightness = lightness + (1.0 - lightness) * 0.25;
+    let [red, green, blue] = linear_from_oklab([lightness, a * 0.8, b * 0.8]).map(from_linear);
+    gdk::RGBA::new(red, green, blue, color.alpha())
+}
+
 /// The lightness of `color` in Oklab, from 0 to 1.
 pub fn lightness(color: &gdk::RGBA) -> f32 {
     oklab(color)[0]
@@ -148,5 +158,15 @@ mod tests {
         assert!((lightness(&dark) - at).abs() < 0.01);
         assert!(dark.red() > dark.blue() && dark.green() > dark.blue());
         assert_eq!(mix(&[], at), gdk::RGBA::TRANSPARENT);
+    }
+
+    #[test]
+    fn pastels_are_lighter_and_keep_their_hue() {
+        let blue = gdk::RGBA::parse("#3584e4").unwrap();
+        let soft = pastel(&blue);
+        assert!(lightness(&soft) > lightness(&blue));
+        assert!(soft.blue() > soft.green() && soft.green() > soft.red());
+        let white = gdk::RGBA::parse("#ffffff").unwrap();
+        assert!(close(&pastel(&white), &white));
     }
 }

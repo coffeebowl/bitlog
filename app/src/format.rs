@@ -111,15 +111,6 @@ pub fn format_range(first: &str, last: &str) -> String {
         .replace("{last}", last)
 }
 
-/// The weekday and day of the month of `date`, where there is little
-/// room, as in "Mon 21".
-pub fn format_weekday_day(date: NaiveDate) -> String {
-    // Translators: A short weekday and the day of the month, as in
-    // "Mon 21". See the GLib documentation of g_date_time_format() for the
-    // codes.
-    format_date(date, &gettext("%a %-d"))
-}
-
 /// A date with the weekday, as in "Tue, Sep 22", and the year unless it is
 /// the year of `today`.
 pub fn format_weekday_date(date: NaiveDate, today: NaiveDate) -> String {
