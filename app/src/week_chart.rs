@@ -26,7 +26,7 @@ pub struct ChartDay {
     pub is_today: bool,
     /// A workday by the preferences; the others are shaded.
     pub is_workday: bool,
-    /// The kind of a day that is not a workday, as in "Vacation".
+    /// The kind of a day off, as in "Vacation"; `None` for a day of work.
     pub kind: Option<String>,
     /// Hours per project, stacked from the bottom.
     pub segments: Vec<(gdk::RGBA, f32)>,
@@ -104,7 +104,6 @@ mod imp {
             // Headroom keeps the columns off the top line.
             let (day_max, day_step) = scale(highest * 1.1);
             let y_day = |hours: f32| plot.y() + plot.height() * (1.0 - hours / day_max);
-
             let target_y = target.map(y_day);
 
             let below = graphene::Rect::new(
@@ -206,8 +205,8 @@ enum Style {
 }
 
 /// Draws `layout` centred vertically on `y`; `align` 0 puts its left, 1 its
-/// right edge on `x`.
-fn append_layout(
+/// right edge on `x`. The help draws its figures with it too.
+pub(crate) fn append_layout(
     snapshot: &gtk::Snapshot,
     layout: &pango::Layout,
     x: f32,

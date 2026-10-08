@@ -304,7 +304,6 @@ impl CalendarView {
 
         let today = Local::now().date_naive();
         let mut worked = TimeDelta::zero();
-        let mut target = 0.0;
         let mut per_project = BTreeMap::new();
         let mut days = Vec::new();
         let mut plan = Vec::new();
@@ -325,7 +324,6 @@ impl CalendarView {
                 Some(day) if !day.is_work() => 0.0,
                 _ => vault.config().week.target_hours_on(date.weekday()) as f32,
             };
-            target += target_hours;
             let target_time = TimeDelta::minutes((f64::from(target_hours) * 60.0).round() as i64);
             plan.push((date, working_time, target_time));
             for (slug, time) in &times {
@@ -348,17 +346,17 @@ impl CalendarView {
         }
         imp.week_chart.set_week(days);
 
-        let target_time = TimeDelta::minutes((target * 60.0).round() as i64);
-        imp.week_total.set_label(&if target > 0.0 {
+        let target: TimeDelta = plan.iter().map(|(.., target)| *target).sum();
+        imp.week_total.set_label(&if target > TimeDelta::zero() {
             // Translators: Hours worked in a week against its target, as in
             // "23 h 15 min of 32 h 0 min".
             gettext("{worked} of {target}")
                 .replace("{worked}", &format_duration(worked))
-                .replace("{target}", &format_duration(target_time))
+                .replace("{target}", &format_duration(target))
         } else {
             format_duration(worked)
         });
-        self.show_pace(worked, target_time, balance(&plan, today));
+        self.show_pace(worked, target, balance(&plan, today));
 
         imp.legend.remove_all();
         let mut per_project: Vec<_> = per_project.into_iter().collect();
@@ -395,8 +393,9 @@ impl CalendarView {
         if !has_target {
             return;
         }
+        let expected = balance.map(|(expected, _)| hours(expected));
         imp.week_progress
-            .set(worked, target, balance.map(|(expected, _)| expected));
+            .set(hours(worked), hours(target), expected);
         let Some((_, balance)) = balance else {
             return;
         };

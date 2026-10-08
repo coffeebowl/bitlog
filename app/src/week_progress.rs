@@ -2,7 +2,6 @@ use std::cell::Cell;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use chrono::TimeDelta;
 use gtk::{glib, graphene, gsk};
 
 use crate::colors::{parse, with_alpha};
@@ -22,9 +21,9 @@ mod imp {
 
     #[derive(Debug, Default)]
     pub struct WeekProgress {
-        pub worked: Cell<TimeDelta>,
-        pub target: Cell<TimeDelta>,
-        pub expected: Cell<Option<TimeDelta>>,
+        pub worked: Cell<f32>,
+        pub target: Cell<f32>,
+        pub expected: Cell<Option<f32>>,
     }
 
     #[glib::object_subclass]
@@ -51,8 +50,8 @@ mod imp {
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let widget = self.obj();
-            let worked = hours(self.worked.get());
-            let target = hours(self.target.get());
+            let worked = self.worked.get();
+            let target = self.target.get();
             // The bar grows with hours beyond the target.
             let end = worked.max(target);
             if end <= 0.0 {
@@ -71,7 +70,7 @@ mod imp {
             // Where the week should be by now, the whole target once it is
             // over; a week still to come has no plan to be behind.
             let expected = self.expected.get();
-            let plan = expected.map_or(worked, hours);
+            let plan = expected.unwrap_or(worked);
             snapshot.append_color(&parse(ON_PLAN), &span(0.0, worked.min(plan)));
             // Only hints of green and red; hours missing are not wrong.
             if worked > plan {
@@ -105,22 +104,18 @@ glib::wrapper! {
 }
 
 impl WeekProgress {
-    /// `expected` is where the week should be by today, `None` for a week
-    /// still to come.
-    pub fn set(&self, worked: TimeDelta, target: TimeDelta, expected: Option<TimeDelta>) {
+    /// Hours; `expected` is where the week should be by today, `None` for a
+    /// week still to come.
+    pub fn set(&self, worked: f32, target: f32, expected: Option<f32>) {
         let imp = self.imp();
         imp.worked.set(worked);
         imp.target.set(target);
         imp.expected.set(expected);
         self.update_property(&[
             gtk::accessible::Property::ValueMin(0.0),
-            gtk::accessible::Property::ValueMax(f64::from(hours(worked.max(target)))),
-            gtk::accessible::Property::ValueNow(f64::from(hours(worked))),
+            gtk::accessible::Property::ValueMax(f64::from(worked.max(target))),
+            gtk::accessible::Property::ValueNow(f64::from(worked)),
         ]);
         self.queue_draw();
     }
-}
-
-fn hours(time: TimeDelta) -> f32 {
-    time.num_minutes() as f32 / 60.0
 }

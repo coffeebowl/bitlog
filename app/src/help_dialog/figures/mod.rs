@@ -17,6 +17,7 @@ use gtk::subclass::prelude::*;
 use gtk::{gdk, glib, graphene, gsk, pango};
 
 use crate::colors::with_alpha;
+use crate::week_chart::append_layout;
 
 /// What a figure shows.
 #[derive(Debug, Default, Clone, Copy)]
@@ -137,26 +138,6 @@ fn markup_layout(widget: &gtk::Widget, markup: &str, width: Option<f32>) -> pang
     let layout = layout(widget, "", width);
     layout.set_markup(markup);
     layout
-}
-
-/// Draws `layout` centred vertically on `y`; `align` 0 puts its left, 1
-/// its right edge on `x`.
-fn append_layout(
-    snapshot: &gtk::Snapshot,
-    layout: &pango::Layout,
-    x: f32,
-    y: f32,
-    align: f32,
-    color: &gdk::RGBA,
-) {
-    let (width, height) = layout.pixel_size();
-    snapshot.save();
-    snapshot.translate(&graphene::Point::new(
-        x - width as f32 * align,
-        y - height as f32 / 2.0,
-    ));
-    snapshot.append_layout(layout, color);
-    snapshot.restore();
 }
 
 fn fill_rounded(snapshot: &gtk::Snapshot, rect: graphene::Rect, radius: f32, color: &gdk::RGBA) {
