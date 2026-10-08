@@ -240,6 +240,11 @@ impl ProjectView {
         self.imp().slug.borrow().clone()
     }
 
+    /// Switches from the Git page back to the project's main page.
+    pub fn show_project_tab(&self) {
+        self.imp().view_stack.set_visible_child_name("project");
+    }
+
     /// Uses `index` for the time spent on projects and their blocks.
     pub fn set_index(&self, index: SearchIndex) {
         self.imp().index.replace(index);
@@ -259,7 +264,7 @@ impl ProjectView {
         let git = imp.view_stack.visible_child_name().as_deref() == Some("git");
         let other = imp.slug.borrow().as_ref() != Some(&project.slug);
         if other || (git && repo.is_none()) {
-            imp.view_stack.set_visible_child_name("project");
+            self.show_project_tab();
         }
         if other {
             imp.scrolled.vadjustment().set_value(0.0);

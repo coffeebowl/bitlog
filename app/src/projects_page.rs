@@ -481,6 +481,9 @@ impl ProjectsPage {
         imp.project_view.show(&vault, project);
         let shown = imp.nav.visible_page();
         if shown.as_ref() != Some(imp.project_view.upcast_ref()) {
+            // Opened anew, the project starts on its main page even if Git was
+            // shown last.
+            imp.project_view.show_project_tab();
             imp.nav.pop_to_tag("projects");
             imp.nav.push(&imp.project_view);
         }
