@@ -8,13 +8,13 @@ use gtk::{gdk, glib, graphene, gsk, pango};
 use crate::colors::{pastel, with_alpha};
 use crate::format::{format_date, format_duration};
 
-const HEIGHT: f32 = 330.0;
+const HEIGHT: f32 = 332.0;
 /// Room for the hour labels on the left, at least.
 const LEFT: f32 = 44.0;
 const RIGHT: f32 = 16.0;
 const TOP: f32 = 12.0;
 /// Room for the weekdays and, below them, the days of the month.
-const BOTTOM: f32 = 54.0;
+const BOTTOM: f32 = 56.0;
 /// Between the parts of a column.
 const GAP: f32 = 2.0;
 const RADIUS: f32 = 6.0;
@@ -24,6 +24,10 @@ const RADIUS: f32 = 6.0;
 pub struct ChartDay {
     pub date: NaiveDate,
     pub is_today: bool,
+    /// A workday by the preferences; the others are shaded.
+    pub is_workday: bool,
+    /// The kind of a day that is not a workday, as in "Vacation".
+    pub kind: Option<String>,
     /// Hours per project, stacked from the bottom.
     pub segments: Vec<(gdk::RGBA, f32)>,
     /// The share of the week's target hours that falls on this day, which
@@ -102,6 +106,15 @@ mod imp {
             let y_day = |hours: f32| plot.y() + plot.height() * (1.0 - hours / day_max);
 
             let target_y = target.map(y_day);
+
+            let below = graphene::Rect::new(
+                plot.x(),
+                plot.y() + plot.height() + 4.0,
+                plot.width(),
+                widget.height() as f32 - plot.y() - plot.height() - 4.0,
+            );
+            append_days_off(snapshot, &days, &below, &foreground);
+
             let label_color = with_alpha(&foreground, 0.55);
             for line in 0..=(day_max / day_step).round() as u32 {
                 let hours = day_step * line as f32;
@@ -129,6 +142,14 @@ mod imp {
                 let width = column * 0.55;
                 append_column(snapshot, &day.segments, center - width / 2.0, width, &y_day);
                 self.append_date(snapshot, day, center, plot.y() + plot.height());
+                // Above the column, or on the axis for a day not worked.
+                if let Some(kind) = &day.kind {
+                    let label = self.layout(kind, Style::Small);
+                    label.set_width(((column - 4.0) * pango::SCALE as f32) as i32);
+                    label.set_ellipsize(pango::EllipsizeMode::End);
+                    let y = y_day(day.worked_hours()) - 4.0 - label.pixel_size().1 as f32 / 2.0;
+                    append_layout(snapshot, &label, center, y, 0.5, &label_color);
+                }
             }
         }
     }
@@ -157,12 +178,12 @@ mod imp {
                 snapshot,
                 &weekday,
                 x,
-                top + 14.0,
+                top + 18.0,
                 0.5,
                 &with_alpha(&foreground, 0.55),
             );
             let number = self.layout(&day.date.day().to_string(), Style::Bold);
-            let center = graphene::Point::new(x, top + 38.0);
+            let center = graphene::Point::new(x, top + 39.0);
             let color = if day.is_today {
                 let circle = gsk::PathBuilder::new();
                 circle.add_circle(&center, 12.0);
@@ -207,6 +228,47 @@ fn append_layout(
 impl ChartDay {
     fn worked_hours(&self) -> f32 {
         self.segments.iter().map(|(_, hours)| hours).sum()
+    }
+}
+
+/// The days without work below the axis, in `bounds`, shaded as in the
+/// month: days off a little darker than the days that are not workdays.
+/// Days in a row make one band with round corners.
+fn append_days_off(
+    snapshot: &gtk::Snapshot,
+    days: &[ChartDay],
+    bounds: &graphene::Rect,
+    foreground: &gdk::RGBA,
+) {
+    let shades: Vec<Option<f32>> = days
+        .iter()
+        .map(|day| match (&day.kind, day.is_workday) {
+            (Some(_), _) => Some(0.1),
+            (None, false) => Some(0.05),
+            (None, true) => None,
+        })
+        .collect();
+    let column = bounds.width() / days.len().max(1) as f32;
+    let span = |from: usize, to: usize| {
+        let x = bounds.x() + column * from as f32;
+        graphene::Rect::new(x, bounds.y(), column * (to - from) as f32, bounds.height())
+    };
+    let mut start = 0;
+    while start < shades.len() {
+        if shades[start].is_none() {
+            start += 1;
+            continue;
+        }
+        let end = (start..shades.len())
+            .find(|index| shades[*index].is_none())
+            .unwrap_or(shades.len());
+        snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(span(start, end), RADIUS));
+        for (index, shade) in shades.iter().enumerate().take(end).skip(start) {
+            let shade = shade.expect("days in a band are shaded");
+            snapshot.append_color(&with_alpha(foreground, shade), &span(index, index + 1));
+        }
+        snapshot.pop();
+        start = end;
     }
 }
 
@@ -308,6 +370,8 @@ mod tests {
                 .map(|offset| ChartDay {
                     date: monday + chrono::Days::new(offset as u64),
                     is_today: false,
+                    is_workday: true,
+                    kind: None,
                     segments: Vec::new(),
                     target_hours: targets[offset],
                 })

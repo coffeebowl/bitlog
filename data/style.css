@@ -121,12 +121,18 @@ row.drop-after {
   background-color: alpha(currentColor, 0.05);
 }
 
+/* A shade darker than other days without work, and not in the accent color,
+   which could look like a warning. */
 .calendar-month button.calendar-day.day-off {
-  background-color: alpha(var(--accent-bg-color), 0.08);
+  background-color: alpha(currentColor, 0.1);
 }
 
 .calendar-month button.calendar-day:hover {
   background-color: alpha(currentColor, 0.07);
+}
+
+.calendar-month button.calendar-day.day-off:hover {
+  background-color: alpha(currentColor, 0.12);
 }
 
 .calendar-month button.calendar-day:active {

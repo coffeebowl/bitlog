@@ -334,6 +334,11 @@ impl CalendarView {
             days.push(ChartDay {
                 date,
                 is_today: date == today,
+                is_workday: vault.config().week.workdays.contains(&date.weekday()),
+                kind: day
+                    .as_ref()
+                    .filter(|day| !day.is_work())
+                    .map(|day| kind_name(&day.kind)),
                 segments: times
                     .iter()
                     .map(|(slug, time)| (project_color(&vault, slug), hours(*time)))
