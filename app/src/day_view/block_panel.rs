@@ -199,7 +199,8 @@ impl DayView {
         let project = vault.project(&block.project);
         let project_name = vault.project_name(&block.project);
         // Keeps what is being typed into the same block, see `show_details`.
-        if is_other || imp.block_title.text() != block.title {
+        // Saving trims the title, a space just typed must stay all the same.
+        if is_other || imp.block_title.text().trim() != block.title {
             imp.block_title.set_text(&block.title);
         }
         imp.block_title.set_placeholder_text(Some(project_name));
