@@ -14,6 +14,7 @@ use gtk::glib;
 use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::format::{PROJECT_STATUSES, format_duration, format_recent_date, status_name};
+use crate::launch;
 use crate::note_dialogs::{self, ask_note_name};
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
@@ -118,6 +119,25 @@ mod imp {
                 "notes.delete",
                 Some(glib::VariantTy::STRING),
                 |page, _, note| async move { page.delete_note(param(note.as_ref(), "notes")).await },
+            );
+            // With what is being typed saved, for the other app to see.
+            klass.install_action_async(
+                "notes.open-file",
+                Some(glib::VariantTy::STRING),
+                |page, _, note| async move {
+                    page.save_now();
+                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
+                    launch::open_file(&page, &path).await;
+                },
+            );
+            klass.install_action_async(
+                "notes.show-file",
+                Some(glib::VariantTy::STRING),
+                |page, _, note| async move {
+                    page.save_now();
+                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
+                    launch::show_in_folder(&page, &path).await;
+                },
             );
         }
 

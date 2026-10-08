@@ -144,11 +144,14 @@ fn preview_text(text: &str) -> &str {
     &text[..end]
 }
 
-/// Renaming and deleting the note `note`.
+/// Opening the note `note` in another app, showing it in its folder,
+/// renaming and deleting it.
 pub fn note_menu(note: &NotePath) -> gio::Menu {
     let target = note.to_string().to_variant();
     let menu = gio::Menu::new();
     for (label, action) in [
+        (gettext("_Open Externally"), "notes.open-file"),
+        (gettext("_Show in Folder"), "notes.show-file"),
         (gettext("_Rename…"), "notes.rename"),
         (gettext("_Delete"), "notes.delete"),
     ] {
@@ -177,13 +180,12 @@ pub fn asset_card(vault: &Vault, asset: &Asset) -> gtk::FlowBoxChild {
     )
 }
 
-/// Opening `asset` with another app, showing it in its folder, renaming it
-/// and moving it to the trash.
+/// Showing `asset` in its folder, renaming it and moving it to the trash.
+/// Opening it is what clicking its card does.
 fn asset_menu(asset: &AssetPath) -> gio::Menu {
     let target = asset.to_string().to_variant();
     let menu = gio::Menu::new();
     for (label, action) in [
-        (gettext("Open _With…"), "assets.open-with"),
         (gettext("_Show in Folder"), "assets.show"),
         (gettext("_Rename…"), "assets.rename"),
         (gettext("Move to _Trash"), "assets.trash"),

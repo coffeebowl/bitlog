@@ -16,6 +16,7 @@ use crate::cards::{note_card, note_preview, show_preview};
 use crate::colors::color_dot;
 use crate::config;
 use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
+use crate::launch;
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs;
 use crate::note_view::NoteView;
@@ -132,6 +133,25 @@ mod imp {
                 "notes.delete",
                 Some(glib::VariantTy::STRING),
                 |page, _, note| async move { page.delete_note(param(note.as_ref(), "notes")).await },
+            );
+            // With what is being typed saved, for the other app to see.
+            klass.install_action_async(
+                "notes.open-file",
+                Some(glib::VariantTy::STRING),
+                |page, _, note| async move {
+                    page.save_now();
+                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
+                    launch::open_file(&page, &path).await;
+                },
+            );
+            klass.install_action_async(
+                "notes.show-file",
+                Some(glib::VariantTy::STRING),
+                |page, _, note| async move {
+                    page.save_now();
+                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
+                    launch::show_in_folder(&page, &path).await;
+                },
             );
         }
 

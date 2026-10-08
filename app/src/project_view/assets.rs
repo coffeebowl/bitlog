@@ -12,6 +12,7 @@ use gtk::{gio, glib};
 
 use super::ProjectView;
 use crate::alert::show_error;
+use crate::launch::{self, show_launch_error};
 use crate::note_dialogs::ask_name;
 
 impl ProjectView {
@@ -83,37 +84,16 @@ impl ProjectView {
         let launched = gtk::FileLauncher::new(Some(&gio::File::for_path(folder)))
             .launch_future(window.as_ref())
             .await;
-        self.show_launch_error(&gettext("Cannot Open Folder"), launched);
+        show_launch_error(self, &gettext("Cannot Open Folder"), launched);
     }
 
-    /// Opens `asset` with the app the system chooses for it, or, if
-    /// `choose`, with one the user chooses.
-    pub(super) async fn open_asset(&self, asset: AssetPath, choose: bool) {
-        let file = gio::File::for_path(self.vault().asset_path(&asset));
-        let launcher = gtk::FileLauncher::new(Some(&file));
-        launcher.set_always_ask(choose);
-        let window = self.root().and_downcast::<gtk::Window>();
-        let launched = launcher.launch_future(window.as_ref()).await;
-        self.show_launch_error(&gettext("Cannot Open File"), launched);
+    /// Opens `asset` with the app the system chooses for it.
+    pub(super) async fn open_asset(&self, asset: AssetPath) {
+        launch::open_file(self, &self.vault().asset_path(&asset)).await;
     }
 
     pub(super) async fn show_asset_in_folder(&self, asset: AssetPath) {
-        let file = gio::File::for_path(self.vault().asset_path(&asset));
-        let window = self.root().and_downcast::<gtk::Window>();
-        let launched = gtk::FileLauncher::new(Some(&file))
-            .open_containing_folder_future(window.as_ref())
-            .await;
-        self.show_launch_error(&gettext("Cannot Show File"), launched);
-    }
-
-    /// Shows the error of launching an app, unless the user dismissed it.
-    fn show_launch_error(&self, heading: &str, launched: Result<(), glib::Error>) {
-        if let Err(err) = launched
-            && !err.matches(gtk::DialogError::Dismissed)
-            && !err.matches(gtk::DialogError::Cancelled)
-        {
-            show_error(self, heading, err.message());
-        }
+        launch::show_in_folder(self, &self.vault().asset_path(&asset)).await;
     }
 
     pub(super) async fn rename_asset(&self, asset: AssetPath) {

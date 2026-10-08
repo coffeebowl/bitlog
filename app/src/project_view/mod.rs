@@ -122,15 +122,7 @@ mod imp {
                 "assets.open",
                 Some(glib::VariantTy::STRING),
                 |view, _, asset| async move {
-                    view.open_asset(param(asset.as_ref(), "assets"), false)
-                        .await;
-                },
-            );
-            klass.install_action_async(
-                "assets.open-with",
-                Some(glib::VariantTy::STRING),
-                |view, _, asset| async move {
-                    view.open_asset(param(asset.as_ref(), "assets"), true).await;
+                    view.open_asset(param(asset.as_ref(), "assets")).await;
                 },
             );
             klass.install_action_async(

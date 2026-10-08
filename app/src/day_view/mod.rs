@@ -16,6 +16,7 @@ use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
+use crate::launch;
 use crate::markdown_view::MarkdownView;
 use crate::note_dialogs::confirm_delete;
 use crate::project_picker::project_popover;
@@ -120,6 +121,15 @@ mod imp {
             });
             klass.install_action_async("day.delete", None, |view, _, _| async move {
                 view.delete_day().await;
+            });
+            // With what is being typed saved, for the other app to see.
+            klass.install_action_async("day.open-file", None, |view, _, _| async move {
+                view.save_texts_now();
+                launch::open_file(&view, &view.vault().day_path(view.date())).await;
+            });
+            klass.install_action_async("day.show-file", None, |view, _, _| async move {
+                view.save_texts_now();
+                launch::show_in_folder(&view, &view.vault().day_path(view.date())).await;
             });
             klass.install_action("day.set-block-time", None, |view, _, _| {
                 let imp = view.imp();
@@ -230,14 +240,13 @@ impl DayView {
             Ok(Some(file)) => self.show_day(file),
             Ok(None) => {
                 imp.file.replace(None);
-                self.action_set_enabled("day.new-block", false);
-                self.action_set_enabled("day.delete", false);
+                self.enable_actions(false, false);
                 imp.stack.set_visible_child_name("empty");
             }
             Err(err) => {
                 imp.file.replace(None);
-                self.action_set_enabled("day.new-block", false);
-                self.action_set_enabled("day.delete", false);
+                // Another editor may be the way to repair the file.
+                self.enable_actions(true, false);
                 imp.error_page
                     .set_description(Some(&glib::markup_escape_text(&err.to_string())));
                 imp.stack.set_visible_child_name("error");
@@ -274,8 +283,7 @@ impl DayView {
     /// Shows the day of `file` with its blocks, none of them selected.
     fn show_day(&self, file: DayFile) {
         let imp = self.imp();
-        self.action_set_enabled("day.new-block", true);
-        self.action_set_enabled("day.delete", true);
+        self.enable_actions(true, true);
         self.update_links();
         let vault = self.vault();
         let path = vault.day_path(file.day.date);
@@ -287,6 +295,17 @@ impl DayView {
         imp.timeline.set_day(&self.vault(), &file.day, is_today);
         imp.file.replace(Some(file));
         imp.stack.set_visible_child_name("day");
+    }
+
+    /// Enables the actions that need a file of the day shown, and those
+    /// that need it readable.
+    fn enable_actions(&self, exists: bool, readable: bool) {
+        for action in ["day.open-file", "day.show-file"] {
+            self.action_set_enabled(action, exists);
+        }
+        for action in ["day.new-block", "day.delete"] {
+            self.action_set_enabled(action, readable);
+        }
     }
 
     /// Shows everything of `day` but its blocks.

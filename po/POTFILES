@@ -14,6 +14,7 @@ app/src/help_dialog/figures/mod.rs
 app/src/help_dialog/figures/projects.rs
 app/src/help_dialog/figures/tasks.rs
 app/src/help_dialog/topics.rs
+app/src/launch.rs
 app/src/main.rs
 app/src/markdown_view/adding_images.rs
 app/src/markdown_view/callouts.rs

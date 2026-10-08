@@ -465,6 +465,18 @@ template $BitLogDayView: Adw.NavigationPage {
 menu day_menu {
   section {
     item {
+      label: _("_Open Externally");
+      action: "day.open-file";
+    }
+
+    item {
+      label: _("_Show in Folder");
+      action: "day.show-file";
+    }
+  }
+
+  section {
+    item {
       label: _("_Delete Day…");
       action: "day.delete";
     }

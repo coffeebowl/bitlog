@@ -11,6 +11,7 @@ mod format;
 mod git_page;
 mod heatmap;
 mod help_dialog;
+mod launch;
 mod markdown_view;
 mod miniature;
 mod note_dialogs;

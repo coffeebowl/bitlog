@@ -258,6 +258,13 @@ fn vault() -> Topic {
             Block::Text(gettext(
                 "BitLog writes the YAML anew on every save, but keeps your texts as they are. Headings typed into a day note or block text are saved with a backslash, as in <tt>\\# Text</tt>, so that they stay text.",
             )),
+            Block::Heading(gettext("Opening Files in Other Apps")),
+            Block::Text(gettext(
+                "To see a day file as it is stored, choose <b>Open Externally</b> or <b>Show in Folder</b> in the menu of the day. This also helps with conflicts that are hard to resolve in BitLog. Changes saved in the other app show up right away. Project notes have the same entries in their menu.",
+            )),
+            Block::Text(gettext(
+                "The first few times, your system may ask which app to use for a type of file, until it has learned your choice.",
+            )),
             Block::Heading(gettext("Sync")),
             Block::Text(gettext(
                 "BitLog notices changes made elsewhere and shows them right away. When a sync tool leaves conflict copies, BitLog merges those that do not contradict the original; the others wait in the sidebar to be resolved. Conflict markers of Git are resolved with Git.",
