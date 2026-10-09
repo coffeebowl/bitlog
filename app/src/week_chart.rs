@@ -7,6 +7,7 @@ use gtk::{gdk, glib, graphene, gsk, pango};
 
 use crate::colors::{pastel, with_alpha};
 use crate::format::{format_date, format_duration};
+use crate::widgets::redraw_animation;
 
 const HEIGHT: f32 = 332.0;
 /// Room for the hour labels on the left, at least.
@@ -18,8 +19,9 @@ const BOTTOM: f32 = 56.0;
 /// Between the parts of a column.
 const GAP: f32 = 2.0;
 const RADIUS: f32 = 6.0;
-/// How long the columns take to glide to another week.
-const GLIDE_MS: u32 = 250;
+/// How long the columns take to glide to another week, and the progress
+/// bar above with them.
+pub(crate) const GLIDE_MS: u32 = 250;
 
 /// Hours per project, and the height of a column as a share of the scale,
 /// which keeps a gliding column in place when the scale changes.
@@ -53,8 +55,8 @@ mod imp {
         pub hovered: Cell<Option<usize>>,
         /// Where the columns start and how wide they are, as last drawn.
         pub columns: Cell<(f32, f32)>,
-        /// The columns as they were shown when another week came, which
-        /// `glide` takes them from.
+        /// The columns as they were shown when the days were last set,
+        /// which `glide` takes them from.
         pub glide_from: RefCell<Vec<Column>>,
         pub glide: OnceCell<adw::TimedAnimation>,
     }
@@ -80,19 +82,7 @@ mod imp {
                 move |_| chart.queue_draw()
             ));
 
-            let target = adw::CallbackAnimationTarget::new(glib::clone!(
-                #[weak]
-                chart,
-                move |_| chart.queue_draw()
-            ));
-            let glide = adw::TimedAnimation::builder()
-                .widget(&*chart)
-                .value_from(0.0)
-                .value_to(1.0)
-                .duration(GLIDE_MS)
-                .easing(adw::Easing::EaseOutCubic)
-                .target(&target)
-                .build();
+            let glide = redraw_animation(&*chart, GLIDE_MS);
             self.glide.set(glide).expect("constructed runs once");
 
             chart.set_has_tooltip(true);
@@ -394,20 +384,14 @@ glib::wrapper! {
 }
 
 impl WeekChart {
-    /// Shows `days`; the columns glide from their heights if they are of
-    /// another week.
+    /// Shows `days`, the columns gliding from where they are.
     pub fn set_week(&self, days: Vec<ChartDay>) {
         let imp = self.imp();
-        let first = |days: &[ChartDay]| days.first().map(|day| day.date);
-        let other_week = first(&imp.days.borrow()) != first(&days);
-        if other_week {
-            let from = (0..days.len()).map(|index| self.shown(index)).collect();
-            imp.glide_from.replace(from);
-        }
+        let from = (0..days.len()).map(|index| self.shown(index)).collect();
+        imp.glide_from.replace(from);
         imp.days.replace(days);
-        match imp.glide.get() {
-            Some(glide) if other_week => glide.play(),
-            _ => self.queue_draw(),
+        if let Some(glide) = imp.glide.get() {
+            glide.play();
         }
     }
 

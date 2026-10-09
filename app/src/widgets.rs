@@ -26,6 +26,25 @@ pub fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
     }
 }
 
+/// An animation from 0 to 1 over `duration` milliseconds that redraws
+/// `widget` at every step, eased out as the others in the app.
+pub fn redraw_animation(widget: &impl IsA<gtk::Widget>, duration: u32) -> adw::TimedAnimation {
+    let widget = widget.as_ref();
+    let target = adw::CallbackAnimationTarget::new(glib::clone!(
+        #[weak]
+        widget,
+        move |_| widget.queue_draw()
+    ));
+    adw::TimedAnimation::builder()
+        .widget(widget)
+        .value_from(0.0)
+        .value_to(1.0)
+        .duration(duration)
+        .easing(adw::Easing::EaseOutCubic)
+        .target(&target)
+        .build()
+}
+
 /// Sets `field` to `entered` if that differs from `shown`, the value the
 /// dialog started with, so that a value changed elsewhere meanwhile is kept
 /// unless the user changed it too.

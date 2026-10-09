@@ -115,168 +115,170 @@ template $BitLogDayView: Adw.NavigationPage {
         // At most half the width, and as wide as dragged at its edge.
         sidebar-width-fraction: 0.5;
 
-        content: Stack stack {
-          StackPage {
-            name: "day";
+        content: $BitLogCrossFade cross_fade {
+          Stack stack {
+            StackPage {
+              name: "day";
 
-            child: ScrolledWindow day_scroll {
-              hscrollbar-policy: never;
+              child: ScrolledWindow day_scroll {
+                hscrollbar-policy: never;
 
-              child: Adw.Clamp {
-                margin-top: 24;
-                margin-bottom: 24;
-                margin-start: 12;
-                margin-end: 12;
+                child: Adw.Clamp {
+                  margin-top: 24;
+                  margin-bottom: 24;
+                  margin-start: 12;
+                  margin-end: 12;
+
+                  child: Box {
+                    orientation: vertical;
+                    spacing: 24;
+
+                    Box {
+                      homogeneous: true;
+                      spacing: 12;
+
+                      MenuButton kind_button {
+                        tooltip-text: _("Change Kind of Day");
+
+                        styles [
+                          "flat",
+                        ]
+
+                        child: Box {
+                          orientation: vertical;
+
+                          Label {
+                            label: _("Kind");
+                            xalign: 0;
+
+                            styles [
+                              "caption-heading",
+                              "dim-label",
+                            ]
+                          }
+
+                          Label kind_label {
+                            xalign: 0;
+                            ellipsize: end;
+
+                            styles [
+                              "title-4",
+                            ]
+                          }
+                        };
+                      }
+
+                      MenuButton location_button {
+                        tooltip-text: _("Change Location");
+
+                        styles [
+                          "flat",
+                        ]
+
+                        child: Box {
+                          orientation: vertical;
+
+                          Label {
+                            label: _("Location");
+                            xalign: 0;
+
+                            styles [
+                              "caption-heading",
+                              "dim-label",
+                            ]
+                          }
+
+                          Label location_label {
+                            xalign: 0;
+                            ellipsize: end;
+
+                            styles [
+                              "title-4",
+                            ]
+                          }
+                        };
+                      }
+
+                      // Not a button like its neighbours, but in line with
+                      // their labels.
+                      Box {
+                        orientation: vertical;
+                        margin-start: 10;
+                        margin-end: 10;
+                        margin-top: 5;
+                        margin-bottom: 5;
+
+                        Label {
+                          label: _("Working Time");
+                          xalign: 0;
+
+                          styles [
+                            "caption-heading",
+                            "dim-label",
+                          ]
+                        }
+
+                        Label working_time_label {
+                          xalign: 0;
+                          ellipsize: end;
+
+                          styles [
+                            "title-4",
+                          ]
+                        }
+                      }
+                    }
+
+                    $BitLogMarkdownView note_view {
+                      editable: true;
+                      placeholder: _("Add a note · no headings");
+                    }
+
+                    $BitLogTaskListView tasks {}
+
+                    $BitLogTimeline timeline {}
+                  };
+                };
+              };
+            }
+
+            StackPage {
+              name: "empty";
+
+              child: Adw.StatusPage {
+                icon-name: "x-office-calendar-symbolic";
+                title: _("Nothing Logged");
+                description: _("There is no entry for this day");
 
                 child: Box {
                   orientation: vertical;
-                  spacing: 24;
+                  spacing: 36;
 
-                  Box {
-                    homogeneous: true;
-                    spacing: 12;
+                  Button {
+                    label: _("_Log Day");
+                    use-underline: true;
+                    halign: center;
+                    action-name: "day.create";
 
-                    MenuButton kind_button {
-                      tooltip-text: _("Change Kind of Day");
-
-                      styles [
-                        "flat",
-                      ]
-
-                      child: Box {
-                        orientation: vertical;
-
-                        Label {
-                          label: _("Kind");
-                          xalign: 0;
-
-                          styles [
-                            "caption-heading",
-                            "dim-label",
-                          ]
-                        }
-
-                        Label kind_label {
-                          xalign: 0;
-                          ellipsize: end;
-
-                          styles [
-                            "title-4",
-                          ]
-                        }
-                      };
-                    }
-
-                    MenuButton location_button {
-                      tooltip-text: _("Change Location");
-
-                      styles [
-                        "flat",
-                      ]
-
-                      child: Box {
-                        orientation: vertical;
-
-                        Label {
-                          label: _("Location");
-                          xalign: 0;
-
-                          styles [
-                            "caption-heading",
-                            "dim-label",
-                          ]
-                        }
-
-                        Label location_label {
-                          xalign: 0;
-                          ellipsize: end;
-
-                          styles [
-                            "title-4",
-                          ]
-                        }
-                      };
-                    }
-
-                    // Not a button like its neighbours, but in line with
-                    // their labels.
-                    Box {
-                      orientation: vertical;
-                      margin-start: 10;
-                      margin-end: 10;
-                      margin-top: 5;
-                      margin-bottom: 5;
-
-                      Label {
-                        label: _("Working Time");
-                        xalign: 0;
-
-                        styles [
-                          "caption-heading",
-                          "dim-label",
-                        ]
-                      }
-
-                      Label working_time_label {
-                        xalign: 0;
-                        ellipsize: end;
-
-                        styles [
-                          "title-4",
-                        ]
-                      }
-                    }
+                    styles [
+                      "pill",
+                      "suggested-action",
+                    ]
                   }
 
-                  $BitLogMarkdownView note_view {
-                    editable: true;
-                    placeholder: _("Add a note · no headings");
-                  }
-
-                  $BitLogTaskListView tasks {}
-
-                  $BitLogTimeline timeline {}
+                  $BitLogTaskListView empty_tasks {}
                 };
               };
-            };
-          }
+            }
 
-          StackPage {
-            name: "empty";
+            StackPage {
+              name: "error";
 
-            child: Adw.StatusPage {
-              icon-name: "x-office-calendar-symbolic";
-              title: _("Nothing Logged");
-              description: _("There is no entry for this day");
-
-              child: Box {
-                orientation: vertical;
-                spacing: 36;
-
-                Button {
-                  label: _("_Log Day");
-                  use-underline: true;
-                  halign: center;
-                  action-name: "day.create";
-
-                  styles [
-                    "pill",
-                    "suggested-action",
-                  ]
-                }
-
-                $BitLogTaskListView empty_tasks {}
+              child: Adw.StatusPage error_page {
+                icon-name: "dialog-warning-symbolic";
+                title: _("Cannot Read Day");
               };
-            };
-          }
-
-          StackPage {
-            name: "error";
-
-            child: Adw.StatusPage error_page {
-              icon-name: "dialog-warning-symbolic";
-              title: _("Cannot Read Day");
-            };
+            }
           }
         };
 

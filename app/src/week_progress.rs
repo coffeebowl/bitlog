@@ -1,10 +1,12 @@
-use std::cell::Cell;
+use std::cell::{Cell, OnceCell};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{glib, graphene, gsk};
 
 use crate::colors::{parse, with_alpha};
+use crate::week_chart::GLIDE_MS;
+use crate::widgets::redraw_animation;
 
 /// The bar, and the mark across it.
 const BAR_HEIGHT: f32 = 8.0;
@@ -16,14 +18,28 @@ const ON_PLAN: &str = "#3584e4";
 const AHEAD: &str = "#0fa05c";
 const BEHIND: &str = "#d15c53";
 
+/// What the bar shows, as shares of its length, which glide from one week
+/// to another as they are seen; all 0 for a week without a target.
+#[derive(Debug, Default, Clone, Copy)]
+struct Bar {
+    worked: f32,
+    target: f32,
+    /// Where the week should be by now, the whole target once it is over.
+    plan: f32,
+}
+
 mod imp {
     use super::*;
 
     #[derive(Debug, Default)]
     pub struct WeekProgress {
-        pub worked: Cell<f32>,
-        pub target: Cell<f32>,
-        pub expected: Cell<Option<f32>>,
+        /// The bar as it was shown when it was last set, which `glide`
+        /// takes it from.
+        pub(super) from: Cell<Bar>,
+        pub(super) to: Cell<Bar>,
+        /// Whether the week has come as far as today, with a mark for it.
+        pub has_mark: Cell<bool>,
+        pub glide: OnceCell<adw::TimedAnimation>,
     }
 
     #[glib::object_subclass]
@@ -37,7 +53,13 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for WeekProgress {}
+    impl ObjectImpl for WeekProgress {
+        fn constructed(&self) {
+            self.parent_constructed();
+            let glide = redraw_animation(&*self.obj(), GLIDE_MS);
+            self.glide.set(glide).expect("constructed runs once");
+        }
+    }
 
     impl WidgetImpl for WeekProgress {
         fn measure(&self, orientation: gtk::Orientation, _for_size: i32) -> (i32, i32, i32, i32) {
@@ -50,8 +72,11 @@ mod imp {
 
         fn snapshot(&self, snapshot: &gtk::Snapshot) {
             let widget = self.obj();
-            let worked = self.worked.get();
-            let target = self.target.get();
+            let Bar {
+                worked,
+                target,
+                plan,
+            } = widget.shown();
             let width = widget.width() as f32;
             let top = (HEIGHT - BAR_HEIGHT) / 2.0;
             let bar = graphene::Rect::new(0.0, top, width, BAR_HEIGHT);
@@ -63,16 +88,10 @@ mod imp {
                 snapshot.pop();
                 return;
             }
-            // The bar grows with hours beyond the target.
-            let end = worked.max(target);
-            let x_of = |hours: f32| width * hours / end;
+            let x_of = |share: f32| width * share;
             let span = |from: f32, to: f32| {
                 graphene::Rect::new(x_of(from), top, x_of(to) - x_of(from), BAR_HEIGHT)
             };
-            // Where the week should be by now, the whole target once it is
-            // over; a week still to come has no plan to be behind.
-            let expected = self.expected.get();
-            let plan = expected.unwrap_or(worked);
             snapshot.append_color(&parse(ON_PLAN), &span(0.0, worked.min(plan)));
             // Only hints of green and red; hours missing are not wrong.
             if worked > plan {
@@ -85,7 +104,7 @@ mod imp {
             snapshot.pop();
 
             // At the end of the bar, the mark would only say the week is over.
-            if expected.is_some() && 0.0 < plan && plan < target {
+            if self.has_mark.get() && 0.0 < plan && plan < target {
                 let mark = graphene::Rect::new(x_of(plan) - 1.0, 0.0, 2.0, HEIGHT);
                 let rounded = gsk::RoundedRect::from_rect(mark, 1.0);
                 snapshot.push_rounded_clip(&rounded);
@@ -110,14 +129,38 @@ impl WeekProgress {
     /// week still to come.
     pub fn set(&self, worked: f32, target: f32, expected: Option<f32>) {
         let imp = self.imp();
-        imp.worked.set(worked);
-        imp.target.set(target);
-        imp.expected.set(expected);
+        imp.from.set(self.shown());
+        // The bar grows with hours beyond the target.
+        let end = worked.max(target);
+        let share = |hours: f32| if target > 0.0 { hours / end } else { 0.0 };
+        // A week still to come has no plan to be behind.
+        let plan = expected.unwrap_or(worked);
+        imp.to.set(Bar {
+            worked: share(worked),
+            target: share(target),
+            plan: share(plan),
+        });
+        imp.has_mark.set(expected.is_some());
         self.update_property(&[
             gtk::accessible::Property::ValueMin(0.0),
-            gtk::accessible::Property::ValueMax(f64::from(worked.max(target))),
+            gtk::accessible::Property::ValueMax(f64::from(end)),
             gtk::accessible::Property::ValueNow(f64::from(worked)),
         ]);
-        self.queue_draw();
+        if let Some(glide) = imp.glide.get() {
+            glide.play();
+        }
+    }
+
+    /// The bar on its way from where it was to where it was last set.
+    fn shown(&self) -> Bar {
+        let imp = self.imp();
+        let progress = imp.glide.get().map_or(1.0, |glide| glide.value() as f32);
+        let (from, to) = (imp.from.get(), imp.to.get());
+        let between = |from: f32, to: f32| from + (to - from) * progress;
+        Bar {
+            worked: between(from.worked, to.worked),
+            target: between(from.target, to.target),
+            plan: between(from.plan, to.plan),
+        }
     }
 }

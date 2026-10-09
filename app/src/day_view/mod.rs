@@ -15,6 +15,7 @@ use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use crate::alert::{show_error, toast_overlay};
+use crate::cross_fade::CrossFade;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::launch;
 use crate::markdown_view::MarkdownView;
@@ -66,6 +67,8 @@ mod imp {
         #[template_child]
         pub day_scroll: TemplateChild<gtk::ScrolledWindow>,
         #[template_child]
+        pub cross_fade: TemplateChild<CrossFade>,
+        #[template_child]
         pub note_view: TemplateChild<MarkdownView>,
         #[template_child]
         pub tasks: TemplateChild<TaskListView>,
@@ -104,6 +107,7 @@ mod imp {
         type ParentType = adw::NavigationPage;
 
         fn class_init(klass: &mut Self::Class) {
+            CrossFade::ensure_type();
             MarkdownView::ensure_type();
             TaskListView::ensure_type();
             Timeline::ensure_type();
@@ -235,6 +239,10 @@ impl DayView {
 
     pub fn show_date(&self, date: NaiveDate) {
         let imp = self.imp();
+        // Before anything on the page changes, which the fade starts from.
+        if date != imp.date.get() {
+            imp.cross_fade.fade();
+        }
         self.save_texts_now();
         if date != imp.date.get()
             && let Some(toast) = imp.undo_toast.take()
