@@ -16,7 +16,7 @@ use crate::error::ReadError;
 use crate::file::{check_format, parse_text};
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
-pub use edit::RemovedText;
+pub use edit::{RemovedText, reordered_spans};
 pub(crate) use sections::escaped_block_headings;
 pub use sections::trim_blank_lines;
 

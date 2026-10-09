@@ -27,6 +27,8 @@ pub enum EditError {
     EmptyBlock,
     #[error("the block would overlap block {0}")]
     Overlap(BlockId),
+    #[error("a block has to start on its day")]
+    PastMidnight,
     #[error("a block title has to fit on one line")]
     MultilineTitle,
     #[error("the project {0} exists already")]

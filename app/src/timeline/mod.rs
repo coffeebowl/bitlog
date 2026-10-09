@@ -1,6 +1,6 @@
 mod input;
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::sync::OnceLock;
 
 use adw::prelude::*;
@@ -25,6 +25,8 @@ const KNOT_RADIUS: f32 = 5.0;
 const CURRENT_KNOT_RADIUS: f32 = 7.0;
 /// Half the height of the arrow that marks the time now.
 const NOW_ARROW: f32 = 5.0;
+/// How long blocks and the marked span take to glide to their new place.
+const GLIDE_MS: u32 = 200;
 /// Height of the edges that change start or end of a block when dragged.
 const EDGE: f32 = 6.0;
 /// Words of text a block hides from which it shows one more dot.
@@ -50,6 +52,13 @@ mod imp {
         pub drag: Cell<Option<Drag>>,
         /// The span being dragged, or waiting for its block.
         pub pending: Cell<Option<(u32, u32)>>,
+        pub reorder: RefCell<Option<Reorder>>,
+        /// Where the blocks started, in minutes, when they began to glide
+        /// to where `reorder` puts them; empty while they stand still.
+        pub glide_from: RefCell<Vec<f32>>,
+        /// Where the marked span started when it began to glide to `pending`.
+        pub pending_from: Cell<Option<(f32, f32)>>,
+        pub glide: OnceCell<adw::TimedAnimation>,
         pub popover: RefCell<Option<gtk::Popover>>,
     }
 
@@ -63,6 +72,15 @@ mod imp {
             part: Part,
             minute: u32,
         },
+    }
+
+    /// A dragged block taking the place of another.
+    #[derive(Debug, PartialEq, Eq)]
+    pub struct Reorder {
+        /// The index of the other block.
+        pub place: usize,
+        /// The spans of all blocks then, as they are shown.
+        pub spans: Vec<(u32, u32)>,
     }
 
     /// Where a block is grabbed.
@@ -109,6 +127,11 @@ mod imp {
                     Signal::builder("block-moved")
                         .param_types([u32::static_type(), u32::static_type(), u32::static_type()])
                         .build(),
+                    // Emitted with the indices of a block dragged to the
+                    // place of another and of that block.
+                    Signal::builder("block-reordered")
+                        .param_types([u32::static_type(), u32::static_type()])
+                        .build(),
                 ]
             })
         }
@@ -116,6 +139,24 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             self.obj().setup_input();
+
+            let target = adw::CallbackAnimationTarget::new(glib::clone!(
+                #[weak(rename_to = timeline)]
+                self.obj(),
+                move |_| {
+                    timeline.queue_allocate();
+                    timeline.queue_draw();
+                }
+            ));
+            let glide = adw::TimedAnimation::builder()
+                .widget(&*self.obj())
+                .value_from(0.0)
+                .value_to(1.0)
+                .duration(GLIDE_MS)
+                .easing(adw::Easing::EaseOutCubic)
+                .target(&target)
+                .build();
+            self.glide.set(glide).expect("constructed runs once");
 
             // Moves the highlight on while the day is open.
             glib::timeout_add_seconds_local(
@@ -150,7 +191,7 @@ mod imp {
             let size = match orientation {
                 gtk::Orientation::Vertical => {
                     let (first, last) = self.range.get();
-                    y_of(first, last) + PADDING
+                    y_of(first, last as f32) + PADDING
                 }
                 _ => BLOCK_X + 120.0,
             };
@@ -159,20 +200,20 @@ mod imp {
 
         fn size_allocate(&self, width: i32, _height: i32, _baseline: i32) {
             let (first, _) = self.range.get();
-            for entry in self.blocks.borrow().iter() {
-                let (start, end) = entry.span;
+            for (index, entry) in self.blocks.borrow().iter().enumerate() {
+                let (start, end) = self.shown_span(index);
                 let (min_width, _, _, _) = entry.child.measure(gtk::Orientation::Horizontal, -1);
                 let child_width = (width - BLOCK_X as i32).max(min_width);
                 let (min_height, _, _, _) =
                     entry.child.measure(gtk::Orientation::Vertical, child_width);
                 // Short blocks get their minimum height and are clipped in `snapshot`.
-                let height = (block_height(start, end) as i32).max(min_height);
+                let height = (((end - start) * MINUTE_HEIGHT) as i32).max(min_height);
                 let top = y_of(first, start) as i32;
                 entry.child.size_allocate(
                     &gtk::Allocation::new(BLOCK_X as i32, top, child_width, height),
                     -1,
                 );
-                let area = self.area(entry);
+                let area = self.area(index);
                 let bottom = area.y() + area.height();
                 for line in &entry.lines {
                     let fits = line
@@ -193,7 +234,8 @@ mod imp {
             let (first, last) = self.range.get();
 
             self.snapshot_grid(snapshot, width, &foreground);
-            let line = graphene::Rect::new(LINE_X - 1.0, 0.0, 2.0, y_of(first, last) + PADDING);
+            let line =
+                graphene::Rect::new(LINE_X - 1.0, 0.0, 2.0, y_of(first, last as f32) + PADDING);
             snapshot.append_color(&with_alpha(&foreground, 0.3), &line);
 
             let now = self
@@ -205,11 +247,15 @@ mod imp {
                 .and_downcast::<gtk::Window>()
                 .is_some_and(|window| window.gets_focus_visible());
             for (index, entry) in self.blocks.borrow().iter().enumerate() {
-                let (start, _) = entry.span;
-                let is_current = now.is_some_and(|now| (entry.span.0..entry.span.1).contains(&now));
+                let (start, end) = entry.span;
+                let is_shifted = self.is_shifted(index);
+                if is_shifted {
+                    snapshot.push_opacity(0.5);
+                }
+                let is_current = now.is_some_and(|now| (start..end).contains(&now));
                 let is_selected = self.selected.get() == Some(index);
                 let color = entry.color.unwrap_or_else(|| with_alpha(&foreground, 0.5));
-                let area = self.area(entry);
+                let area = self.area(index);
                 let rounded = gsk::RoundedRect::from_rect(area, 6.0);
 
                 snapshot.push_rounded_clip(&rounded);
@@ -254,12 +300,16 @@ mod imp {
                 } else {
                     (KNOT_RADIUS, foreground)
                 };
-                append_dot(snapshot, LINE_X, y_of(first, start), radius, &knot_color);
+                let knot_y = y_of(first, self.shown_span(index).0);
+                append_dot(snapshot, LINE_X, knot_y, radius, &knot_color);
+                if is_shifted {
+                    snapshot.pop();
+                }
             }
 
-            if let Some(span) = self.pending.get() {
+            if let Some((start, end)) = self.shown_pending() {
                 let accent = adw::StyleManager::default().accent_color_rgba();
-                let rounded = gsk::RoundedRect::from_rect(self.span_area(span), 6.0);
+                let rounded = gsk::RoundedRect::from_rect(self.minutes_area(start, end), 6.0);
                 snapshot.push_rounded_clip(&rounded);
                 snapshot.append_color(&with_alpha(&accent, 0.3), rounded.bounds());
                 snapshot.pop();
@@ -269,7 +319,7 @@ mod imp {
             if let Some(now) = now.filter(|now| (first..=last).contains(now)) {
                 append_now(
                     snapshot,
-                    y_of(first, now),
+                    y_of(first, now as f32),
                     width,
                     &with_alpha(&foreground, 0.5),
                 );
@@ -278,19 +328,98 @@ mod imp {
     }
 
     impl Timeline {
-        /// Where `entry` is drawn.
-        pub fn area(&self, entry: &Entry) -> graphene::Rect {
-            self.span_area(entry.span)
+        /// Where the block `index` goes, moved aside while a dragged block
+        /// takes the place of another.
+        pub fn target_span(&self, index: usize) -> (u32, u32) {
+            match self.reorder.borrow().as_ref() {
+                Some(reorder) => reorder.spans[index],
+                None => self.blocks.borrow()[index].span,
+            }
+        }
+
+        /// Where the block `index` is shown, in minutes, on its way to its
+        /// target.
+        pub fn shown_span(&self, index: usize) -> (f32, f32) {
+            let (start, end) = self.target_span(index);
+            let length = (end - start) as f32;
+            let start = match self.glide_from.borrow().get(index) {
+                Some(&from) => self.glided(from, start),
+                None => start as f32,
+            };
+            (start, start + length)
+        }
+
+        /// Where the marked span is shown, in minutes: with the dragged block
+        /// while it takes the place of another.
+        pub fn shown_pending(&self) -> Option<(f32, f32)> {
+            if let Some(Drag::Block { index, .. }) = self.drag.get()
+                && self.reorder.borrow().is_some()
+            {
+                return Some(self.shown_span(index));
+            }
+            let (start, end) = self.pending.get()?;
+            Some(match self.pending_from.get() {
+                Some((from_start, from_end)) => {
+                    (self.glided(from_start, start), self.glided(from_end, end))
+                }
+                None => (start as f32, end as f32),
+            })
+        }
+
+        /// The minute shown on the way from `from` to `to`.
+        fn glided(&self, from: f32, to: u32) -> f32 {
+            let progress = self.glide.get().expect("set up when constructed").value();
+            from + (to as f32 - from) * progress as f32
+        }
+
+        /// Lets the blocks and the marked span glide from where they are
+        /// shown to their targets.
+        pub fn start_glide(&self) {
+            let shown = (0..self.blocks.borrow().len())
+                .map(|index| self.shown_span(index).0)
+                .collect();
+            self.glide_from.replace(shown);
+            self.pending_from.set(self.shown_pending());
+            let glide = self.glide.get().expect("set up when constructed");
+            glide.reset();
+            glide.play();
+        }
+
+        /// Puts the blocks and the marked span at their targets at once.
+        pub fn stop_glide(&self) {
+            self.glide.get().expect("set up when constructed").skip();
+            self.glide_from.take();
+            self.pending_from.set(None);
+        }
+
+        /// Whether the block `index` is only shown moved aside for another,
+        /// dragged block.
+        fn is_shifted(&self, index: usize) -> bool {
+            let is_dragged = matches!(
+                self.drag.get(),
+                Some(Drag::Block { index: dragged, .. }) if dragged == index
+            );
+            !is_dragged && self.target_span(index) != self.blocks.borrow()[index].span
+        }
+
+        /// Where the block `index` is drawn.
+        pub fn area(&self, index: usize) -> graphene::Rect {
+            let (start, end) = self.shown_span(index);
+            self.minutes_area(start, end)
         }
 
         /// Where a block from `start` to `end` is drawn.
         pub fn span_area(&self, (start, end): (u32, u32)) -> graphene::Rect {
+            self.minutes_area(start as f32, end as f32)
+        }
+
+        fn minutes_area(&self, start: f32, end: f32) -> graphene::Rect {
             let (first, _) = self.range.get();
             graphene::Rect::new(
                 BLOCK_X,
                 y_of(first, start) + 1.0,
                 self.obj().width() as f32 - BLOCK_X,
-                block_height(start, end) - 2.0,
+                (end - start) * MINUTE_HEIGHT - 2.0,
             )
         }
 
@@ -350,7 +479,7 @@ mod imp {
             let (first, last) = self.range.get();
             let slot = self.slot_minutes.get();
             for minute in (first..=last).step_by(slot as usize) {
-                let y = y_of(first, minute);
+                let y = y_of(first, minute as f32);
                 let is_hour = minute % 60 == 0;
                 let alpha = if is_hour { 0.2 } else { 0.07 };
                 let line = graphene::Rect::new(LINE_X, y, width - LINE_X, 1.0);
@@ -401,6 +530,8 @@ impl Timeline {
         imp.selected.set(None);
         imp.drag.set(None);
         imp.pending.set(None);
+        imp.reorder.replace(None);
+        imp.stop_glide();
 
         for entry in imp.blocks.take() {
             entry.child.unparent();
@@ -525,6 +656,16 @@ impl Timeline {
         );
     }
 
+    pub fn connect_block_reordered(&self, callback: impl Fn(&Self, usize, usize) + 'static) {
+        self.connect_closure(
+            "block-reordered",
+            false,
+            glib::closure_local!(move |timeline: &Self, index: u32, place: u32| {
+                callback(timeline, index as usize, place as usize);
+            }),
+        );
+    }
+
     pub fn connect_block_activated(&self, callback: impl Fn(&Self, usize) + 'static) {
         self.connect_closure(
             "block-activated",
@@ -590,12 +731,8 @@ fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::La
 }
 
 /// Where `minute` lies below the top, for a grid that starts at `first`.
-fn y_of(first: u32, minute: u32) -> f32 {
-    PADDING + (minute - first) as f32 * MINUTE_HEIGHT
-}
-
-fn block_height(start: u32, end: u32) -> f32 {
-    (end - start) as f32 * MINUTE_HEIGHT
+fn y_of(first: u32, minute: f32) -> f32 {
+    PADDING + (minute - first as f32) * MINUTE_HEIGHT
 }
 
 /// The line across the grid at the time now, `y`, with an arrow at its

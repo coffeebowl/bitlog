@@ -5,7 +5,9 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use gtk::{gdk, glib, graphene};
 
-use super::imp::{self, Drag, Part};
+use bitlog_core::reordered_spans;
+
+use super::imp::{self, Drag, Part, Reorder};
 use super::{EDGE, MINUTE_HEIGHT, PADDING, Timeline};
 
 impl Timeline {
@@ -35,9 +37,9 @@ impl Timeline {
     }
 
     /// Dragging over free time, or just clicking it, selects a span of
-    /// whole slots for a new block. Dragging a block moves it, dragging its
-    /// edges changes its start or end. On touch screens dragging scrolls
-    /// instead.
+    /// whole slots for a new block. Dragging a block moves it, dragging it
+    /// past another lets it take that block's place, and dragging its edges
+    /// changes its start or end. On touch screens dragging scrolls instead.
     fn setup_drag(&self) {
         let drag = gtk::GestureDrag::new();
         drag.connect_drag_begin(glib::clone!(
@@ -78,6 +80,12 @@ impl Timeline {
                 if let Some((_, start_y)) = drag.start_point() {
                     let imp = timeline.imp();
                     imp.drag_to(imp.minute_at((start_y + dy) as f32));
+                    // Keeps the click from also activating a moved block.
+                    if let Some(Drag::Block { index, .. }) = imp.drag.get()
+                        && imp.pending.get() != Some(imp.blocks.borrow()[index].span)
+                    {
+                        drag.set_state(gtk::EventSequenceState::Claimed);
+                    }
                 }
             }
         ));
@@ -97,7 +105,11 @@ impl Timeline {
                     }
                     Drag::Block { index, .. } => {
                         imp.set_pending(None);
-                        if imp.blocks.borrow()[index].span != (start, end) {
+                        if let Some(Reorder { place, .. }) = imp.set_reorder(None) {
+                            let [index, place] = [index, place]
+                                .map(|index| u32::try_from(index).expect("a day has few blocks"));
+                            timeline.emit_by_name::<()>("block-reordered", &[&index, &place]);
+                        } else if imp.blocks.borrow()[index].span != (start, end) {
                             let index = u32::try_from(index).expect("a day has few blocks");
                             timeline.emit_by_name::<()>("block-moved", &[&index, &start, &end]);
                         }
@@ -183,11 +195,9 @@ impl imp::Timeline {
     /// The block drawn at `x`, `y`, and where it is grabbed there.
     fn hit(&self, x: f32, y: f32) -> Option<(usize, Part)> {
         let point = graphene::Point::new(x, y);
-        let blocks = self.blocks.borrow();
-        let index = blocks
-            .iter()
-            .position(|entry| self.area(entry).contains_point(&point))?;
-        let area = self.area(&blocks[index]);
+        let index = (0..self.blocks.borrow().len())
+            .find(|&index| self.area(index).contains_point(&point))?;
+        let area = self.area(index);
         // Very short blocks can only be moved; their time changes in the panel.
         let part = if area.height() < 3.0 * EDGE {
             Part::Body
@@ -213,6 +223,9 @@ impl imp::Timeline {
 
     /// Marks `span`, growing the grid if it ends below it.
     pub fn set_pending(&self, span: Option<(u32, u32)>) {
+        if self.pending.get() != span {
+            self.start_glide();
+        }
         self.pending.set(span);
         let (first, last) = self.range.get();
         if let Some((_, end)) = span
@@ -232,10 +245,63 @@ impl imp::Timeline {
                 index,
                 part,
                 minute: grabbed,
-            }) => self.changed_span(index, part, i64::from(minute) - i64::from(grabbed)),
+            }) => {
+                let delta = i64::from(minute) - i64::from(grabbed);
+                let reorder = (part == Part::Body)
+                    .then(|| self.reordering(index, delta))
+                    .flatten();
+                let span = match &reorder {
+                    Some(reorder) => reorder.spans[index],
+                    None => self.changed_span(index, part, delta),
+                };
+                self.set_reorder(reorder);
+                span
+            }
             None => return,
         };
         self.set_pending(Some(span));
+    }
+
+    /// Lets the blocks glide to where `reorder` moves them, or back, and
+    /// returns what was shown before.
+    fn set_reorder(&self, reorder: Option<Reorder>) -> Option<Reorder> {
+        if *self.reorder.borrow() == reorder {
+            return reorder;
+        }
+        let pending = self.shown_pending();
+        self.start_glide();
+        // The dragged block leaves the marked span for its new place.
+        if self.reorder.borrow().is_none()
+            && let (Some(Drag::Block { index, .. }), Some((start, _))) = (self.drag.get(), pending)
+        {
+            self.glide_from.borrow_mut()[index] = start;
+        }
+        self.reorder.replace(reorder)
+    }
+
+    /// How the block `index`, moved by `delta` minutes, takes the place of
+    /// another once its start passes the middle of a block before it, or its
+    /// end that of a block after it. `None` while it stays among the free
+    /// time around it.
+    fn reordering(&self, index: usize, delta: i64) -> Option<Reorder> {
+        let spans: Vec<_> = self
+            .blocks
+            .borrow()
+            .iter()
+            .map(|entry| entry.span)
+            .collect();
+        let (start, end) = spans[index];
+        let twice_middle = |other: usize| i64::from(spans[other].0 + spans[other].1);
+        let place = if delta < 0 {
+            let start = 2 * (i64::from(start) + delta);
+            (0..index).find(|&other| start < twice_middle(other))
+        } else {
+            let end = 2 * (i64::from(end) + delta);
+            (index + 1..spans.len())
+                .rev()
+                .find(|&other| end > twice_middle(other))
+        }?;
+        reordered_spans(&spans, index, place).map(|spans| Reorder { place, spans })
     }
 
     /// The span of the block `index` with `part` moved by `delta`

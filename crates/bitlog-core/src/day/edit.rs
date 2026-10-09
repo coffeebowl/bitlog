@@ -3,7 +3,7 @@
 use chrono::NaiveTime;
 
 use super::sections::trim_blank_lines;
-use super::{Block, Day};
+use super::{Block, Day, time_at_minute};
 use crate::{BlockId, EditError, LocationKey, Project, ProjectSlug, VaultConfig};
 
 /// What happens to the text of a removed block.
@@ -35,7 +35,7 @@ impl Day {
             title,
             text: String::new(),
         };
-        self.check_times(&block)?;
+        check_times(&self.blocks, &block)?;
         self.blocks.push(block);
         self.sort_blocks();
         Ok(id)
@@ -48,13 +48,45 @@ impl Day {
         start: NaiveTime,
         end: NaiveTime,
     ) -> Result<(), EditError> {
-        let mut block = self.blocks[self.index(id)?].clone();
-        block.start = start;
-        block.end = end;
-        self.check_times(&block)?;
-        *self.block_mut(id)? = block;
+        self.move_blocks(&[(id.clone(), start, end)])
+    }
+
+    /// Gives several blocks a new start and end at once, so that they can
+    /// trade places.
+    pub fn move_blocks(
+        &mut self,
+        moves: &[(BlockId, NaiveTime, NaiveTime)],
+    ) -> Result<(), EditError> {
+        let mut blocks = self.blocks.clone();
+        for (id, start, end) in moves {
+            let block = &mut blocks[self.index(id)?];
+            block.start = *start;
+            block.end = *end;
+        }
+        for (id, _, _) in moves {
+            check_times(&blocks, &blocks[self.index(id)?])?;
+        }
+        self.blocks = blocks;
         self.sort_blocks();
         Ok(())
+    }
+
+    /// Lets the block `id` take the place of the block `place`, as
+    /// [`reordered_spans`] describes.
+    pub fn reorder_block(&mut self, id: &BlockId, place: &BlockId) -> Result<(), EditError> {
+        let spans: Vec<_> = self.blocks.iter().map(Block::span).collect();
+        let reordered = reordered_spans(&spans, self.index(id)?, self.index(place)?)
+            .ok_or(EditError::PastMidnight)?;
+        let moves: Vec<_> = self
+            .blocks
+            .iter()
+            .zip(reordered)
+            .filter(|(block, span)| block.span() != *span)
+            .map(|(block, (start, end))| {
+                (block.id.clone(), time_at_minute(start), time_at_minute(end))
+            })
+            .collect();
+        self.move_blocks(&moves)
     }
 
     pub fn set_block_project(
@@ -110,22 +142,6 @@ impl Day {
         Ok(())
     }
 
-    /// Checks `block` against all other blocks of the day. Overlaps between
-    /// other blocks, as read from a file, do not matter here.
-    fn check_times(&self, block: &Block) -> Result<(), EditError> {
-        if block.start == block.end {
-            return Err(EditError::EmptyBlock);
-        }
-        match self
-            .blocks
-            .iter()
-            .find(|other| other.id != block.id && other.overlaps(block))
-        {
-            Some(other) => Err(EditError::Overlap(other.id.clone())),
-            None => Ok(()),
-        }
-    }
-
     fn sort_blocks(&mut self) {
         self.blocks.sort_by_key(|block| block.span());
     }
@@ -140,6 +156,55 @@ impl Day {
     fn block_mut(&mut self, id: &BlockId) -> Result<&mut Block, EditError> {
         let index = self.index(id)?;
         Ok(&mut self.blocks[index])
+    }
+}
+
+/// The spans of `spans`, the sorted blocks of a day as [`Block::span`]
+/// gives them, after the block `index` takes the place of the block `place`:
+/// it keeps its length, and the blocks from `place` up to it move by that
+/// length into the time it leaves, so that the blocks around stay where they
+/// are. `None` if a block would then start before or after its day.
+pub fn reordered_spans(
+    spans: &[(u32, u32)],
+    index: usize,
+    place: usize,
+) -> Option<Vec<(u32, u32)>> {
+    let (start, end) = spans[index];
+    let length = i64::from(end - start);
+    let (others, delta, new_start) = if place < index {
+        (place..index, length, i64::from(spans[place].0))
+    } else {
+        (
+            index + 1..place + 1,
+            -length,
+            i64::from(spans[place].1) - length,
+        )
+    };
+    let shift = |(start, end): (u32, u32), delta: i64| {
+        let start = u32::try_from(i64::from(start) + delta).ok()?;
+        let end = u32::try_from(i64::from(end) + delta).ok()?;
+        (start < 24 * 60).then_some((start, end))
+    };
+    let mut reordered = spans.to_vec();
+    for other in others {
+        reordered[other] = shift(spans[other], delta)?;
+    }
+    reordered[index] = shift((0, end - start), new_start)?;
+    Some(reordered)
+}
+
+/// Checks `block` against all other `blocks`. Overlaps between other
+/// blocks, as read from a file, do not matter here.
+fn check_times(blocks: &[Block], block: &Block) -> Result<(), EditError> {
+    if block.start == block.end {
+        return Err(EditError::EmptyBlock);
+    }
+    match blocks
+        .iter()
+        .find(|other| other.id != block.id && other.overlaps(block))
+    {
+        Some(other) => Err(EditError::Overlap(other.id.clone())),
+        None => Ok(()),
     }
 }
 
@@ -302,6 +367,102 @@ mod tests {
         assert_eq!(
             day.move_block(&id("zz99"), time("22:00"), time("23:00")),
             Err(EditError::UnknownBlock(id("zz99")))
+        );
+    }
+
+    #[test]
+    fn move_blocks_at_once() {
+        let mut day = new_day();
+        let projects = projects();
+        let first = day
+            .add_block(time("09:00"), time("10:00"), slug("infra"), "", &projects)
+            .unwrap();
+        let second = day
+            .add_block(time("10:00"), time("11:00"), slug("infra"), "", &projects)
+            .unwrap();
+        // One after the other, the first move would overlap the second block.
+        day.move_blocks(&[
+            (first.clone(), time("10:00"), time("11:00")),
+            (second.clone(), time("09:00"), time("10:00")),
+        ])
+        .unwrap();
+        assert_eq!(day.blocks[0].id, second);
+        let before = day.clone();
+        assert_eq!(
+            day.move_blocks(&[
+                (first, time("12:00"), time("13:00")),
+                (second.clone(), time("12:30"), time("13:30")),
+            ]),
+            Err(EditError::Overlap(second))
+        );
+        assert_eq!(day, before);
+    }
+
+    #[test]
+    fn reorder_blocks() {
+        let mut day = new_day();
+        let projects = projects();
+        let mut add = |start, end| {
+            day.add_block(time(start), time(end), slug("infra"), "", &projects)
+                .unwrap()
+        };
+        let early = add("08:00", "09:00");
+        let first = add("09:00", "10:00");
+        add("10:00", "12:00");
+        // The gap before the break moves along.
+        let last = add("12:15", "13:00");
+        let pause = add("13:00", "13:30");
+        let late = add("15:00", "16:00");
+        day.reorder_block(&pause, &first).unwrap();
+        let expected = [
+            ("08:00", "09:00"),
+            ("09:00", "09:30"),
+            ("09:30", "10:30"),
+            ("10:30", "12:30"),
+            ("12:45", "13:30"),
+            ("15:00", "16:00"),
+        ];
+        let expected: Vec<(String, String)> = expected
+            .iter()
+            .map(|(start, end)| ((*start).into(), (*end).into()))
+            .collect();
+        assert_eq!(spans(&day), expected);
+        assert_eq!(day.blocks[1].id, pause);
+
+        // And back down, after the last block before it was.
+        day.reorder_block(&pause, &last).unwrap();
+        assert_eq!(day.blocks[4].id, pause);
+        assert_eq!(spans(&day)[4], ("13:00".into(), "13:30".into()));
+        assert_eq!(spans(&day)[3], ("12:15".into(), "13:00".into()));
+        assert_eq!(day.blocks[0].id, early);
+        assert_eq!(day.blocks[5].id, late);
+    }
+
+    #[test]
+    fn reordered_blocks_start_on_their_day() {
+        // 22:00–23:00 and 23:00–00:30 can trade places.
+        let spans = [(22 * 60, 23 * 60), (23 * 60, 24 * 60 + 30)];
+        assert_eq!(
+            reordered_spans(&spans, 0, 1),
+            Some(vec![(23 * 60 + 30, 24 * 60 + 30), (22 * 60, 23 * 60 + 30)])
+        );
+        assert_eq!(reordered_spans(&spans, 1, 1), Some(spans.to_vec()));
+        // From 22:45–23:00 on, either would start after midnight.
+        let spans = [(22 * 60 + 45, 23 * 60), (23 * 60, 24 * 60 + 30)];
+        assert_eq!(reordered_spans(&spans, 0, 1), None);
+        assert_eq!(reordered_spans(&spans, 1, 0), None);
+
+        let mut day = new_day();
+        let projects = projects();
+        let first = day
+            .add_block(time("22:45"), time("23:00"), slug("infra"), "", &projects)
+            .unwrap();
+        let second = day
+            .add_block(time("23:00"), time("00:30"), slug("infra"), "", &projects)
+            .unwrap();
+        assert_eq!(
+            day.reorder_block(&first, &second),
+            Err(EditError::PastMidnight)
         );
     }
 

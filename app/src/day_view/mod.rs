@@ -10,11 +10,11 @@ use bitlog_core::{
     BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, SaveError, Vault, minute_of_day,
     time_at_minute,
 };
-use chrono::{Local, NaiveDate};
+use chrono::{Local, NaiveDate, NaiveTime};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
-use crate::alert::show_error;
+use crate::alert::{show_error, toast_overlay};
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::launch;
 use crate::markdown_view::MarkdownView;
@@ -43,6 +43,9 @@ mod imp {
         pub shown_block: RefCell<Option<BlockId>>,
         /// The pending save of the texts being typed.
         pub text_save: SaveTimer,
+        /// The toast offering to undo reordered blocks, which belongs to
+        /// the day shown.
+        pub undo_toast: RefCell<Option<adw::Toast>>,
         /// The stateful actions `day.kind` and `day.location`, whose state
         /// is the value of the day shown.
         pub actions: gio::SimpleActionGroup,
@@ -174,6 +177,11 @@ mod imp {
                     });
                 }
             ));
+            self.timeline.connect_block_reordered(glib::clone!(
+                #[weak]
+                view,
+                move |_, index, place| view.reorder_block(index, place)
+            ));
             // In the narrow layout the panel also closes by tapping beside it.
             self.split_view.connect_show_sidebar_notify(glib::clone!(
                 #[weak]
@@ -228,6 +236,11 @@ impl DayView {
     pub fn show_date(&self, date: NaiveDate) {
         let imp = self.imp();
         self.save_texts_now();
+        if date != imp.date.get()
+            && let Some(toast) = imp.undo_toast.take()
+        {
+            toast.dismiss();
+        }
         imp.date.set(date);
         let (weekday, full_date) = date_titles(date);
         imp.window_title.set_title(&weekday);
@@ -352,16 +365,19 @@ impl DayView {
         }
     }
 
-    /// Applies `change` to the day shown and saves it.
+    /// Applies `change` to the day shown and saves it. Returns whether that
+    /// worked.
     ///
     /// On failure the day is read again, so that the view shows what is in
     /// the file.
-    fn update(&self, change: impl FnOnce(&mut Day) -> Result<(), EditError>) {
+    fn update(&self, change: impl FnOnce(&mut Day) -> Result<(), EditError>) -> bool {
         self.save_texts_now();
-        if let Err(err) = self.save(change) {
-            self.show_save_error(&err);
+        let saved = self.save(change);
+        if let Err(err) = &saved {
+            self.show_save_error(err);
             self.show_date(self.date());
         }
+        saved.is_ok()
     }
 
     /// Applies `change` to the day shown, saves it and shows the result.
@@ -436,6 +452,44 @@ impl DayView {
         if let Some(id) = id {
             self.show_block_by_id(&id);
         }
+    }
+
+    /// Lets the block `index` take the place of the block `place`, offering
+    /// to undo it.
+    fn reorder_block(&self, index: usize, place: usize) {
+        let (id, place) = (self.block_id(index), self.block_id(place));
+        let before = self.block_times();
+        if !self.update(|day| day.reorder_block(&id, &place)) {
+            return;
+        }
+        let after = self.block_times();
+        let moved: Vec<_> = before
+            .into_iter()
+            .filter(|times| !after.contains(times))
+            .collect();
+        let toast = adw::Toast::builder()
+            .title(gettext("Blocks reordered"))
+            .button_label(gettext("_Undo"))
+            .build();
+        toast.connect_button_clicked(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_| {
+                view.update(|day| day.move_blocks(&moved));
+            }
+        ));
+        toast_overlay(self).add_toast(toast.clone());
+        self.imp().undo_toast.replace(Some(toast));
+    }
+
+    /// Id, start and end of each block of the day shown.
+    fn block_times(&self) -> Vec<(BlockId, NaiveTime, NaiveTime)> {
+        let file = self.imp().file.borrow();
+        let blocks = file.as_ref().map_or(&[][..], |file| &file.day.blocks);
+        blocks
+            .iter()
+            .map(|block| (block.id.clone(), block.start, block.end))
+            .collect()
     }
 
     /// Asks for the project of a new block from `start` to `end`, in minutes
