@@ -5,12 +5,13 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use std::collections::BTreeMap;
 
-use bitlog_core::{Day, DayFile, Period, Vault, week_start};
+use bitlog_core::{DayFile, Period, Vault, week_start};
 use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{glib, pango};
 
 use crate::colors::{color_dot, project_color, project_hex};
+use crate::day_summary::{DaySummary, Details};
 use crate::format::{
     format_date, format_duration, format_full_date, format_month, format_month_year, format_range,
     format_short_date, format_short_duration, kind_name,
@@ -319,10 +320,11 @@ impl CalendarView {
                 .as_ref()
                 .map_or(TimeDelta::zero(), |day| day.working_time(vault.projects()));
             worked += working_time;
+            let usual_hours = vault.config().week.target_hours_on(date.weekday()) as f32;
             // Days off take their share off the target.
             let target_hours = match &day {
                 Some(day) if !day.is_work() => 0.0,
-                _ => vault.config().week.target_hours_on(date.weekday()) as f32,
+                _ => usual_hours,
             };
             let target_time = TimeDelta::minutes((f64::from(target_hours) * 60.0).round() as i64);
             plan.push((date, working_time, target_time));
@@ -341,7 +343,10 @@ impl CalendarView {
                     .iter()
                     .map(|(slug, time)| (project_color(&vault, slug), hours(*time)))
                     .collect(),
-                target_hours,
+                tooltip: day
+                    .as_ref()
+                    .and_then(|day| DaySummary::new(&vault, day).details(&vault).tooltip()),
+                target_hours: usual_hours,
             });
         }
         imp.week_chart.set_week(days);
@@ -387,19 +392,15 @@ impl CalendarView {
         balance: Option<(TimeDelta, TimeDelta)>,
     ) {
         let imp = self.imp();
-        let has_target = target > TimeDelta::zero();
-        imp.week_progress.set_visible(has_target);
-        imp.week_pace.set_visible(has_target && balance.is_some());
-        if !has_target {
-            return;
-        }
         let expected = balance.map(|(expected, _)| hours(expected));
         imp.week_progress
             .set(hours(worked), hours(target), expected);
-        let Some((_, balance)) = balance else {
-            return;
-        };
-        imp.week_pace.set_label(&pace_text(balance));
+        match balance {
+            Some((_, balance)) if target > TimeDelta::zero() => {
+                imp.week_pace.set_label(&pace_text(balance));
+            }
+            _ => imp.week_pace.set_label(""),
+        }
     }
 }
 
@@ -502,8 +503,10 @@ fn day_cell(
     let mut details = Details::default();
     match vault.load_day(date) {
         Ok(Some(DayFile { day, .. })) => {
-            show_times(vault, &day, density, &top, &content, &mut details);
-            show_facts(vault, &day, &cell, &content, &mut details);
+            let summary = DaySummary::new(vault, &day);
+            show_times(vault, &summary, density, &top, &content);
+            show_facts(&summary, &cell, &content);
+            details = summary.details(vault);
         }
         Ok(None) => {}
         Err(err) => {
@@ -515,9 +518,7 @@ fn day_cell(
         }
     }
 
-    if !details.markup.is_empty() {
-        cell.set_tooltip_markup(Some(&details.markup.join("\n")));
-    }
+    cell.set_tooltip_markup(details.tooltip().as_deref());
     cell.update_property(&[
         gtk::accessible::Property::Label(&format_full_date(date)),
         gtk::accessible::Property::Description(&details.description.join(", ")),
@@ -525,41 +526,25 @@ fn day_cell(
     cell
 }
 
-/// The details of a day in the calendar again, for the tooltip as Pango
-/// markup, and for screen readers.
-#[derive(Debug, Default)]
-struct Details {
-    markup: Vec<String>,
-    description: Vec<String>,
-}
-
-impl Details {
-    fn push(&mut self, markup: String, text: String) {
-        self.markup.push(markup);
-        self.description.push(text);
-    }
-}
-
-/// Shows the hours of `day` in `top`, or below it in `content` when
+/// Shows the hours of a day in `top`, or below it in `content` when
 /// stacked, and its projects with the most time in `content`.
 fn show_times(
     vault: &Vault,
-    day: &Day,
+    summary: &DaySummary,
     density: Density,
     top: &gtk::Box,
     content: &gtk::Box,
-    details: &mut Details,
 ) {
-    let working_time = day.working_time(vault.projects());
-    let mut times: Vec<_> = day.time_per_project(vault.projects()).into_iter().collect();
-    times.retain(|(_, time)| !time.is_zero());
-    times.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
+    let DaySummary {
+        working_time,
+        times,
+        ..
+    } = summary;
     if !working_time.is_zero() {
-        let text = format_duration(working_time);
         let shown = if density == Density::Full {
-            text.clone()
+            format_duration(*working_time)
         } else {
-            format_short_duration(working_time)
+            format_short_duration(*working_time)
         };
         let hours = cell_label(&shown, &["caption", "numeric"]);
         // The hours are worse to lose than the names below.
@@ -571,7 +556,6 @@ fn show_times(
             hours.set_xalign(1.0);
             top.append(&hours);
         }
-        details.push(format!("<b>{}</b>", glib::markup_escape_text(&text)), text);
     }
     if !times.is_empty() {
         let total: f32 = times.iter().map(|(_, time)| hours(*time)).sum();
@@ -583,19 +567,12 @@ fn show_times(
         bar.set_hexpand(true);
         content.append(&bar);
     }
-    for (index, (slug, time)) in times.iter().enumerate() {
-        let name = vault.project_name(slug);
+    for (slug, _) in times.iter().take(PROJECTS_SHOWN) {
+        let name = glib::markup_escape_text(vault.project_name(slug));
         let dot = color_dot(project_hex(vault, slug));
-        if index < PROJECTS_SHOWN {
-            let line = cell_label(
-                &format!("{dot} {}", glib::markup_escape_text(name)),
-                &["caption"],
-            );
-            line.set_use_markup(true);
-            content.append(&line);
-        }
-        let text = format!("{name} · {}", format_duration(*time));
-        details.push(format!("{dot} {}", glib::markup_escape_text(&text)), text);
+        let line = cell_label(&format!("{dot} {name}"), &["caption"]);
+        line.set_use_markup(true);
+        content.append(&line);
     }
     if times.len() > PROJECTS_SHOWN {
         let more = (times.len() - PROJECTS_SHOWN).to_string();
@@ -606,31 +583,18 @@ fn show_times(
     }
 }
 
-/// Shows the location of `day`, and its kind unless it is a work day, at
+/// Shows the location of a day, and its kind unless it is a work day, at
 /// the bottom of `content`.
-fn show_facts(
-    vault: &Vault,
-    day: &Day,
-    cell: &gtk::Button,
-    content: &gtk::Box,
-    details: &mut Details,
-) {
-    let mut facts = Vec::new();
-    if let Some(key) = &day.location {
-        facts.push(vault.config().location_name(key).to_owned());
-    }
-    if !day.is_work() {
-        facts.push(kind_name(&day.kind));
+fn show_facts(summary: &DaySummary, cell: &gtk::Button, content: &gtk::Box) {
+    if summary.is_day_off {
         cell.add_css_class("day-off");
     }
-    if !facts.is_empty() {
-        let text = facts.join(" · ");
+    if !summary.facts.is_empty() {
         // Pushed to the bottom of the cell.
-        let footer = cell_label(&text, &["caption", "dim-label"]);
+        let footer = cell_label(&summary.facts.join(" · "), &["caption", "dim-label"]);
         footer.set_vexpand(true);
         footer.set_valign(gtk::Align::End);
         content.append(&footer);
-        details.push(glib::markup_escape_text(&text).into(), text);
     }
 }
 

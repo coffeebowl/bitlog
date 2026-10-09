@@ -52,21 +52,23 @@ mod imp {
             let widget = self.obj();
             let worked = self.worked.get();
             let target = self.target.get();
-            // The bar grows with hours beyond the target.
-            let end = worked.max(target);
-            if end <= 0.0 {
-                return;
-            }
             let width = widget.width() as f32;
-            let x_of = |hours: f32| width * hours / end;
             let top = (HEIGHT - BAR_HEIGHT) / 2.0;
-            let span = |from: f32, to: f32| {
-                graphene::Rect::new(x_of(from), top, x_of(to) - x_of(from), BAR_HEIGHT)
-            };
-
             let bar = graphene::Rect::new(0.0, top, width, BAR_HEIGHT);
             snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bar, BAR_HEIGHT / 2.0));
             snapshot.append_color(&with_alpha(&widget.color(), 0.15), &bar);
+            // A week without a target keeps the empty bar, so that the
+            // chart below does not move.
+            if target <= 0.0 {
+                snapshot.pop();
+                return;
+            }
+            // The bar grows with hours beyond the target.
+            let end = worked.max(target);
+            let x_of = |hours: f32| width * hours / end;
+            let span = |from: f32, to: f32| {
+                graphene::Rect::new(x_of(from), top, x_of(to) - x_of(from), BAR_HEIGHT)
+            };
             // Where the week should be by now, the whole target once it is
             // over; a week still to come has no plan to be behind.
             let expected = self.expected.get();

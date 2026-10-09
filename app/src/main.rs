@@ -6,6 +6,7 @@ mod colors;
 mod commit_dialog;
 mod config;
 mod conflict_dialog;
+mod day_summary;
 mod day_view;
 mod format;
 mod git_page;

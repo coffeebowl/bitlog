@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, OnceCell, RefCell};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -18,6 +18,12 @@ const BOTTOM: f32 = 56.0;
 /// Between the parts of a column.
 const GAP: f32 = 2.0;
 const RADIUS: f32 = 6.0;
+/// How long the columns take to glide to another week.
+const GLIDE_MS: u32 = 250;
+
+/// Hours per project, and the height of a column as a share of the scale,
+/// which keeps a gliding column in place when the scale changes.
+type Column = (Vec<(gdk::RGBA, f32)>, f32);
 
 /// One column of the chart.
 #[derive(Debug, Clone)]
@@ -30,8 +36,10 @@ pub struct ChartDay {
     pub kind: Option<String>,
     /// Hours per project, stacked from the bottom.
     pub segments: Vec<(gdk::RGBA, f32)>,
-    /// The share of the week's target hours that falls on this day, which
-    /// the scale makes room for.
+    /// As in the month, in Pango markup.
+    pub tooltip: Option<String>,
+    /// The target of the weekday by the preferences, which the scale makes
+    /// room for; on days off too, so that the scale stays from week to week.
     pub target_hours: f32,
 }
 
@@ -41,6 +49,14 @@ mod imp {
     #[derive(Debug, Default)]
     pub struct WeekChart {
         pub days: RefCell<Vec<ChartDay>>,
+        /// The column under the pointer.
+        pub hovered: Cell<Option<usize>>,
+        /// Where the columns start and how wide they are, as last drawn.
+        pub columns: Cell<(f32, f32)>,
+        /// The columns as they were shown when another week came, which
+        /// `glide` takes them from.
+        pub glide_from: RefCell<Vec<Column>>,
+        pub glide: OnceCell<adw::TimedAnimation>,
     }
 
     #[glib::object_subclass]
@@ -57,11 +73,66 @@ mod imp {
     impl ObjectImpl for WeekChart {
         fn constructed(&self) {
             self.parent_constructed();
+            let chart = self.obj();
             adw::StyleManager::default().connect_accent_color_rgba_notify(glib::clone!(
-                #[weak(rename_to = chart)]
-                self.obj(),
+                #[weak]
+                chart,
                 move |_| chart.queue_draw()
             ));
+
+            let target = adw::CallbackAnimationTarget::new(glib::clone!(
+                #[weak]
+                chart,
+                move |_| chart.queue_draw()
+            ));
+            let glide = adw::TimedAnimation::builder()
+                .widget(&*chart)
+                .value_from(0.0)
+                .value_to(1.0)
+                .duration(GLIDE_MS)
+                .easing(adw::Easing::EaseOutCubic)
+                .target(&target)
+                .build();
+            self.glide.set(glide).expect("constructed runs once");
+
+            chart.set_has_tooltip(true);
+            chart.connect_query_tooltip(|chart, x, _, _, tooltip| {
+                let days = chart.imp().days.borrow();
+                let markup = chart
+                    .column_at(x as f64)
+                    .and_then(|index| days[index].tooltip.as_deref());
+                tooltip.set_markup(markup);
+                markup.is_some()
+            });
+
+            let motion = gtk::EventControllerMotion::new();
+            motion.connect_motion(glib::clone!(
+                #[weak]
+                chart,
+                move |_, x, _| chart.hover(chart.column_at(x))
+            ));
+            motion.connect_leave(glib::clone!(
+                #[weak]
+                chart,
+                move |_| chart.hover(None)
+            ));
+            chart.add_controller(motion);
+
+            let click = gtk::GestureClick::new();
+            click.connect_released(glib::clone!(
+                #[weak]
+                chart,
+                move |_, _, x, _| {
+                    let Some(index) = chart.column_at(x) else {
+                        return;
+                    };
+                    let date = chart.imp().days.borrow()[index].date.to_string();
+                    chart
+                        .activate_action("win.show-day", Some(&date.to_variant()))
+                        .expect("the window shows days");
+                }
+            ));
+            chart.add_controller(click);
         }
     }
 
@@ -95,14 +166,9 @@ mod imp {
                 widget.height() as f32 - TOP - BOTTOM,
             );
             let column = plot.width() / days.len().max(1) as f32;
+            self.columns.set((plot.x(), column));
 
-            // Hours per day on the left scale.
-            let highest = days
-                .iter()
-                .map(|day| day.worked_hours().max(day.target_hours))
-                .fold(1.0, f32::max);
-            // Headroom keeps the columns off the top line.
-            let (day_max, day_step) = scale(highest * 1.1);
+            let (day_max, day_step) = day_scale(&days);
             let y_day = |hours: f32| plot.y() + plot.height() * (1.0 - hours / day_max);
             let target_y = target.map(y_day);
 
@@ -112,7 +178,7 @@ mod imp {
                 plot.width(),
                 widget.height() as f32 - plot.y() - plot.height() - 4.0,
             );
-            append_days_off(snapshot, &days, &below, &foreground);
+            append_days_off(snapshot, &days, self.hovered.get(), &below, &foreground);
 
             let label_color = with_alpha(&foreground, 0.55);
             for line in 0..=(day_max / day_step).round() as u32 {
@@ -139,14 +205,21 @@ mod imp {
             for (index, day) in days.iter().enumerate() {
                 let center = plot.x() + column * (index as f32 + 0.5);
                 let width = column * 0.55;
-                append_column(snapshot, &day.segments, center - width / 2.0, width, &y_day);
+                // The projects of the column stretched to the height it has
+                // come to on its way.
+                let (segments, share) = widget.shown(index);
+                let height = share * day_max;
+                let worked: f32 = segments.iter().map(|(_, hours)| hours).sum();
+                let stretch = if worked > 0.0 { height / worked } else { 0.0 };
+                let y = |hours: f32| y_day(hours * stretch);
+                append_column(snapshot, &segments, center - width / 2.0, width, &y);
                 self.append_date(snapshot, day, center, plot.y() + plot.height());
                 // Above the column, or on the axis for a day not worked.
                 if let Some(kind) = &day.kind {
                     let label = self.layout(kind, Style::Small);
                     label.set_width(((column - 4.0) * pango::SCALE as f32) as i32);
                     label.set_ellipsize(pango::EllipsizeMode::End);
-                    let y = y_day(day.worked_hours()) - 4.0 - label.pixel_size().1 as f32 / 2.0;
+                    let y = y_day(height) - 4.0 - label.pixel_size().1 as f32 / 2.0;
                     append_layout(snapshot, &label, center, y, 0.5, &label_color);
                 }
             }
@@ -231,21 +304,28 @@ impl ChartDay {
 }
 
 /// The days without work below the axis, in `bounds`, shaded as in the
-/// month: days off a little darker than the days that are not workdays.
-/// Days in a row make one band with round corners.
+/// month: days off a little darker than the days that are not workdays, the
+/// `hovered` one darker still. Days in a row make one band with round
+/// corners.
 fn append_days_off(
     snapshot: &gtk::Snapshot,
     days: &[ChartDay],
+    hovered: Option<usize>,
     bounds: &graphene::Rect,
     foreground: &gdk::RGBA,
 ) {
     let shades: Vec<Option<f32>> = days
         .iter()
-        .map(|day| match (&day.kind, day.is_workday) {
-            (Some(_), _) => Some(0.1),
-            (None, false) => Some(0.05),
-            (None, true) => None,
-        })
+        .enumerate()
+        .map(
+            |(index, day)| match (&day.kind, hovered == Some(index), day.is_workday) {
+                (Some(_), true, _) => Some(0.12),
+                (None, true, _) => Some(0.07),
+                (Some(_), false, _) => Some(0.1),
+                (None, false, false) => Some(0.05),
+                (None, false, true) => None,
+            },
+        )
         .collect();
     let column = bounds.width() / days.len().max(1) as f32;
     let span = |from: usize, to: usize| {
@@ -314,10 +394,75 @@ glib::wrapper! {
 }
 
 impl WeekChart {
+    /// Shows `days`; the columns glide from their heights if they are of
+    /// another week.
     pub fn set_week(&self, days: Vec<ChartDay>) {
-        self.imp().days.replace(days);
-        self.queue_draw();
+        let imp = self.imp();
+        let first = |days: &[ChartDay]| days.first().map(|day| day.date);
+        let other_week = first(&imp.days.borrow()) != first(&days);
+        if other_week {
+            let from = (0..days.len()).map(|index| self.shown(index)).collect();
+            imp.glide_from.replace(from);
+        }
+        imp.days.replace(days);
+        match imp.glide.get() {
+            Some(glide) if other_week => glide.play(),
+            _ => self.queue_draw(),
+        }
     }
+
+    /// The projects and the share of the scale of column `index` as it is
+    /// shown now: on its way from where it was to the hours of its day, with
+    /// those of the day unless there are none.
+    fn shown(&self, index: usize) -> Column {
+        let imp = self.imp();
+        let progress = imp.glide.get().map_or(1.0, |glide| glide.value() as f32);
+        let days = imp.days.borrow();
+        let to = days
+            .get(index)
+            .map(|day| {
+                (
+                    day.segments.clone(),
+                    day.worked_hours() / day_scale(&days).0,
+                )
+            })
+            .unwrap_or_default();
+        let from = imp
+            .glide_from
+            .borrow()
+            .get(index)
+            .cloned()
+            .unwrap_or_default();
+        let share = from.1 + (to.1 - from.1) * progress;
+        let segments = if to.0.is_empty() { from.0 } else { to.0 };
+        (segments, share)
+    }
+
+    /// The column of a day at `x`, all of its height.
+    fn column_at(&self, x: f64) -> Option<usize> {
+        let (start, width) = self.imp().columns.get();
+        let index = ((x as f32 - start) / width).floor();
+        (width > 0.0 && index >= 0.0 && (index as usize) < self.imp().days.borrow().len())
+            .then_some(index as usize)
+    }
+
+    /// Highlights the column `index`, which opens its day on a click.
+    fn hover(&self, index: Option<usize>) {
+        if self.imp().hovered.replace(index) != index {
+            self.set_cursor_from_name(index.map(|_| "pointer"));
+            self.queue_draw();
+        }
+    }
+}
+
+/// The top of the scale for the hours of `days` and the step of its lines.
+fn day_scale(days: &[ChartDay]) -> (f32, f32) {
+    let highest = days
+        .iter()
+        .map(|day| day.worked_hours().max(day.target_hours))
+        .fold(1.0, f32::max);
+    // Headroom keeps the columns off the top line.
+    scale(highest * 1.1)
 }
 
 /// The top of a scale that shows `value` in at most four lines above the
@@ -372,12 +517,13 @@ mod tests {
                     is_workday: true,
                     kind: None,
                     segments: Vec::new(),
+                    tooltip: None,
                     target_hours: targets[offset],
                 })
                 .collect()
         };
-        let days_off = [7.7, 7.7, 0.0, 7.7, 7.7, 0.0, 0.0];
-        assert_eq!(common_target(&week(days_off)), Some(7.7));
+        let free_wednesday = [7.7, 7.7, 0.0, 7.7, 7.7, 0.0, 0.0];
+        assert_eq!(common_target(&week(free_wednesday)), Some(7.7));
         let short_friday = [8.0, 8.0, 8.0, 8.0, 6.0, 0.0, 0.0];
         assert_eq!(common_target(&week(short_friday)), None);
         assert_eq!(common_target(&week([0.0; 7])), None);
