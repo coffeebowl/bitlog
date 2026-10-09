@@ -210,7 +210,7 @@ mod imp {
                 move |_, card| {
                     let index = usize::try_from(card.index()).expect("cards are in the grid");
                     let target = view.imp().notes.borrow()[index].0.to_string().to_variant();
-                    let _ = WidgetExt::activate_action(&view, "notes.open", Some(&target));
+                    let _ = WidgetExt::activate_action(&view, "note.open", Some(&target));
                 }
             ));
         }

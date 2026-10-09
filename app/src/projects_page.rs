@@ -16,8 +16,8 @@ use crate::colors::color_dot;
 use crate::format::{
     PROJECT_STATUSES, capitalize, format_duration, format_recent_date, project_status_name,
 };
-use crate::launch;
-use crate::note_dialogs::{self, ask_note_name};
+use crate::note_actions::{self, NoteHost};
+use crate::note_dialogs::ask_note_name;
 use crate::note_view::NoteView;
 use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
@@ -100,47 +100,6 @@ mod imp {
                 Some(glib::VariantTy::STRING),
                 |page, _, slug| async move { page.new_note(param(slug.as_ref(), "projects")).await },
             );
-            klass.install_action(
-                "notes.open",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| {
-                    page.open_note(&param(note, "notes"));
-                },
-            );
-            klass.install_action_async(
-                "notes.follow",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.follow_link(param(note.as_ref(), "notes")).await },
-            );
-            klass.install_action_async(
-                "notes.rename",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.rename_note(param(note.as_ref(), "notes")).await },
-            );
-            klass.install_action_async(
-                "notes.delete",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.delete_note(param(note.as_ref(), "notes")).await },
-            );
-            // With what is being typed saved, for the other app to see.
-            klass.install_action_async(
-                "notes.open-file",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move {
-                    page.save_now();
-                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
-                    launch::open_file(&page, &path).await;
-                },
-            );
-            klass.install_action_async(
-                "notes.show-file",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move {
-                    page.save_now();
-                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
-                    launch::show_in_folder(&page, &path).await;
-                },
-            );
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -151,6 +110,7 @@ mod imp {
     impl ObjectImpl for ProjectsPage {
         fn constructed(&self) {
             self.parent_constructed();
+            note_actions::add(&*self.obj());
             // Back from a note, the previews show it as just typed.
             self.project_view.connect_showing(glib::clone!(
                 #[weak(rename_to = note_view)]
@@ -178,7 +138,8 @@ mod imp {
             SIGNALS.get_or_init(|| {
                 vec![
                     // Emitted after a project was saved, with the changed
-                    // vault available through `vault()`.
+                    // vault available through `vault()`, which the window
+                    // then shows on all pages, this one too.
                     Signal::builder("vault-changed").build(),
                     // Emitted after links in day files were changed, which
                     // watching the vault leaves out as own writes.
@@ -226,14 +187,6 @@ impl ProjectsPage {
         imp.note_view.set_index(index.clone());
         imp.project_view.set_index(index.clone());
         imp.index.replace(index);
-    }
-
-    pub fn vault(&self) -> Rc<Vault> {
-        self.imp()
-            .vault
-            .borrow()
-            .clone()
-            .expect("the page is only shown with a vault")
     }
 
     pub fn connect_vault_changed(&self, callback: impl Fn(&Self) + 'static) {
@@ -391,7 +344,7 @@ impl ProjectsPage {
     }
 
     /// Moves the project `slug` right before the project `target`, or right
-    /// after it if `after`, and shows the new order.
+    /// after it if `after`.
     fn move_project(&self, slug: &ProjectSlug, target: &ProjectSlug, after: bool) {
         // A copy shares the record of own writes, so watching the vault
         // goes on as before.
@@ -399,7 +352,6 @@ impl ProjectsPage {
         match vault.move_project(slug, target, after) {
             Ok(()) => {
                 self.set_vault(Rc::new(vault));
-                self.show_list();
                 self.emit_by_name::<()>("vault-changed", &[]);
             }
             Err(err) => show_error(self, &gettext("Cannot Move Project"), &err.to_string()),
@@ -511,31 +463,6 @@ impl ProjectsPage {
         }
     }
 
-    fn open_note(&self, note: &NotePath) {
-        let imp = self.imp();
-        // A link may lead to a note of another project, which going back
-        // should show.
-        if imp.project_view.slug().as_ref() != Some(note.project()) {
-            let vault = self.vault();
-            if let Some(project) = vault.project(note.project()) {
-                imp.project_view.show(&vault, project);
-            }
-            self.emit_by_name::<()>("shown-project-changed", &[]);
-        }
-        match imp.note_view.show_note(note) {
-            Ok(()) if !shows(&imp.nav, "note") => imp.nav.push(&imp.note_view),
-            Ok(()) => {}
-            Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
-        }
-    }
-
-    /// Goes back from the note, which is no longer there.
-    fn close_note(&self) {
-        let imp = self.imp();
-        imp.note_view.forget();
-        imp.nav.pop_to_page(&imp.project_view);
-    }
-
     async fn new_note(&self, project: ProjectSlug) {
         let Some(name) = ask_note_name(
             self,
@@ -558,48 +485,6 @@ impl ProjectsPage {
             }
             Err(err) => show_error(self, &gettext("Cannot Create Note"), &err.to_string()),
         }
-    }
-
-    /// Opens the note a wiki link points to, or offers to create it.
-    async fn follow_link(&self, note: NotePath) {
-        if let Some(note) = note_dialogs::follow_link(self, &self.vault(), &note).await {
-            // It may be new.
-            self.show_project_again();
-            self.open_note(&note);
-        }
-    }
-
-    async fn rename_note(&self, note: NotePath) {
-        let imp = self.imp();
-        // Renaming may change the links in the note shown, and the index
-        // has to find what was just typed.
-        imp.note_view.save_now();
-        let index = imp.index.borrow().clone();
-        let Some((renamed, updated_links)) =
-            note_dialogs::rename_note(self, &self.vault(), &index, &note).await
-        else {
-            return;
-        };
-        if updated_links {
-            self.emit_by_name::<()>("days-changed", &[]);
-        }
-        self.show_project_again();
-        if imp.note_view.note() == Some(note) {
-            imp.note_view.forget();
-            self.open_note(&renamed);
-        } else {
-            imp.note_view.reload();
-        }
-    }
-
-    async fn delete_note(&self, note: NotePath) {
-        if !note_dialogs::delete_note(self, &self.vault(), &note).await {
-            return;
-        }
-        if self.imp().note_view.note() == Some(note) {
-            self.close_note();
-        }
-        self.show_project_again();
     }
 
     /// Asks for the details of the project `slug`, or of a new project.
@@ -669,11 +554,56 @@ impl ProjectsPage {
         };
         dialog.close();
         self.set_vault(Rc::new(vault));
-        self.reload();
         self.emit_by_name::<()>("vault-changed", &[]);
         if let Err(err) = repo_saved {
             show_error(self, &gettext("Cannot Save Repository"), &err.to_string());
         }
+    }
+}
+
+impl NoteHost for ProjectsPage {
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("the page is only shown with a vault")
+    }
+
+    fn note_view(&self) -> NoteView {
+        self.imp().note_view.clone()
+    }
+
+    fn index(&self) -> SearchIndex {
+        self.imp().index.borrow().clone()
+    }
+
+    fn open_note(&self, note: &NotePath) {
+        let imp = self.imp();
+        // A link may lead to a note of another project, which going back
+        // should show.
+        if imp.project_view.slug().as_ref() != Some(note.project()) {
+            let vault = self.vault();
+            if let Some(project) = vault.project(note.project()) {
+                imp.project_view.show(&vault, project);
+            }
+            self.emit_by_name::<()>("shown-project-changed", &[]);
+        }
+        match imp.note_view.show_note(note) {
+            Ok(()) if !shows(&imp.nav, "note") => imp.nav.push(&imp.note_view),
+            Ok(()) => {}
+            Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
+        }
+    }
+
+    fn close_note(&self) {
+        let imp = self.imp();
+        imp.note_view.forget();
+        imp.nav.pop_to_page(&imp.project_view);
+    }
+
+    fn refresh_notes(&self) {
+        self.show_project_again();
     }
 }
 

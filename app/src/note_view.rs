@@ -86,7 +86,7 @@ mod imp {
                 move |note| {
                     let target = note.to_string().to_variant();
                     // Handled by the project page, which may create the note.
-                    let _ = WidgetExt::activate_action(&view, "notes.follow", Some(&target));
+                    let _ = WidgetExt::activate_action(&view, "note.follow", Some(&target));
                 }
             ));
             view.connect_hiding(|view| view.save_now());

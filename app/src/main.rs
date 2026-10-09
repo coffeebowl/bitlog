@@ -16,6 +16,7 @@ mod help_dialog;
 mod launch;
 mod markdown_view;
 mod miniature;
+mod note_actions;
 mod note_dialogs;
 mod note_view;
 mod notes_page;

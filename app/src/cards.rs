@@ -150,10 +150,10 @@ pub fn note_menu(note: &NotePath) -> gio::Menu {
     let target = note.to_string().to_variant();
     let menu = gio::Menu::new();
     for (label, action) in [
-        (gettext("_Open Externally"), "notes.open-file"),
-        (gettext("_Show in Folder"), "notes.show-file"),
-        (gettext("_Rename…"), "notes.rename"),
-        (gettext("_Delete"), "notes.delete"),
+        (gettext("_Open Externally"), "note.open-file"),
+        (gettext("_Show in Folder"), "note.show-file"),
+        (gettext("_Rename…"), "note.rename"),
+        (gettext("_Delete"), "note.delete"),
     ] {
         let item = gio::MenuItem::new(Some(&label), None);
         item.set_action_and_target_value(Some(action), Some(&target));

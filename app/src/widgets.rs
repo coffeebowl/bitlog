@@ -54,6 +54,55 @@ pub fn changed<T: PartialEq>(field: &mut T, shown: &T, entered: T) {
     }
 }
 
+/// What a dropdown offers, in its order.
+#[derive(Debug)]
+pub struct Choices<T> {
+    items: RefCell<Vec<T>>,
+    /// Set while the dropdown is filled, so that it counts as no choice.
+    filling: Cell<bool>,
+}
+
+impl<T> Default for Choices<T> {
+    fn default() -> Self {
+        Self {
+            items: RefCell::default(),
+            filling: Cell::default(),
+        }
+    }
+}
+
+impl<T: Clone + PartialEq> Choices<T> {
+    /// Offers `items` in `dropdown`, shown by `name`, with `selected` chosen
+    /// or else the first. The list is only replaced if it changed.
+    pub fn fill(
+        &self,
+        dropdown: &gtk::DropDown,
+        items: Vec<T>,
+        selected: &T,
+        name: impl Fn(&T) -> String,
+    ) {
+        let index = items.iter().position(|item| item == selected).unwrap_or(0);
+        self.filling.set(true);
+        if *self.items.borrow() != items {
+            let names: Vec<String> = items.iter().map(name).collect();
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            dropdown.set_model(Some(&gtk::StringList::new(&names)));
+            self.items.replace(items);
+        }
+        dropdown.set_selected(u32::try_from(index).expect("dropdowns offer few items"));
+        self.filling.set(false);
+    }
+
+    /// The item chosen in `dropdown`, `None` while it is being filled.
+    pub fn chosen(&self, dropdown: &gtk::DropDown) -> Option<T> {
+        if self.filling.get() {
+            return None;
+        }
+        let index = usize::try_from(dropdown.selected()).ok()?;
+        self.items.borrow().get(index).cloned()
+    }
+}
+
 /// Saves what is being typed a second after the last change.
 #[derive(Debug, Default)]
 pub struct SaveTimer(Rc<RefCell<Option<glib::SourceId>>>);

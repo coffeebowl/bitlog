@@ -17,6 +17,7 @@ use crate::calendar_view::CalendarView;
 use crate::colors::color_dot;
 use crate::config;
 use crate::day_view::DayView;
+use crate::note_actions::NoteHost;
 use crate::notes_page::NotesPage;
 use crate::preferences_dialog::PreferencesDialog;
 use crate::projects_page::ProjectsPage;
@@ -265,7 +266,10 @@ mod imp {
             self.projects_page.connect_vault_changed(glib::clone!(
                 #[weak(rename_to = window)]
                 self.obj(),
-                move |page| window.projects_changed(page.vault())
+                move |page| {
+                    window.set_vault(&page.vault());
+                    window.show_vault_again();
+                }
             ));
             self.projects_page
                 .connect_shown_project_changed(glib::clone!(
@@ -383,15 +387,6 @@ impl Window {
             .find(|(slug, _)| Some(slug) == shown.as_ref())
             .map_or(&*imp.projects_row, |(_, row)| row);
         imp.sidebar_list.select_row(Some(row));
-    }
-
-    /// Hands `vault`, with projects changed on the project page, to the
-    /// other pages. It shares the record of own writes with the vault
-    /// watched, so the watcher stays.
-    fn projects_changed(&self, vault: Rc<Vault>) {
-        let imp = self.imp();
-        self.set_vault(&vault);
-        imp.day_view.show_date(imp.day_view.date());
     }
 
     /// Whether `page` is the page shown.
@@ -547,7 +542,8 @@ impl Window {
         match vault.update_config(|config| dialog.apply(config)) {
             Ok(_) => {
                 dialog.close();
-                self.config_changed(Rc::new(vault));
+                self.set_vault(&Rc::new(vault));
+                self.show_vault_again();
             }
             Err(err) => show_error(
                 dialog,
@@ -557,25 +553,20 @@ impl Window {
         }
     }
 
-    /// Hands `vault`, with changed settings, to all pages and shows them
-    /// anew. Blocks keep their times.
-    fn config_changed(&self, vault: Rc<Vault>) {
+    /// Shows the day and the page shown as the vault is now, after its
+    /// settings or projects changed. Hidden pages read it when shown.
+    pub(super) fn show_vault_again(&self) {
         let imp = self.imp();
-        self.set_vault(&vault);
         imp.day_view.show_date(imp.day_view.date());
-        imp.calendar_view.reload();
-        imp.projects_page.reload();
-        self.reload_shown_pages();
-    }
-
-    /// Reads the notes and the reports again if they are shown. Hidden,
-    /// they are read when shown.
-    fn reload_shown_pages(&self) {
-        let imp = self.imp();
-        if self.shows(&imp.notes_page) {
+        if self.shows(&imp.calendar_view) {
+            imp.calendar_view.reload();
+        } else if self.shows(&imp.tasks_page) {
+            imp.tasks_page.reload();
+        } else if self.shows(&imp.notes_page) {
             imp.notes_page.reload();
-        }
-        if self.shows(&imp.reports_page) {
+        } else if self.shows(&imp.projects_page) {
+            imp.projects_page.reload();
+        } else if self.shows(&imp.reports_page) {
             imp.reports_page.reload();
         }
     }

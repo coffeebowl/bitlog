@@ -18,6 +18,7 @@ use gtk::{gio, glib};
 use crate::alert::show_error;
 use crate::commit_dialog::CommitDialog;
 use crate::format::{format_duration, format_relative_day, format_time, plural};
+use crate::widgets::Choices;
 
 /// Commits the log shows at first and adds with "Load More".
 const COMMITS_AT_ONCE: usize = 50;
@@ -36,11 +37,8 @@ mod imp {
         pub branch: RefCell<Option<Branch>>,
         /// The branches of the repository as last read.
         pub branches: RefCell<Branches>,
-        /// The branches in the dropdown, in its order, `None` for a
-        /// detached HEAD.
-        pub branch_items: RefCell<Vec<Option<Branch>>>,
-        /// Set while the dropdown is filled, so that choosing reads nothing.
-        pub filling_branches: Cell<bool>,
+        /// The branches in the dropdown, `None` for a detached HEAD.
+        pub branch_choices: Choices<Option<Branch>>,
         /// Counts the reads of the log, so that one finishing after a
         /// newer one is dropped.
         pub log_reads: Cell<u32>,
@@ -268,24 +266,11 @@ impl GitPage {
             .borrow()
             .clone()
             .or_else(|| branches.current.clone().map(Branch::Local));
-        let selected = items.iter().position(|item| *item == shown).unwrap_or(0);
-        imp.filling_branches.set(true);
-        if *imp.branch_items.borrow() != items {
-            let labels: Vec<String> = items
-                .iter()
-                .map(|item| match item {
-                    Some(branch) => branch.name().to_owned(),
-                    None => gettext("Detached HEAD"),
-                })
-                .collect();
-            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-            imp.branch_dropdown
-                .set_model(Some(&gtk::StringList::new(&labels)));
-            imp.branch_items.replace(items);
-        }
-        imp.branch_dropdown
-            .set_selected(u32::try_from(selected).expect("branches fit in a list"));
-        imp.filling_branches.set(false);
+        imp.branch_choices
+            .fill(&imp.branch_dropdown, items, &shown, |item| match item {
+                Some(branch) => branch.name().to_owned(),
+                None => gettext("Detached HEAD"),
+            });
         imp.branch_dropdown.set_visible(true);
         imp.branches.replace(branches);
     }
@@ -293,11 +278,7 @@ impl GitPage {
     /// Shows the log of the branch chosen in the dropdown.
     fn choose_branch(&self) {
         let imp = self.imp();
-        if imp.filling_branches.get() {
-            return;
-        }
-        let index = usize::try_from(imp.branch_dropdown.selected()).expect("u32 fits in usize");
-        let Some(item) = imp.branch_items.borrow().get(index).cloned() else {
+        let Some(item) = imp.branch_choices.chosen(&imp.branch_dropdown) else {
             return;
         };
         // Choosing the branch checked out follows HEAD to the next one

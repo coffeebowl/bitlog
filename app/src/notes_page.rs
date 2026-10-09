@@ -1,4 +1,4 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -16,13 +16,12 @@ use crate::cards::{note_card, note_preview, show_preview};
 use crate::colors::color_dot;
 use crate::config;
 use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
-use crate::launch;
 use crate::markdown_view::MarkdownView;
-use crate::note_dialogs;
+use crate::note_actions::{self, NoteHost};
 use crate::note_view::NoteView;
 use crate::projects_page::shows;
 use crate::search_index::SearchIndex;
-use crate::widgets::param;
+use crate::widgets::Choices;
 
 /// A note in the list.
 #[derive(Debug)]
@@ -60,10 +59,8 @@ mod imp {
         pub notes: RefCell<Vec<Listed>>,
         /// The cards of these notes.
         pub cards: RefCell<HashMap<NotePath, Card>>,
-        /// The projects in the dropdown, in its order, `None` for all.
-        pub project_items: RefCell<Vec<Option<ProjectSlug>>>,
-        /// Set while the dropdown is filled, so that choosing shows nothing.
-        pub filling_projects: Cell<bool>,
+        /// The projects in the dropdown, `None` for all.
+        pub projects: Choices<Option<ProjectSlug>>,
         /// Pushed on top of the list, owned here because it is only in the
         /// navigation view while shown.
         pub note_view: NoteView,
@@ -90,8 +87,7 @@ mod imp {
                 index: RefCell::default(),
                 notes: RefCell::default(),
                 cards: RefCell::default(),
-                project_items: RefCell::default(),
-                filling_projects: Cell::default(),
+                projects: Choices::default(),
                 note_view: glib::Object::new(),
                 nav: TemplateChild::default(),
                 overview: TemplateChild::default(),
@@ -112,47 +108,6 @@ mod imp {
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
             klass.install_property_action("notes.sort", "sort");
-            klass.install_action(
-                "notes.open",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| {
-                    page.open_note(&param(note, "notes"));
-                },
-            );
-            klass.install_action_async(
-                "notes.follow",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.follow_link(param(note.as_ref(), "notes")).await },
-            );
-            klass.install_action_async(
-                "notes.rename",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.rename_note(param(note.as_ref(), "notes")).await },
-            );
-            klass.install_action_async(
-                "notes.delete",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move { page.delete_note(param(note.as_ref(), "notes")).await },
-            );
-            // With what is being typed saved, for the other app to see.
-            klass.install_action_async(
-                "notes.open-file",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move {
-                    page.save_now();
-                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
-                    launch::open_file(&page, &path).await;
-                },
-            );
-            klass.install_action_async(
-                "notes.show-file",
-                Some(glib::VariantTy::STRING),
-                |page, _, note| async move {
-                    page.save_now();
-                    let path = page.vault().note_path(&param(note.as_ref(), "notes"));
-                    launch::show_in_folder(&page, &path).await;
-                },
-            );
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -165,6 +120,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let page = self.obj();
+            note_actions::add(&*page);
             self.settings.bind("notes-sort", &*page, "sort").build();
             page.connect_sort_notify(|page| page.show_list());
             self.search_entry.connect_search_changed(glib::clone!(
@@ -182,8 +138,8 @@ mod imp {
             self.project_dropdown.connect_selected_notify(glib::clone!(
                 #[weak]
                 page,
-                move |_| {
-                    if !page.imp().filling_projects.get() {
+                move |dropdown| {
+                    if page.imp().projects.chosen(dropdown).is_some() {
                         page.show_list();
                     }
                 }
@@ -237,14 +193,6 @@ impl NotesPage {
         imp.index.replace(index);
     }
 
-    fn vault(&self) -> Rc<Vault> {
-        self.imp()
-            .vault
-            .borrow()
-            .clone()
-            .expect("the page is only shown with a vault")
-    }
-
     pub fn connect_days_changed(&self, callback: impl Fn(&Self) + 'static) {
         self.connect_closure(
             "days-changed",
@@ -275,23 +223,6 @@ impl NotesPage {
     pub fn show_overview(&self) {
         let imp = self.imp();
         imp.note_view.save_now();
-        imp.nav.pop_to_tag("notes");
-    }
-
-    /// Shows the note `note` above the list.
-    pub fn open_note(&self, note: &NotePath) {
-        let imp = self.imp();
-        match imp.note_view.show_note(note) {
-            Ok(()) if !shows(&imp.nav, "note") => imp.nav.push(&imp.note_view),
-            Ok(()) => {}
-            Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
-        }
-    }
-
-    /// Goes back from the note, which is no longer there.
-    fn close_note(&self) {
-        let imp = self.imp();
-        imp.note_view.forget();
         imp.nav.pop_to_tag("notes");
     }
 
@@ -366,31 +297,17 @@ impl NotesPage {
                     .map(|project| Some(project.slug.clone())),
             )
             .collect();
-        let selected = items.iter().position(|item| *item == chosen).unwrap_or(0);
-        imp.filling_projects.set(true);
-        if *imp.project_items.borrow() != items {
-            let labels: Vec<String> = items
-                .iter()
-                .map(|item| match item {
-                    Some(slug) => vault.project_name(slug).to_owned(),
-                    None => gettext("All Projects"),
-                })
-                .collect();
-            let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
-            imp.project_dropdown
-                .set_model(Some(&gtk::StringList::new(&labels)));
-            imp.project_items.replace(items);
-        }
-        imp.project_dropdown
-            .set_selected(u32::try_from(selected).expect("projects fit in a list"));
-        imp.filling_projects.set(false);
+        imp.projects
+            .fill(&imp.project_dropdown, items, &chosen, |item| match item {
+                Some(slug) => vault.project_name(slug).to_owned(),
+                None => gettext("All Projects"),
+            });
     }
 
     /// The project chosen in the dropdown, `None` for all.
     fn chosen_project(&self) -> Option<ProjectSlug> {
         let imp = self.imp();
-        let index = usize::try_from(imp.project_dropdown.selected()).ok()?;
-        imp.project_items.borrow().get(index).cloned().flatten()
+        imp.projects.chosen(&imp.project_dropdown).flatten()
     }
 
     /// Lists the notes read that match the search and the project chosen,
@@ -508,44 +425,41 @@ impl NotesPage {
         ));
         grid
     }
+}
 
-    /// Opens the note a wiki link points to, or offers to create it.
-    async fn follow_link(&self, note: NotePath) {
-        if let Some(note) = note_dialogs::follow_link(self, &self.vault(), &note).await {
-            self.open_note(&note);
-        }
+impl NoteHost for NotesPage {
+    fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("the page is only shown with a vault")
     }
 
-    async fn rename_note(&self, note: NotePath) {
+    fn note_view(&self) -> NoteView {
+        self.imp().note_view.clone()
+    }
+
+    fn index(&self) -> SearchIndex {
+        self.imp().index.borrow().clone()
+    }
+
+    fn open_note(&self, note: &NotePath) {
         let imp = self.imp();
-        // Renaming may change the links in the note shown, and the index
-        // has to find what was just typed.
-        imp.note_view.save_now();
-        let index = imp.index.borrow().clone();
-        let Some((renamed, updated_links)) =
-            note_dialogs::rename_note(self, &self.vault(), &index, &note).await
-        else {
-            return;
-        };
-        if updated_links {
-            self.emit_by_name::<()>("days-changed", &[]);
+        match imp.note_view.show_note(note) {
+            Ok(()) if !shows(&imp.nav, "note") => imp.nav.push(&imp.note_view),
+            Ok(()) => {}
+            Err(err) => show_error(self, &gettext("Cannot Open Note"), &err.to_string()),
         }
-        if imp.note_view.note() == Some(note) {
-            imp.note_view.forget();
-            self.open_note(&renamed);
-        } else if shows(&imp.nav, "note") {
-            imp.note_view.reload();
-        }
-        self.show_notes();
     }
 
-    async fn delete_note(&self, note: NotePath) {
-        if !note_dialogs::delete_note(self, &self.vault(), &note).await {
-            return;
-        }
-        if self.imp().note_view.note() == Some(note) {
-            self.close_note();
-        }
+    fn close_note(&self) {
+        let imp = self.imp();
+        imp.note_view.forget();
+        imp.nav.pop_to_tag("notes");
+    }
+
+    fn refresh_notes(&self) {
         self.show_notes();
     }
 }

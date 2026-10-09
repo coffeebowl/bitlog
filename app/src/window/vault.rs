@@ -381,14 +381,9 @@ impl Window {
             .borrow()
             .clone()
             .expect("changes are only watched in an open vault");
-        let date = imp.day_view.date();
         match self.load_vault(&path) {
             Ok(()) => {
-                imp.day_view.show_date(date);
-                imp.calendar_view.reload();
-                imp.tasks_page.reload();
-                imp.projects_page.reload();
-                self.reload_shown_pages();
+                self.show_vault_again();
                 self.check_conflicts();
             }
             Err(err) => show_error(self, &gettext("Cannot Open Vault"), &err.to_string()),
