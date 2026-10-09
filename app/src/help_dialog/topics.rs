@@ -83,7 +83,7 @@ fn days() -> Topic {
             )),
             Block::Heading(gettext("Logging Blocks")),
             Block::Text(gettext(
-                "To add a block, drag over free time in the timeline or press <b>Ctrl+N</b>. Drag a block to move it, or drag its top or bottom edge to change its length. Click a block to change its project, title or text. On touch screens, press and hold instead of dragging.",
+                "To add a block, drag over free time in the timeline or press <b>Ctrl+N</b>. Drag a block to move it, or drag its top or bottom edge to change its length. Click a block to change its project, title or text. On touch screens, press and hold instead of dragging. Dots next to the title of a block show how much of its text doesn’t fit: one for a few words, up to five for a long text.",
             )),
             Block::Heading(gettext("The Day")),
             Block::Text(gettext(

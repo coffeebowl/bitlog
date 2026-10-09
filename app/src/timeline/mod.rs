@@ -27,6 +27,13 @@ const CURRENT_KNOT_RADIUS: f32 = 7.0;
 const NOW_ARROW: f32 = 5.0;
 /// Height of the edges that change start or end of a block when dragged.
 const EDGE: f32 = 6.0;
+/// Words of text a block hides from which it shows one more dot.
+const DOT_STEPS: [usize; 5] = [1, 10, 25, 50, 100];
+const DOT_RADIUS: f32 = 2.0;
+/// Distance between the centers of two dots.
+const DOT_STEP: f32 = 6.0;
+/// Room for the dots right of the heading.
+pub(crate) const DOTS_WIDTH: i32 = 32;
 
 mod imp {
     use super::*;
@@ -210,8 +217,26 @@ mod imp {
                 snapshot.append_color(&with_alpha(&color, fill), &area);
                 let stripe = graphene::Rect::new(area.x(), area.y(), 4.0, area.height());
                 snapshot.append_color(&color, &stripe);
-                widget.snapshot_child(&entry.child, snapshot);
+                let hidden_words: usize = entry
+                    .lines
+                    .iter()
+                    .filter(|line| !line.is_child_visible())
+                    .map(|line| words(&line.label()))
+                    .sum();
+                let last_line = entry
+                    .lines
+                    .iter()
+                    .rev()
+                    .find(|line| line.is_child_visible())
+                    .filter(|_| hidden_words > 0)
+                    .and_then(|line| line.compute_bounds(&*widget));
+                if let Some(last_line) = last_line {
+                    self.snapshot_faded_child(snapshot, entry, &area, &last_line);
+                } else {
+                    widget.snapshot_child(&entry.child, snapshot);
+                }
                 snapshot.pop();
+                self.snapshot_dots(snapshot, entry, &area, dots(hidden_words), &color);
 
                 let outline = if entry.child.has_focus() && focus_visible {
                     Some(with_alpha(&foreground, 0.6))
@@ -229,7 +254,7 @@ mod imp {
                 } else {
                     (KNOT_RADIUS, foreground)
                 };
-                append_knot(snapshot, y_of(first, start), radius, &knot_color);
+                append_dot(snapshot, LINE_X, y_of(first, start), radius, &knot_color);
             }
 
             if let Some(span) = self.pending.get() {
@@ -267,6 +292,57 @@ mod imp {
                 self.obj().width() as f32 - BLOCK_X,
                 block_height(start, end) - 2.0,
             )
+        }
+
+        /// The content of `entry` with `last_line` fading out, as a hint that
+        /// more text follows.
+        fn snapshot_faded_child(
+            &self,
+            snapshot: &gtk::Snapshot,
+            entry: &Entry,
+            area: &graphene::Rect,
+            last_line: &graphene::Rect,
+        ) {
+            let opaque = gdk::RGBA::BLACK;
+            let top = last_line.y();
+            let bottom = top + last_line.height();
+            snapshot.push_mask(gsk::MaskMode::Alpha);
+            snapshot.append_color(
+                &opaque,
+                &graphene::Rect::new(area.x(), area.y(), area.width(), top - area.y()),
+            );
+            snapshot.append_linear_gradient(
+                &graphene::Rect::new(area.x(), top, area.width(), last_line.height()),
+                &graphene::Point::new(0.0, top),
+                &graphene::Point::new(0.0, bottom),
+                &[
+                    gsk::ColorStop::new(0.0, opaque),
+                    gsk::ColorStop::new(1.0, with_alpha(&opaque, 0.1)),
+                ],
+            );
+            snapshot.pop();
+            self.obj().snapshot_child(&entry.child, snapshot);
+            snapshot.pop();
+        }
+
+        /// `count` dots right of the heading of `entry`, for the text it hides.
+        fn snapshot_dots(
+            &self,
+            snapshot: &gtk::Snapshot,
+            entry: &Entry,
+            area: &graphene::Rect,
+            count: usize,
+            color: &gdk::RGBA,
+        ) {
+            let Some(heading) = entry
+                .child
+                .first_child()
+                .and_then(|heading| heading.compute_bounds(&*self.obj()))
+            else {
+                return;
+            };
+            let y = heading.y() + heading.height() / 2.0;
+            append_dots(snapshot, area.x() + area.width() - 8.0, y, count, color);
         }
 
         /// The lines of the slots and the labelled lines of full hours.
@@ -472,7 +548,10 @@ fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::La
             .css_classes(classes)
             .build()
     };
-    let heading = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    let heading = gtk::Box::builder()
+        .spacing(6)
+        .margin_end(DOTS_WIDTH)
+        .build();
     if block.title.is_empty() {
         heading.append(&label(project_name, &["heading", "stand-in-title"]));
     } else {
@@ -535,9 +614,61 @@ fn append_now(snapshot: &gtk::Snapshot, y: f32, width: f32, color: &gdk::RGBA) {
     snapshot.append_fill(&arrow.to_path(), gsk::FillRule::Winding, color);
 }
 
-fn append_knot(snapshot: &gtk::Snapshot, y: f32, radius: f32, color: &gdk::RGBA) {
-    let bounds = graphene::Rect::new(LINE_X - radius, y - radius, 2.0 * radius, 2.0 * radius);
+/// `count` dots in a row ending at `right`, in a lighter `color`, for the
+/// text a block hides.
+pub(crate) fn append_dots(
+    snapshot: &gtk::Snapshot,
+    right: f32,
+    y: f32,
+    count: usize,
+    color: &gdk::RGBA,
+) {
+    for index in 0..count {
+        let x = right - DOT_RADIUS - index as f32 * DOT_STEP;
+        append_dot(snapshot, x, y, DOT_RADIUS, &with_alpha(color, 0.65));
+    }
+}
+
+fn append_dot(snapshot: &gtk::Snapshot, x: f32, y: f32, radius: f32, color: &gdk::RGBA) {
+    let bounds = graphene::Rect::new(x - radius, y - radius, 2.0 * radius, 2.0 * radius);
     snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bounds, radius));
     snapshot.append_color(color, &bounds);
     snapshot.pop();
+}
+
+/// How many dots stand for `words` words of hidden text.
+fn dots(words: usize) -> usize {
+    DOT_STEPS.iter().filter(|&&step| words >= step).count()
+}
+
+/// The words in `line`, without Markdown marks such as `-` or `>`.
+fn words(line: &str) -> usize {
+    line.split_whitespace()
+        .filter(|word| word.chars().any(char::is_alphanumeric))
+        .count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dots_grow_with_hidden_words() {
+        assert_eq!(dots(0), 0);
+        assert_eq!(dots(1), 1);
+        assert_eq!(dots(9), 1);
+        assert_eq!(dots(10), 2);
+        assert_eq!(dots(49), 3);
+        assert_eq!(dots(50), 4);
+        assert_eq!(dots(100), 5);
+        assert_eq!(dots(1000), 5);
+    }
+
+    #[test]
+    fn words_skip_markdown_marks() {
+        assert_eq!(words("- [ ] Load test on staging"), 4);
+        assert_eq!(words("> Keep the limits per key"), 5);
+        assert_eq!(words("```"), 0);
+        assert_eq!(words("Details in [[Rate limiting]]."), 4);
+    }
 }
