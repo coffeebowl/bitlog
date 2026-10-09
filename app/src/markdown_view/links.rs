@@ -8,9 +8,10 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::NotePath;
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, glib};
 
 use super::MarkdownView;
+use crate::launch;
 
 /// Where a link leads.
 #[derive(Debug, Clone)]
@@ -67,20 +68,18 @@ impl MarkdownView {
             // Points nowhere, like `[[a/b/c]]`.
             Target::Note(None) => self.error_bell(),
             Target::Web(url) => {
-                let window = self.root().and_downcast::<gtk::Window>();
-                gtk::UriLauncher::new(&url).launch(
-                    window.as_ref(),
-                    None::<&gio::Cancellable>,
-                    |_| {},
-                );
+                glib::spawn_future_local(glib::clone!(
+                    #[weak(rename_to = view)]
+                    self,
+                    async move { launch::open_uri(&view, &url).await }
+                ));
             }
             Target::File(path) => {
-                let window = self.root().and_downcast::<gtk::Window>();
-                gtk::FileLauncher::new(Some(&gio::File::for_path(path))).launch(
-                    window.as_ref(),
-                    None::<&gio::Cancellable>,
-                    |_| {},
-                );
+                glib::spawn_future_local(glib::clone!(
+                    #[weak(rename_to = view)]
+                    self,
+                    async move { launch::open_file(&view, &path).await }
+                ));
             }
         }
     }

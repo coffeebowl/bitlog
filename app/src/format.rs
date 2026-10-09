@@ -1,6 +1,6 @@
 //! Dates, times, durations and counts as the app shows them.
 
-use bitlog_core::ProjectStatus;
+use bitlog_core::{ProjectStatus, TaskStatus};
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeDelta};
 use gettextrs::gettext;
 use gtk::glib;
@@ -187,11 +187,19 @@ pub const PROJECT_STATUSES: [ProjectStatus; 3] = [
     ProjectStatus::Archived,
 ];
 
-pub fn status_name(status: ProjectStatus) -> String {
+pub fn project_status_name(status: ProjectStatus) -> String {
     match status {
         ProjectStatus::Active => gettext("Active"),
         ProjectStatus::Paused => gettext("Paused"),
         ProjectStatus::Archived => gettext("Archived"),
+    }
+}
+
+pub fn task_status_name(status: TaskStatus) -> String {
+    match status {
+        TaskStatus::Open => gettext("Open"),
+        TaskStatus::Done => gettext("Done"),
+        TaskStatus::Dropped => gettext("Dropped"),
     }
 }
 

@@ -13,7 +13,9 @@ use gtk::glib;
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
-use crate::format::{PROJECT_STATUSES, format_duration, format_recent_date, status_name};
+use crate::format::{
+    PROJECT_STATUSES, capitalize, format_duration, format_recent_date, project_status_name,
+};
 use crate::launch;
 use crate::note_dialogs::{self, ask_note_name};
 use crate::note_view::NoteView;
@@ -327,7 +329,7 @@ impl ProjectsPage {
                 continue;
             }
             let group = adw::PreferencesGroup::builder()
-                .title(status_name(status))
+                .title(project_status_name(status))
                 .build();
             let mut worked_this_week = false;
             for project in projects {
@@ -683,7 +685,7 @@ fn project_row(
     last_day: Option<NaiveDate>,
     today: NaiveDate,
 ) -> adw::ActionRow {
-    let mut subtitle = vec![project.category.clone()];
+    let mut subtitle = vec![capitalize(&project.category)];
     match last_day {
         Some(date) if date == today => subtitle.push(gettext("last worked today")),
         Some(date) if today.pred_opt() == Some(date) => {

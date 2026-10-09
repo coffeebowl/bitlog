@@ -11,12 +11,15 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{ReadError, Vault};
+use bitlog_index::Found;
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use self::problems::{Entry, Fix, Kind, Place, Report};
 use crate::alert::show_error;
+use crate::launch;
+use crate::window::show_action;
 
 /// An action name with its target.
 type RowAction = (&'static str, glib::Variant);
@@ -400,24 +403,20 @@ impl VaultCheckDialog {
     /// folder.
     fn show_place(&self, place: &Place) {
         let action = match place {
-            Place::Day(date) => ("win.show-day", date.to_string().to_variant()),
-            Place::Block(date, id) => (
-                "win.show-block",
-                (date.to_string(), id.to_string()).to_variant(),
-            ),
-            Place::Note(note) => ("win.show-note", note.to_string().to_variant()),
+            Place::Day(date) => show_action(&Found::DayNote(*date)),
+            Place::Block(date, id) => show_action(&Found::Block {
+                date: *date,
+                id: id.clone(),
+            }),
+            Place::Note(note) => show_action(&Found::Note(note.clone())),
             Place::Conflict(copy) => ("win.resolve-conflict", copy.to_string_lossy().to_variant()),
             Place::File(path) => {
-                let window = self.root().and_downcast::<gtk::Window>();
-                gtk::FileLauncher::new(Some(&gio::File::for_path(path))).open_containing_folder(
-                    window.as_ref(),
-                    None::<&gio::Cancellable>,
-                    |result| {
-                        if let Err(err) = result {
-                            glib::g_warning!("bitlog", "{err}");
-                        }
-                    },
-                );
+                let path = path.clone();
+                glib::spawn_future_local(glib::clone!(
+                    #[weak(rename_to = dialog)]
+                    self,
+                    async move { launch::show_in_folder(&dialog, &path).await }
+                ));
                 return;
             }
         };

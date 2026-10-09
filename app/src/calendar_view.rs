@@ -1,10 +1,9 @@
 use std::cell::{Cell, RefCell};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use std::collections::BTreeMap;
-
 use bitlog_core::{DayFile, Period, Vault, week_start};
 use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
@@ -320,6 +319,9 @@ impl CalendarView {
                 .as_ref()
                 .map_or(TimeDelta::zero(), |day| day.working_time(vault.projects()));
             worked += working_time;
+            let details = day
+                .as_ref()
+                .map(|day| DaySummary::new(&vault, day).details(&vault));
             let usual_hours = vault.config().week.target_hours_on(date.weekday()) as f32;
             // Days off take their share off the target.
             let target_hours = match &day {
@@ -343,9 +345,10 @@ impl CalendarView {
                     .iter()
                     .map(|(slug, time)| (project_color(&vault, slug), hours(*time)))
                     .collect(),
-                tooltip: day
-                    .as_ref()
-                    .and_then(|day| DaySummary::new(&vault, day).details(&vault).tooltip()),
+                tooltip: details.as_ref().and_then(Details::tooltip),
+                description: details
+                    .map(|details| details.description.join(", "))
+                    .unwrap_or_default(),
                 target_hours: usual_hours,
             });
         }

@@ -322,16 +322,16 @@ glib::wrapper! {
     /// except for the markers of bullets and quotes, which are drawn as
     /// bullets and bars. Code blocks are cards, highlighted when they name
     /// a language, or diagrams when they are in Mermaid. Images of the
-    /// vault are drawn below their lines, once the view knows where its text
-    /// is saved. Tables are grids,
-    /// their cells cut off if too wide, and rules are lines, but show their
-    /// Markdown while the cursor is in them, tables in a monospace font with
-    /// the columns lined up. Enter continues lists, quotes and tables, and
-    /// typing a wiki link proposes notes.
+    /// vault are drawn below their lines, once the view knows where its
+    /// text is saved. Tables are grids, their cells cut off if too wide, and
+    /// rules are lines, but show their Markdown while the cursor is in them,
+    /// tables in a monospace font with the columns lined up. Enter continues
+    /// lists, quotes and tables, and typing a wiki link proposes notes.
     ///
-    /// Read-only unless made editable, with a placeholder while empty. When editable, Ctrl+B, Ctrl+I and
-    /// Ctrl+E make the selection bold, italic or code, or undo that, and Tab indents by two spaces;
-    /// the context menu has these and explains the Markdown.
+    /// Read-only unless made editable, with a placeholder while empty. When
+    /// editable, Ctrl+B, Ctrl+I and Ctrl+E make the selection bold, italic
+    /// or code, or undo that, and Tab indents by two spaces; the context
+    /// menu has these and explains the Markdown.
     pub struct MarkdownView(ObjectSubclass<imp::MarkdownView>)
         @extends sourceview5::View, gtk::TextView, gtk::Widget,
         @implements gtk::Accessible, gtk::AccessibleText, gtk::Buildable,

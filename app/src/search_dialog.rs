@@ -338,19 +338,21 @@ fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
     let (icon, place) = match &hit.found {
         Found::Block { date, .. } => (
             "x-office-calendar-symbolic",
-            format!("{} · {}", gettext("Block"), format_full_date(*date)),
+            // Translators: Where a search found something, as in "Block · September 22, 2026".
+            gettext("Block · {date}").replace("{date}", &format_full_date(*date)),
         ),
         Found::DayNote(date) => (
             "x-office-calendar-symbolic",
-            format!("{} · {}", gettext("Day Note"), format_full_date(*date)),
+            // Translators: Where a search found something, as in "Day Note · September 22, 2026".
+            gettext("Day Note · {date}").replace("{date}", &format_full_date(*date)),
         ),
-        Found::Note(note) => {
-            let project = vault.project_name(note.project());
-            (
-                "text-x-generic-symbolic",
-                format!("{} · {project} / {}", gettext("Note"), note.name()),
-            )
-        }
+        Found::Note(note) => (
+            "text-x-generic-symbolic",
+            // Translators: Where a search found something, as in "Note · Webshop / Ideas".
+            gettext("Note · {project} / {name}")
+                .replace("{project}", vault.project_name(note.project()))
+                .replace("{name}", note.name()),
+        ),
         Found::Task(_) => ("checkbox-checked-symbolic", gettext("Task")),
     };
     let (action, target) = show_action(&hit.found);

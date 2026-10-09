@@ -847,7 +847,7 @@ mod tests {
         let days = index.project_time_per_day(date(22), date(23)).unwrap();
         assert!(days.iter().all(|(day, _, _)| *day != date(21)));
         let infra: ProjectSlug = "infra".parse().unwrap();
-        assert!(days.contains(&(date(23), infra.clone(), TimeDelta::minutes(255))));
+        assert!(days.contains(&(date(23), infra, TimeDelta::minutes(255))));
         let mut sums = std::collections::BTreeMap::<ProjectSlug, TimeDelta>::new();
         for (_, project, time) in days {
             *sums.entry(project).or_default() += time;

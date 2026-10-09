@@ -1,8 +1,7 @@
 //! What is drawn beside the text: bars beside quotes, bullets over the
 //! markers of list items and lines for rules, and what the other modules
 //! add, like the cards of code blocks, diagrams, images and the grids of
-//! tables.
-//! And the syntax that is hidden until the cursor is at it.
+//! tables, and the syntax that is hidden until the cursor is at it.
 
 use std::ops::Range;
 

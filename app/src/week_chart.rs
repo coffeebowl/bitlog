@@ -3,6 +3,7 @@ use std::cell::{Cell, OnceCell, RefCell};
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use chrono::{Datelike, NaiveDate, TimeDelta};
+use gettextrs::gettext;
 use gtk::{gdk, glib, graphene, gsk, pango};
 
 use crate::colors::{pastel, with_alpha};
@@ -40,6 +41,8 @@ pub struct ChartDay {
     pub segments: Vec<(gdk::RGBA, f32)>,
     /// As in the month, in Pango markup.
     pub tooltip: Option<String>,
+    /// The same for screen readers, empty for a day without a file.
+    pub description: String,
     /// The target of the weekday by the preferences, which the scale makes
     /// room for; on days off too, so that the scale stays from week to week.
     pub target_hours: f32,
@@ -84,6 +87,9 @@ mod imp {
 
             let glide = redraw_animation(&*chart, GLIDE_MS);
             self.glide.set(glide).expect("constructed runs once");
+            chart.update_property(&[gtk::accessible::Property::Label(&gettext(
+                "Hours per day and project",
+            ))]);
 
             chart.set_has_tooltip(true);
             chart.connect_query_tooltip(|chart, x, _, _, tooltip| {
@@ -389,6 +395,19 @@ impl WeekChart {
         let imp = self.imp();
         let from = (0..days.len()).map(|index| self.shown(index)).collect();
         imp.glide_from.replace(from);
+        let description: Vec<String> = days
+            .iter()
+            .filter(|day| !day.description.is_empty())
+            .map(|day| {
+                // Translators: For screen readers, as in "Monday: 7 h 45 min, Remote".
+                gettext("{day}: {details}")
+                    .replace("{day}", &format_date(day.date, "%A"))
+                    .replace("{details}", &day.description)
+            })
+            .collect();
+        self.update_property(&[gtk::accessible::Property::Description(
+            &description.join("; "),
+        )]);
         imp.days.replace(days);
         if let Some(glide) = imp.glide.get() {
             glide.play();
@@ -502,6 +521,7 @@ mod tests {
                     kind: None,
                     segments: Vec::new(),
                     tooltip: None,
+                    description: String::new(),
                     target_hours: targets[offset],
                 })
                 .collect()

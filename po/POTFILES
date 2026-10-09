@@ -35,6 +35,7 @@ app/src/sync_conflict_dialog.rs
 app/src/task_list_view.rs
 app/src/vault_check_dialog/mod.rs
 app/src/vault_check_dialog/problems.rs
+app/src/week_chart.rs
 app/src/widgets.rs
 app/src/window/mod.rs
 app/src/window/vault.rs

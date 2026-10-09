@@ -556,7 +556,7 @@ mod tests {
     fn merge_task_copy() {
         let (_dir, vault) = sample_copy();
         let tasks = vault.load_tasks().unwrap();
-        let mut theirs = tasks.clone();
+        let mut theirs = tasks;
         theirs
             .set_due(&"t9x2".parse().unwrap(), Some(date(2026, 10, 2)))
             .unwrap();
@@ -603,7 +603,7 @@ mod tests {
         let (_dir, vault) = sample_copy();
         let tasks = vault.load_tasks().unwrap();
         let id: TaskId = "h4c8".parse().unwrap();
-        let mut theirs = tasks.clone();
+        let mut theirs = tasks;
         theirs.set_title(&id, "Renew all certificates").unwrap();
         theirs.set_due(&id, Some(date(2026, 10, 9))).unwrap();
         let copy = task_copy(&vault, &theirs);

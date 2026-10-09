@@ -12,7 +12,7 @@ use gtk::{gio, glib};
 
 use super::ProjectView;
 use crate::alert::show_error;
-use crate::launch::{self, show_launch_error};
+use crate::launch;
 use crate::note_dialogs::ask_name;
 
 impl ProjectView {
@@ -80,11 +80,7 @@ impl ProjectView {
             show_error(self, &gettext("Cannot Open Folder"), &message);
             return;
         }
-        let window = self.root().and_downcast::<gtk::Window>();
-        let launched = gtk::FileLauncher::new(Some(&gio::File::for_path(folder)))
-            .launch_future(window.as_ref())
-            .await;
-        show_launch_error(self, &gettext("Cannot Open Folder"), launched);
+        launch::open_file(self, &folder).await;
     }
 
     /// Opens `asset` with the app the system chooses for it.

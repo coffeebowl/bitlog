@@ -144,7 +144,7 @@ struct Focus {
     typed: Option<glib::GString>,
 }
 
-/// The id a task action is called with.
+/// The date tasks are added, done or dropped on.
 fn today() -> NaiveDate {
     Local::now().date_naive()
 }

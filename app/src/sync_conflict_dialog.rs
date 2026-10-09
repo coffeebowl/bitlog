@@ -8,7 +8,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
     Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError, Task, TaskId,
-    TaskList, TaskStatus, Vault, VaultChange,
+    TaskList, Vault, VaultChange,
 };
 use chrono::{DateTime, Local};
 use gettextrs::gettext;
@@ -17,7 +17,9 @@ use gtk::glib;
 
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
-use crate::format::{format_full_date, format_span, format_time, format_weekday_date, kind_name};
+use crate::format::{
+    format_full_date, format_span, format_time, format_weekday_date, kind_name, task_status_name,
+};
 
 mod imp {
     use super::*;
@@ -319,7 +321,7 @@ fn describe(vault: &Vault, versions: &ConflictVersions, contradiction: &Contradi
             let (ours, theirs) = (task(ours, id), task(theirs, id));
             let value = |task: &Task| match name.as_str() {
                 "title" => Some(task.title.clone()),
-                "status" => Some(status_name(task.status)),
+                "status" => Some(task_status_name(task.status)),
                 "created" => Some(date_value(task.created)),
                 "due" => Some(date_value(task.due)),
                 "done" => Some(date_value(task.done)),
@@ -410,15 +412,7 @@ fn field_value(vault: &Vault, day: &Day, name: &str) -> String {
         _ => day
             .unknown_fields
             .get(name)
-            .map_or_else(none, |value| value.to_string()),
-    }
-}
-
-fn status_name(status: TaskStatus) -> String {
-    match status {
-        TaskStatus::Open => gettext("Open"),
-        TaskStatus::Done => gettext("Done"),
-        TaskStatus::Dropped => gettext("Dropped"),
+            .map_or_else(none, ToString::to_string),
     }
 }
 

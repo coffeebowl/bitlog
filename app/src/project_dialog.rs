@@ -11,7 +11,7 @@ use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::colors;
-use crate::format::{PROJECT_STATUSES, status_name};
+use crate::format::{PROJECT_STATUSES, project_status_name};
 use crate::widgets::{changed, set_class};
 
 mod imp {
@@ -83,7 +83,10 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let dialog = self.obj();
-            let names: Vec<String> = PROJECT_STATUSES.into_iter().map(status_name).collect();
+            let names: Vec<String> = PROJECT_STATUSES
+                .into_iter()
+                .map(project_status_name)
+                .collect();
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
             self.status_row
                 .set_model(Some(&gtk::StringList::new(&names)));

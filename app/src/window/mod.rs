@@ -223,7 +223,7 @@ mod imp {
                 Some(glib::VariantTy::new("(ss)").expect("(ss) is a variant type")),
                 |window, _, block| {
                     let (date, id): (String, String) = block
-                        .and_then(|block| block.get())
+                        .and_then(glib::Variant::get)
                         .expect("blocks are passed as date and id");
                     let date = date.parse().expect("dates are passed as YYYY-MM-DD");
                     let id: BlockId = id.parse().expect("block ids are passed as they are");

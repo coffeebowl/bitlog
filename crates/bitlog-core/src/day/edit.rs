@@ -143,7 +143,7 @@ impl Day {
     }
 
     fn sort_blocks(&mut self) {
-        self.blocks.sort_by_key(|block| block.span());
+        self.blocks.sort_by_key(Block::span);
     }
 
     fn index(&self, id: &BlockId) -> Result<usize, EditError> {
@@ -332,7 +332,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             day.add_block(time("08:00"), time("09:15"), slug("infra"), "", &projects),
-            Err(EditError::Overlap(first.clone()))
+            Err(EditError::Overlap(first))
         );
         // Around midnight: 23:00 to 01:00 ends after 23:30.
         day.add_block(time("23:00"), time("01:00"), slug("infra"), "", &projects)

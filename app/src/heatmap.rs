@@ -11,7 +11,7 @@ use gtk::{gdk, glib, graphene, gsk};
 use crate::colors::with_alpha;
 use crate::format::{format_date, format_duration, format_full_date};
 
-/// Weeks shown for the last 12 months, and before anything is shown.
+/// Weeks a year takes at most, shown before anything else is.
 const WEEKS: u32 = 53;
 /// The size of a day by default, small enough for a year to fit the width
 /// of a page.
@@ -165,7 +165,7 @@ mod imp {
             let empty = with_alpha(&widget.color(), 0.08);
             for date in activity.dates() {
                 let (x, y) = widget.origin(activity, date, width);
-                if !widget.single_row() && widget.starts_month(activity, date) {
+                if !widget.single_row() && activity.starts_month(date) {
                     let layout = widget.small_layout(&format_date(date, &gettext("%b")), 80);
                     snapshot.save();
                     snapshot.translate(&graphene::Point::new(x, 0.0));
@@ -200,13 +200,6 @@ glib::wrapper! {
 }
 
 impl Heatmap {
-    /// The first and last day of the last 12 months up to `today`, in whole
-    /// weeks starting on `first_day`.
-    pub fn last_12_months(today: NaiveDate, first_day: Weekday) -> (NaiveDate, NaiveDate) {
-        let first = week_start(today, first_day) - Days::new(u64::from(WEEKS - 1) * 7);
-        (first, today)
-    }
-
     /// The first and last day of the last `days` days up to `today`.
     pub fn last_days(today: NaiveDate, days: u64) -> (NaiveDate, NaiveDate) {
         (today - Days::new(days - 1), today)
@@ -264,12 +257,6 @@ impl Heatmap {
                 TOP + weekday as f32 * (cell + gap),
             )
         }
-    }
-
-    /// Whether the month's name stands above `date`, in a column per week:
-    /// above the first week that starts in the month.
-    fn starts_month(&self, activity: &Activity, date: NaiveDate) -> bool {
-        date.weekday() == activity.start.weekday() && date.day() <= 7
     }
 
     /// Marks the weeks of a single row: a line between two weeks, up to
@@ -344,6 +331,12 @@ impl Activity {
     /// The days shown, from the first to the last.
     fn dates(&self) -> impl Iterator<Item = NaiveDate> + '_ {
         self.first.iter_days().take_while(|date| *date <= self.last)
+    }
+
+    /// Whether the month's name stands above `date`, in a column per week:
+    /// above the first week that starts in the month.
+    fn starts_month(&self, date: NaiveDate) -> bool {
+        date.weekday() == self.start.weekday() && date.day() <= 7
     }
 }
 

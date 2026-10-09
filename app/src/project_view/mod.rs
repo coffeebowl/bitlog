@@ -17,7 +17,7 @@ use gtk::{gdk, glib};
 use crate::cards::{asset_card, note_card, note_preview, show_preview};
 use crate::colors;
 use crate::format::{
-    format_duration, format_full_date, format_range, format_share, format_weekday_date,
+    capitalize, format_duration, format_full_date, format_range, format_share, format_weekday_date,
     title_markup,
 };
 use crate::git_page::GitPage;
@@ -270,7 +270,8 @@ impl ProjectView {
         self.look_up(vault, project, repo);
         self.set_title(&project.name);
         imp.window_title.set_title(&project.name);
-        imp.window_title.set_subtitle(&project.category);
+        imp.window_title
+            .set_subtitle(&capitalize(&project.category));
         let target = project.slug.to_string().to_variant();
         imp.new_note_button.set_action_target_value(Some(&target));
         imp.edit_button.set_action_target_value(Some(&target));
@@ -434,23 +435,21 @@ impl ProjectView {
             .replace("{days}", &days.to_string())
             .replace("{average}", &format_duration(total / days))
         });
-        let share = if work.is_zero() {
-            String::new()
+        let recent = if work.is_zero() {
+            // Translators: As in "3 h this week · 12 h this month".
+            gettext("{week} this week · {month} this month")
         } else {
-            // Translators: The share of a project in the time spent on
-            // all projects this month, as in " (35 % of all work)".
-            gettext(" ({share} of all work)").replace("{share}", &format_share(month, work))
+            // Translators: As in "3 h this week · 12 h this month (35 % of all work)".
+            gettext("{week} this week · {month} this month ({share} of all work)")
+                .replace("{share}", &format_share(month, work))
         };
-        // Translators: The time spent on a project this week and month, as
-        // in "3 h this week · 12 h this month (35 % of all work)".
         imp.recent_row.set_subtitle(
-            &gettext("{week} this week · {month} this month{share}")
+            &recent
                 .replace(
                     "{week}",
                     &format_duration(sum_between(week_first, week_last)),
                 )
-                .replace("{month}", &format_duration(month))
-                .replace("{share}", &share),
+                .replace("{month}", &format_duration(month)),
         );
         imp.span_row
             .set_subtitle(&match (activity.first(), activity.last()) {

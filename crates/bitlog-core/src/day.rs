@@ -250,7 +250,7 @@ impl Day {
                 text: String::new(),
             })
             .collect();
-        blocks.sort_by_key(|block| block.span());
+        blocks.sort_by_key(Block::span);
 
         let ids: Vec<BlockId> = blocks.iter().map(|block| block.id.clone()).collect();
         let parsed = sections::split(body, front_matter.date, &ids);

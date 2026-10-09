@@ -8,7 +8,7 @@ use bitlog_core::{Period, Vault};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, glib};
 
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
@@ -16,6 +16,7 @@ use crate::format::{
     capitalize, format_duration, format_month, format_range, format_share, format_short_date,
 };
 use crate::heatmap::Heatmap;
+use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
 use crate::share_bar::ShareBar;
 
@@ -227,21 +228,14 @@ impl ReportsPage {
                     .title(gettext("Exported {name}").replace("{name}", &name))
                     .button_label(gettext("_Show File"))
                     .build();
-                let file = gio::File::for_path(&path);
                 toast.connect_button_clicked(glib::clone!(
                     #[weak(rename_to = page)]
                     self,
                     move |_| {
-                        let window = page.root().and_downcast::<gtk::Window>();
-                        gtk::FileLauncher::new(Some(&file)).open_containing_folder(
-                            window.as_ref(),
-                            None::<&gio::Cancellable>,
-                            |result| {
-                                if let Err(err) = result {
-                                    glib::g_warning!("bitlog", "{err}");
-                                }
-                            },
-                        );
+                        let path = path.clone();
+                        glib::spawn_future_local(async move {
+                            launch::show_in_folder(&page, &path).await;
+                        });
                     }
                 ));
                 toast_overlay(self).add_toast(toast);

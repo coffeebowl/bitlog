@@ -265,11 +265,7 @@ mod tests {
         let text = "  ![a](a.png) ![b](b.png) ";
         let a = 2..13;
         let b = 14..25;
-        assert!(shows_nothing_but(
-            text,
-            0..text.len(),
-            &[a.clone(), b.clone()]
-        ));
+        assert!(shows_nothing_but(text, 0..text.len(), &[a.clone(), b]));
         assert!(!shows_nothing_but(text, 0..text.len(), &[a]));
         let after_text = 4..15;
         assert!(!shows_nothing_but("See ![a](a.png)", 0..15, &[after_text]));
