@@ -1,126 +1,100 @@
 using Gtk 4.0;
 using Adw 1;
 
-template $BitLogPreferencesDialog: Adw.Dialog {
+template $BitLogPreferencesDialog: Adw.PreferencesDialog {
   title: _("Preferences");
-  content-width: 480;
-  default-widget: save_button;
 
-  child: Adw.ToolbarView {
-    [top]
-    Adw.HeaderBar {
-      show-start-title-buttons: false;
-      show-end-title-buttons: false;
+  Adw.PreferencesPage {
+    description: _("Stored in the vault and shared by all devices that sync it");
 
-      [start]
-      Button cancel_button {
-        label: _("_Cancel");
-        use-underline: true;
+    Adw.PreferencesGroup {
+      Adw.EntryRow name_row {
+        title: _("Name");
+        show-apply-button: true;
       }
 
-      [end]
-      Button save_button {
-        label: _("_Save");
-        use-underline: true;
+      Adw.ComboRow location_row {
+        title: _("Default Location");
+        subtitle: _("Set for new days");
+      }
 
-        styles [
-          "suggested-action",
-        ]
+      Adw.ActionRow template_row {
+        title: _("Note Template");
+        activatable-widget: choose_template_button;
+
+        [suffix]
+        Button clear_template_button {
+          icon-name: "edit-clear-symbolic";
+          tooltip-text: _("Remove Template");
+          valign: center;
+          visible: false;
+
+          styles [
+            "flat",
+          ]
+        }
+
+        [suffix]
+        Button choose_template_button {
+          icon-name: "document-open-symbolic";
+          tooltip-text: _("Choose File");
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        }
       }
     }
 
-    content: Adw.PreferencesPage {
-      description: _("Stored in the vault and shared by all devices that sync it");
+    Adw.PreferencesGroup {
+      title: _("Week");
 
-      Adw.PreferencesGroup {
-        Adw.EntryRow name_row {
-          title: _("Name");
-          activates-default: true;
-        }
+      Adw.ComboRow first_day_row {
+        title: _("First Day");
+      }
 
-        Adw.ComboRow location_row {
-          title: _("Default Location");
-          subtitle: _("Set for new days");
-        }
+      Adw.ActionRow {
+        title: _("Workdays");
 
-        Adw.ActionRow template_row {
-          title: _("Note Template");
-          activatable-widget: choose_template_button;
+        [suffix]
+        Box workdays_box {
+          valign: center;
 
-          [suffix]
-          Button clear_template_button {
-            icon-name: "edit-clear-symbolic";
-            tooltip-text: _("Remove Template");
-            valign: center;
-            visible: false;
-
-            styles [
-              "flat",
-            ]
-          }
-
-          [suffix]
-          Button choose_template_button {
-            icon-name: "document-open-symbolic";
-            tooltip-text: _("Choose File");
-            valign: center;
-
-            styles [
-              "flat",
-            ]
-          }
+          styles [
+            "linked",
+          ]
         }
       }
 
-      Adw.PreferencesGroup {
-        title: _("Week");
+      Adw.SpinRow target_hours_row {
+        title: _("Target Hours");
+        subtitle: _("Shared among the workdays in the week chart");
+        digits: 1;
 
-        Adw.ComboRow first_day_row {
-          title: _("First Day");
-        }
+        adjustment: Adjustment {
+          upper: 168;
+          step-increment: 0.5;
+          page-increment: 5;
+        };
+      }
+    }
 
-        Adw.ActionRow workdays_row {
-          title: _("Workdays");
+    Adw.PreferencesGroup {
+      title: _("Day View");
 
-          [suffix]
-          Box workdays_box {
-            valign: center;
-
-            styles [
-              "linked",
-            ]
-          }
-        }
-
-        Adw.SpinRow target_hours_row {
-          title: _("Target Hours");
-          subtitle: _("Shared among the workdays in the week chart");
-          digits: 1;
-
-          adjustment: Adjustment {
-            upper: 168;
-            step-increment: 0.5;
-            page-increment: 5;
-          };
-        }
+      Adw.ComboRow slot_row {
+        title: _("Block Length");
+        subtitle: _("Blocks snap to it when drawn or moved. Times can still be typed to the minute.");
       }
 
-      Adw.PreferencesGroup {
-        title: _("Day View");
-
-        Adw.ComboRow slot_row {
-          title: _("Block Length");
-          subtitle: _("Blocks snap to it when drawn or moved. Times can still be typed to the minute.");
-        }
-
-        Adw.ComboRow day_start_row {
-          title: _("Day Starts");
-        }
-
-        Adw.ComboRow day_end_row {
-          title: _("Day Ends");
-        }
+      Adw.ComboRow day_start_row {
+        title: _("Day Starts");
       }
-    };
-  };
+
+      Adw.ComboRow day_end_row {
+        title: _("Day Ends");
+      }
+    }
+  }
 }

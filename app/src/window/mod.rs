@@ -7,13 +7,13 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{BlockId, NotePath, ProjectSlug, TaskId, Vault, VaultWatcher};
+use bitlog_core::{
+    BlockId, NotePath, ProjectSlug, SaveError, TaskId, Vault, VaultConfig, VaultWatcher,
+};
 use bitlog_index::Found;
 use chrono::{Local, NaiveDate, TimeDelta};
-use gettextrs::gettext;
 use gtk::{gio, glib};
 
-use crate::alert::show_error;
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::day_view::DayView;
@@ -443,13 +443,7 @@ impl Window {
         if self.visible_dialog().is_some() {
             return;
         }
-        let dialog = PreferencesDialog::new(&self.vault());
-        dialog.connect_save(glib::clone!(
-            #[weak(rename_to = window)]
-            self,
-            move |dialog| window.save_preferences(dialog)
-        ));
-        dialog.present(Some(self));
+        PreferencesDialog::new(&self.vault()).present(Some(self));
     }
 
     fn check_vault(&self) {
@@ -467,24 +461,19 @@ impl Window {
         dialog.present(Some(self));
     }
 
-    /// Saves the settings `dialog` holds and closes it. On failure it
-    /// stays open.
-    fn save_preferences(&self, dialog: &PreferencesDialog) {
+    /// Applies `change` to the settings of the vault, saves them and shows
+    /// the vault as it is with them.
+    pub fn change_config(&self, change: impl FnOnce(&mut VaultConfig)) -> Result<(), SaveError> {
         // A copy shares the record of own writes, so watching the vault
         // goes on as before.
         let mut vault = Vault::clone(&self.vault());
-        match vault.update_config(|config| dialog.apply(config)) {
-            Ok(_) => {
-                dialog.close();
-                self.set_vault(&Rc::new(vault));
-                self.show_vault_again();
-            }
-            Err(err) => show_error(
-                dialog,
-                &gettext("Cannot Save Preferences"),
-                &err.to_string(),
-            ),
-        }
+        vault.update_config(|config| {
+            change(config);
+            Ok(())
+        })?;
+        self.set_vault(&Rc::new(vault));
+        self.show_vault_again();
+        Ok(())
     }
 
     /// Shows the day and the page shown as the vault is now, after its

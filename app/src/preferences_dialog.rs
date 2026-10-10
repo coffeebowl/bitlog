@@ -1,18 +1,17 @@
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{EditError, LocationKey, Vault, VaultConfig, time_at_minute};
+use bitlog_core::{LocationKey, Vault, VaultConfig, time_at_minute};
 use chrono::{NaiveDate, NaiveTime, TimeDelta, Weekday};
 use gettextrs::gettext;
-use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::format::{format_date, format_duration, format_time};
-use crate::widgets::{changed, set_class};
+use crate::widgets::{Choices, set_class};
+use crate::window::Window;
 
 /// The block lengths offered, besides the one set.
 const SLOT_MINUTES: [u32; 6] = [5, 10, 15, 20, 30, 60];
@@ -28,21 +27,16 @@ mod imp {
     pub struct PreferencesDialog {
         /// The vault folder, which note templates have to lie in.
         pub root: RefCell<PathBuf>,
-        /// The settings as shown when the dialog opened.
-        pub shown: RefCell<Option<VaultConfig>>,
-        /// The choices of the combo rows, in the order shown.
-        pub locations: RefCell<Vec<Option<LocationKey>>>,
-        pub slots: RefCell<Vec<u32>>,
-        pub day_starts: RefCell<Vec<NaiveTime>>,
-        pub day_ends: RefCell<Vec<NaiveTime>>,
+        /// What the combo rows offer.
+        pub locations: Choices<Option<LocationKey>>,
+        pub first_days: Choices<Weekday>,
+        pub slots: Choices<u32>,
+        pub day_starts: Choices<NaiveTime>,
+        pub day_ends: Choices<NaiveTime>,
         /// One button per day of `WEEKDAYS`.
         pub workday_buttons: RefCell<Vec<gtk::ToggleButton>>,
         /// The template as chosen, relative to the vault.
         pub template: RefCell<Option<PathBuf>>,
-        #[template_child]
-        pub cancel_button: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub save_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub name_row: TemplateChild<adw::EntryRow>,
         #[template_child]
@@ -55,8 +49,6 @@ mod imp {
         pub choose_template_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub first_day_row: TemplateChild<adw::ComboRow>,
-        #[template_child]
-        pub workdays_row: TemplateChild<adw::ActionRow>,
         #[template_child]
         pub workdays_box: TemplateChild<gtk::Box>,
         #[template_child]
@@ -73,7 +65,7 @@ mod imp {
     impl ObjectSubclass for PreferencesDialog {
         const NAME: &'static str = "BitLogPreferencesDialog";
         type Type = super::PreferencesDialog;
-        type ParentType = adw::Dialog;
+        type ParentType = adw::PreferencesDialog;
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
@@ -85,20 +77,9 @@ mod imp {
     }
 
     impl ObjectImpl for PreferencesDialog {
-        fn signals() -> &'static [Signal] {
-            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            // Emitted when the user wants to save; the dialog stays open
-            // until it is closed.
-            SIGNALS.get_or_init(|| vec![Signal::builder("save").build()])
-        }
-
         fn constructed(&self) {
             self.parent_constructed();
             let dialog = self.obj();
-            let days: Vec<String> = WEEKDAYS.into_iter().map(weekday_name).collect();
-            let days: Vec<&str> = days.iter().map(String::as_str).collect();
-            self.first_day_row
-                .set_model(Some(&gtk::StringList::new(&days)));
             let buttons: Vec<gtk::ToggleButton> = WEEKDAYS
                 .into_iter()
                 .map(|day| {
@@ -109,37 +90,34 @@ mod imp {
                     button.connect_toggled(glib::clone!(
                         #[weak]
                         dialog,
-                        move |_| dialog.update_save_button()
+                        move |button| dialog.workday_toggled(button)
                     ));
                     self.workdays_box.append(&button);
                     button
                 })
                 .collect();
             self.workday_buttons.replace(buttons);
-            self.cancel_button.connect_clicked(glib::clone!(
+            self.name_row
+                .connect_changed(|row| set_class(row, "error", row.text().trim().is_empty()));
+            self.name_row.connect_apply(glib::clone!(
                 #[weak]
                 dialog,
-                move |_| {
-                    dialog.close();
+                move |row| {
+                    let name = row.text().trim().to_owned();
+                    if !name.is_empty() {
+                        dialog.change(move |config| config.name = name);
+                    }
                 }
             ));
-            self.save_button.connect_clicked(glib::clone!(
+            self.location_row.connect_selected_notify(glib::clone!(
                 #[weak]
                 dialog,
-                move |_| dialog.emit_by_name::<()>("save", &[])
+                move |row| {
+                    if let Some(location) = dialog.imp().locations.chosen(row) {
+                        dialog.change(move |config| config.defaults.location = location);
+                    }
+                }
             ));
-            self.name_row.connect_changed(glib::clone!(
-                #[weak]
-                dialog,
-                move |_| dialog.update_save_button()
-            ));
-            for row in [&*self.day_start_row, &*self.day_end_row] {
-                row.connect_selected_notify(glib::clone!(
-                    #[weak]
-                    dialog,
-                    move |_| dialog.update_save_button()
-                ));
-            }
             self.choose_template_button.connect_clicked(glib::clone!(
                 #[weak]
                 dialog,
@@ -152,17 +130,52 @@ mod imp {
                 dialog,
                 move |_| dialog.set_template(None)
             ));
+            self.first_day_row.connect_selected_notify(glib::clone!(
+                #[weak]
+                dialog,
+                move |row| {
+                    if let Some(day) = dialog.imp().first_days.chosen(row) {
+                        dialog.change(move |config| config.week.first_day = day);
+                    }
+                }
+            ));
+            self.target_hours_row.connect_value_notify(glib::clone!(
+                #[weak]
+                dialog,
+                move |row| {
+                    let hours = row.value();
+                    dialog.change(move |config| config.week.target_hours = hours);
+                }
+            ));
+            self.slot_row.connect_selected_notify(glib::clone!(
+                #[weak]
+                dialog,
+                move |row| {
+                    if let Some(minutes) = dialog.imp().slots.chosen(row) {
+                        dialog.change(move |config| config.grid.slot_minutes = minutes);
+                    }
+                }
+            ));
+            for row in [&*self.day_start_row, &*self.day_end_row] {
+                row.connect_selected_notify(glib::clone!(
+                    #[weak]
+                    dialog,
+                    move |_| dialog.day_range_chosen()
+                ));
+            }
         }
     }
 
     impl WidgetImpl for PreferencesDialog {}
     impl AdwDialogImpl for PreferencesDialog {}
+    impl PreferencesDialogImpl for PreferencesDialog {}
 }
 
 glib::wrapper! {
-    /// Changes the settings of a vault, kept in its `bitlog.toml`.
+    /// Changes the settings of a vault, kept in its `bitlog.toml`, each as
+    /// soon as it is chosen.
     pub struct PreferencesDialog(ObjectSubclass<imp::PreferencesDialog>)
-        @extends adw::Dialog, gtk::Widget,
+        @extends adw::PreferencesDialog, adw::Dialog, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
@@ -201,23 +214,6 @@ fn day_times(set: NaiveTime) -> Vec<NaiveTime> {
     times
 }
 
-/// Fills `row` with `choices` shown by `name` and selects `selected`.
-fn set_choices<T: PartialEq>(
-    row: &adw::ComboRow,
-    choices: &[T],
-    name: impl Fn(&T) -> String,
-    selected: &T,
-) {
-    let names: Vec<String> = choices.iter().map(name).collect();
-    let names: Vec<&str> = names.iter().map(String::as_str).collect();
-    row.set_model(Some(&gtk::StringList::new(&names)));
-    let index = choices
-        .iter()
-        .position(|choice| choice == selected)
-        .expect("the value set is among the choices");
-    row.set_selected(u32::try_from(index).expect("few choices"));
-}
-
 impl PreferencesDialog {
     /// A dialog showing the settings of `vault`.
     pub fn new(vault: &Vault) -> Self {
@@ -225,30 +221,28 @@ impl PreferencesDialog {
         let imp = dialog.imp();
         let config = vault.config();
         imp.root.replace(vault.root().to_owned());
-        imp.shown.replace(Some(config.clone()));
 
         imp.name_row.set_text(&config.name);
-        let locations: Vec<Option<LocationKey>> = [None]
+        let locations = [None]
             .into_iter()
             .chain(config.locations.keys().cloned().map(Some))
             .collect();
-        set_choices(
-            &imp.location_row,
-            &locations,
+        imp.locations.fill(
+            &*imp.location_row,
+            locations,
+            &config.defaults.location,
             |key| match key {
                 Some(key) => config.location_name(key).to_owned(),
                 None => gettext("None"),
             },
-            &config.defaults.location,
         );
-        imp.locations.replace(locations);
         dialog.set_template(config.defaults.note_template.clone());
 
-        set_choices(
-            &imp.first_day_row,
-            &WEEKDAYS,
-            |day| weekday_name(*day),
+        imp.first_days.fill(
+            &*imp.first_day_row,
+            WEEKDAYS.to_vec(),
             &config.week.first_day,
+            |day| weekday_name(*day),
         );
         for (day, button) in WEEKDAYS.iter().zip(imp.workday_buttons.borrow().iter()) {
             button.set_active(config.week.workdays.contains(day));
@@ -260,110 +254,73 @@ impl PreferencesDialog {
             slots.push(config.grid.slot_minutes);
             slots.sort_unstable();
         }
-        set_choices(
-            &imp.slot_row,
-            &slots,
-            |minutes| format_duration(TimeDelta::minutes((*minutes).into())),
+        imp.slots.fill(
+            &*imp.slot_row,
+            slots,
             &config.grid.slot_minutes,
+            |minutes| format_duration(TimeDelta::minutes((*minutes).into())),
         );
-        imp.slots.replace(slots);
-
-        let starts = day_times(config.grid.day_start);
-        let ends = day_times(config.grid.day_end);
-        set_choices(
-            &imp.day_start_row,
-            &starts,
-            |time| format_time(*time),
-            &config.grid.day_start,
-        );
-        set_choices(
-            &imp.day_end_row,
-            &ends,
-            |time| format_time(*time),
-            &config.grid.day_end,
-        );
-        imp.day_starts.replace(starts);
-        imp.day_ends.replace(ends);
-
-        dialog.update_save_button();
+        dialog.show_day_range(config.grid.day_start, config.grid.day_end);
         dialog
     }
 
-    pub fn connect_save(&self, callback: impl Fn(&Self) + 'static) {
-        self.connect_closure(
-            "save",
-            false,
-            glib::closure_local!(move |dialog: &Self| callback(dialog)),
-        );
+    /// Saves a setting as soon as the user chose it. Not before the dialog
+    /// is shown, while its rows are filled.
+    fn change(&self, change: impl FnOnce(&mut VaultConfig)) {
+        let Some(window) = self.root().and_downcast::<Window>() else {
+            return;
+        };
+        if let Err(err) = window.change_config(change) {
+            show_error(self, &gettext("Cannot Save Preferences"), &err.to_string());
+        }
     }
 
-    /// Sets the settings of `config` that were changed in the dialog, so
-    /// that changes made elsewhere meanwhile are kept. Blocks already there
-    /// keep their times, whatever the block length.
-    pub fn apply(&self, config: &mut VaultConfig) -> Result<(), EditError> {
-        let imp = self.imp();
-        let shown = imp.shown.borrow();
-        let shown = shown.as_ref().expect("the dialog shows settings");
-        changed(&mut config.name, &shown.name, self.name());
-        changed(
-            &mut config.defaults.location,
-            &shown.defaults.location,
-            imp.locations.borrow()[imp.location_row.selected() as usize].clone(),
-        );
-        changed(
-            &mut config.defaults.note_template,
-            &shown.defaults.note_template,
-            imp.template.borrow().clone(),
-        );
-        changed(
-            &mut config.week.first_day,
-            &shown.week.first_day,
-            WEEKDAYS[imp.first_day_row.selected() as usize],
-        );
-        changed(
-            &mut config.week.workdays,
-            &shown.week.workdays(),
-            self.workdays(),
-        );
-        changed(
-            &mut config.week.target_hours,
-            &shown.week.target_hours,
-            imp.target_hours_row.value(),
-        );
-        changed(
-            &mut config.grid.slot_minutes,
-            &shown.grid.slot_minutes,
-            imp.slots.borrow()[imp.slot_row.selected() as usize],
-        );
-        let (start, end) = self.day_range();
-        changed(&mut config.grid.day_start, &shown.grid.day_start, start);
-        changed(&mut config.grid.day_end, &shown.grid.day_end, end);
-        Ok(())
-    }
-
-    fn name(&self) -> String {
-        self.imp().name_row.text().trim().to_owned()
-    }
-
-    /// The workdays as chosen, from Monday.
-    fn workdays(&self) -> Vec<Weekday> {
-        WEEKDAYS
+    /// Saves the workdays chosen. The last one stays, a week has one.
+    fn workday_toggled(&self, button: &gtk::ToggleButton) {
+        let workdays: Vec<Weekday> = WEEKDAYS
             .into_iter()
             .zip(self.imp().workday_buttons.borrow().iter())
             .filter(|(_, button)| button.is_active())
             .map(|(day, _)| day)
-            .collect()
+            .collect();
+        if workdays.is_empty() {
+            button.set_active(true);
+        } else {
+            self.change(move |config| config.week.workdays = workdays);
+        }
     }
 
-    /// The start and end of the day view as chosen.
-    fn day_range(&self) -> (NaiveTime, NaiveTime) {
+    /// Offers the times before `end` for the start of the day view and
+    /// those after `start` for its end, so that it cannot end before it
+    /// starts.
+    fn show_day_range(&self, start: NaiveTime, end: NaiveTime) {
         let imp = self.imp();
-        (
-            imp.day_starts.borrow()[imp.day_start_row.selected() as usize],
-            imp.day_ends.borrow()[imp.day_end_row.selected() as usize],
-        )
+        let starts = day_times(start).into_iter().filter(|time| *time < end);
+        let ends = day_times(end).into_iter().filter(|time| *time > start);
+        let name = |time: &NaiveTime| format_time(*time);
+        imp.day_starts
+            .fill(&*imp.day_start_row, starts.collect(), &start, name);
+        imp.day_ends
+            .fill(&*imp.day_end_row, ends.collect(), &end, name);
     }
 
+    /// Saves the start and end of the day view as chosen, both, as they
+    /// only hold together.
+    fn day_range_chosen(&self) {
+        let imp = self.imp();
+        let start = imp.day_starts.chosen(&*imp.day_start_row);
+        let end = imp.day_ends.chosen(&*imp.day_end_row);
+        let (Some(start), Some(end)) = (start, end) else {
+            return;
+        };
+        self.change(move |config| {
+            config.grid.day_start = start;
+            config.grid.day_end = end;
+        });
+        self.show_day_range(start, end);
+    }
+
+    /// Shows `template` as the one for new notes, or none, and saves it.
     fn set_template(&self, template: Option<PathBuf>) {
         let imp = self.imp();
         let shown = template
@@ -371,7 +328,8 @@ impl PreferencesDialog {
             .map_or_else(|| gettext("None"), |path| path.display().to_string());
         imp.template_row.set_subtitle(&shown);
         imp.clear_template_button.set_visible(template.is_some());
-        imp.template.replace(template);
+        imp.template.replace(template.clone());
+        self.change(move |config| config.defaults.note_template = template);
     }
 
     async fn choose_template(&self) {
@@ -406,22 +364,5 @@ impl PreferencesDialog {
                 &gettext("The template has to lie in the vault folder."),
             ),
         }
-    }
-
-    /// Allows saving once there is a name, a workday and the day starts
-    /// before it ends.
-    fn update_save_button(&self) {
-        let imp = self.imp();
-        // Called while the rows are filled, before the choices are known.
-        if imp.day_ends.borrow().is_empty() {
-            return;
-        }
-        let (start, end) = self.day_range();
-        let range_valid = start < end;
-        set_class(&*imp.day_end_row, "error", !range_valid);
-        let has_workday = !self.workdays().is_empty();
-        set_class(&*imp.workdays_row, "error", !has_workday);
-        imp.save_button
-            .set_sensitive(!self.name().is_empty() && range_valid && has_workday);
     }
 }

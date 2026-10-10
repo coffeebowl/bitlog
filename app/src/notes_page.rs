@@ -298,7 +298,7 @@ impl NotesPage {
             )
             .collect();
         imp.projects
-            .fill(&imp.project_dropdown, items, &chosen, |item| match item {
+            .fill(&*imp.project_dropdown, items, &chosen, |item| match item {
                 Some(slug) => vault.project_name(slug).to_owned(),
                 None => gettext("All Projects"),
             });
@@ -307,7 +307,7 @@ impl NotesPage {
     /// The project chosen in the dropdown, `None` for all.
     fn chosen_project(&self) -> Option<ProjectSlug> {
         let imp = self.imp();
-        imp.projects.chosen(&imp.project_dropdown).flatten()
+        imp.projects.chosen(&*imp.project_dropdown).flatten()
     }
 
     /// Lists the notes read that match the search and the project chosen,

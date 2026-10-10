@@ -62,6 +62,42 @@ pub fn changed<T: PartialEq>(field: &mut T, shown: &T, entered: T) {
     }
 }
 
+/// What [`Choices`] needs of a dropdown: `gtk::DropDown` and `adw::ComboRow`
+/// work alike, but have no type in common.
+pub trait Dropdown {
+    fn set_names(&self, names: &[&str]);
+    fn set_selected(&self, index: u32);
+    fn selected(&self) -> u32;
+}
+
+impl Dropdown for gtk::DropDown {
+    fn set_names(&self, names: &[&str]) {
+        self.set_model(Some(&gtk::StringList::new(names)));
+    }
+
+    fn set_selected(&self, index: u32) {
+        gtk::DropDown::set_selected(self, index);
+    }
+
+    fn selected(&self) -> u32 {
+        gtk::DropDown::selected(self)
+    }
+}
+
+impl Dropdown for adw::ComboRow {
+    fn set_names(&self, names: &[&str]) {
+        self.set_model(Some(&gtk::StringList::new(names)));
+    }
+
+    fn set_selected(&self, index: u32) {
+        ComboRowExt::set_selected(self, index);
+    }
+
+    fn selected(&self) -> u32 {
+        ComboRowExt::selected(self)
+    }
+}
+
 /// What a dropdown offers, in its order.
 #[derive(Debug)]
 pub struct Choices<T> {
@@ -84,7 +120,7 @@ impl<T: Clone + PartialEq> Choices<T> {
     /// or else the first. The list is only replaced if it changed.
     pub fn fill(
         &self,
-        dropdown: &gtk::DropDown,
+        dropdown: &impl Dropdown,
         items: Vec<T>,
         selected: &T,
         name: impl Fn(&T) -> String,
@@ -94,7 +130,7 @@ impl<T: Clone + PartialEq> Choices<T> {
         if *self.items.borrow() != items {
             let names: Vec<String> = items.iter().map(name).collect();
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
-            dropdown.set_model(Some(&gtk::StringList::new(&names)));
+            dropdown.set_names(&names);
             self.items.replace(items);
         }
         dropdown.set_selected(u32::try_from(index).expect("dropdowns offer few items"));
@@ -102,7 +138,7 @@ impl<T: Clone + PartialEq> Choices<T> {
     }
 
     /// The item chosen in `dropdown`, `None` while it is being filled.
-    pub fn chosen(&self, dropdown: &gtk::DropDown) -> Option<T> {
+    pub fn chosen(&self, dropdown: &impl Dropdown) -> Option<T> {
         if self.filling.get() {
             return None;
         }

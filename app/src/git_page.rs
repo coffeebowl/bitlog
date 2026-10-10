@@ -267,7 +267,7 @@ impl GitPage {
             .clone()
             .or_else(|| branches.current.clone().map(Branch::Local));
         imp.branch_choices
-            .fill(&imp.branch_dropdown, items, &shown, |item| match item {
+            .fill(&*imp.branch_dropdown, items, &shown, |item| match item {
                 Some(branch) => branch.name().to_owned(),
                 None => gettext("Detached HEAD"),
             });
@@ -278,7 +278,7 @@ impl GitPage {
     /// Shows the log of the branch chosen in the dropdown.
     fn choose_branch(&self) {
         let imp = self.imp();
-        let Some(item) = imp.branch_choices.chosen(&imp.branch_dropdown) else {
+        let Some(item) = imp.branch_choices.chosen(&*imp.branch_dropdown) else {
             return;
         };
         // Choosing the branch checked out follows HEAD to the next one
