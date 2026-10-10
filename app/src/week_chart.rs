@@ -7,6 +7,7 @@ use gettextrs::gettext;
 use gtk::{gdk, glib, graphene, gsk, pango};
 
 use crate::colors::{pastel, with_alpha};
+use crate::drawing::{self, append_dot, append_layout};
 use crate::format::{format_date, format_duration};
 use crate::widgets::redraw_animation;
 
@@ -20,9 +21,8 @@ const BOTTOM: f32 = 56.0;
 /// Between the parts of a column.
 const GAP: f32 = 2.0;
 const RADIUS: f32 = 6.0;
-/// How long the columns take to glide to another week, and the progress
-/// bar above with them.
-pub(crate) const GLIDE_MS: u32 = 250;
+/// Labels are as small as the caption style class.
+const SMALL: f64 = 0.82;
 
 /// Hours per project, and the height of a column as a share of the scale,
 /// which keeps a gliding column in place when the scale changes.
@@ -85,7 +85,7 @@ mod imp {
                 move |_| chart.queue_draw()
             ));
 
-            let glide = redraw_animation(&*chart, GLIDE_MS);
+            let glide = redraw_animation(&*chart, false);
             self.glide.set(glide).expect("constructed runs once");
             chart.update_property(&[gtk::accessible::Property::Label(&gettext(
                 "Hours per day and project",
@@ -148,8 +148,7 @@ mod imp {
             // The target of the workdays stands out on the scale, a line of
             // its own if it falls between the others.
             let target = common_target(&days);
-            let target_label =
-                target.map(|hours| self.layout(&hours_label(hours), Style::SmallBold));
+            let target_label = target.map(|hours| self.layout(&hours_label(hours), true));
             // Room for the label of the target, which can be longer than the
             // others, as in "7 h 42 min".
             let left = target_label
@@ -187,15 +186,15 @@ mod imp {
                 snapshot.append_color(&with_alpha(&foreground, 0.08), &rect);
                 // Labels too close to the target's give way to it.
                 if target_y.is_none_or(|target_y| (target_y - y).abs() >= 14.0) {
-                    let text = self.layout(&hours_label(hours), Style::Small);
-                    append_layout(snapshot, &text, left - 6.0, y, 1.0, &label_color);
+                    let text = self.layout(&hours_label(hours), false);
+                    append_layout(snapshot, &text, (left - 6.0, y), (1.0, 0.5), &label_color);
                 }
             }
             if let (Some(label), Some(y)) = (target_label, target_y) {
                 let rect = graphene::Rect::new(plot.x(), y, plot.width(), 1.0);
                 snapshot.append_color(&with_alpha(&foreground, 0.16), &rect);
                 let color = with_alpha(&foreground, 0.8);
-                append_layout(snapshot, &label, left - 6.0, y, 1.0, &color);
+                append_layout(snapshot, &label, (left - 6.0, y), (1.0, 0.5), &color);
             }
 
             for (index, day) in days.iter().enumerate() {
@@ -212,85 +211,46 @@ mod imp {
                 self.append_date(snapshot, day, center, plot.y() + plot.height());
                 // Above the column, or on the axis for a day not worked.
                 if let Some(kind) = &day.kind {
-                    let label = self.layout(kind, Style::Small);
+                    let label = self.layout(kind, false);
                     label.set_width(((column - 4.0) * pango::SCALE as f32) as i32);
                     label.set_ellipsize(pango::EllipsizeMode::End);
                     let y = y_day(height) - 4.0 - label.pixel_size().1 as f32 / 2.0;
-                    append_layout(snapshot, &label, center, y, 0.5, &label_color);
+                    append_layout(snapshot, &label, (center, y), (0.5, 0.5), &label_color);
                 }
             }
         }
     }
 
     impl WeekChart {
-        fn layout(&self, text: &str, style: Style) -> pango::Layout {
-            let layout = self.obj().create_pango_layout(Some(text));
-            let attributes = pango::AttrList::new();
-            // Small as the caption style class.
-            if matches!(style, Style::Small | Style::SmallBold) {
-                attributes.insert(pango::AttrFloat::new_scale(0.82));
-            }
-            if matches!(style, Style::Bold | Style::SmallBold) {
-                attributes.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
-            }
-            layout.set_attributes(Some(&attributes));
-            layout
+        fn layout(&self, text: &str, bold: bool) -> pango::Layout {
+            drawing::layout(&*self.obj(), text, SMALL, bold)
         }
 
         /// The weekday and the day of the month of `day` below `top`, the
         /// day of today in a circle in the accent color.
         fn append_date(&self, snapshot: &gtk::Snapshot, day: &ChartDay, x: f32, top: f32) {
             let foreground = self.obj().color();
-            let weekday = self.layout(&format_date(day.date, "%a"), Style::Small);
+            let weekday = self.layout(&format_date(day.date, "%a"), false);
+            let label_color = with_alpha(&foreground, 0.55);
             append_layout(
                 snapshot,
                 &weekday,
-                x,
-                top + 18.0,
-                0.5,
-                &with_alpha(&foreground, 0.55),
+                (x, top + 18.0),
+                (0.5, 0.5),
+                &label_color,
             );
-            let number = self.layout(&day.date.day().to_string(), Style::Bold);
-            let center = graphene::Point::new(x, top + 39.0);
+            let number = drawing::layout(&*self.obj(), &day.date.day().to_string(), 1.0, true);
+            let center = (x, top + 39.0);
             let color = if day.is_today {
-                let circle = gsk::PathBuilder::new();
-                circle.add_circle(&center, 12.0);
                 let accent = adw::StyleManager::default().accent_color_rgba();
-                snapshot.append_fill(&circle.to_path(), gsk::FillRule::Winding, &accent);
+                append_dot(snapshot, center.0, center.1, 12.0, &accent);
                 gdk::RGBA::WHITE
             } else {
                 foreground
             };
-            append_layout(snapshot, &number, center.x(), center.y(), 0.5, &color);
+            append_layout(snapshot, &number, center, (0.5, 0.5), &color);
         }
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Style {
-    Small,
-    Bold,
-    SmallBold,
-}
-
-/// Draws `layout` centred vertically on `y`; `align` 0 puts its left, 1 its
-/// right edge on `x`. The help draws its figures with it too.
-pub(crate) fn append_layout(
-    snapshot: &gtk::Snapshot,
-    layout: &pango::Layout,
-    x: f32,
-    y: f32,
-    align: f32,
-    color: &gdk::RGBA,
-) {
-    let (width, height) = layout.pixel_size();
-    snapshot.save();
-    snapshot.translate(&graphene::Point::new(
-        x - width as f32 * align,
-        y - height as f32 / 2.0,
-    ));
-    snapshot.append_layout(layout, color);
-    snapshot.restore();
 }
 
 impl ChartDay {

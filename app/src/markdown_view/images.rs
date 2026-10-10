@@ -122,7 +122,7 @@ pub(super) fn style(
             lines.push((line_start, 0, Vec::new()));
         }
         let (_, room, hidden) = lines.last_mut().expect("just pushed");
-        let height = picture.fit(styling.view).1.round() as i32;
+        let height = picture.height(styling.view);
         *room += PADDING;
         decorations.images.push(ImageCard {
             range: styling.chars(&image.range),
@@ -145,7 +145,7 @@ pub(super) fn style(
             .find('\n')
             .map_or(styling.text.len(), |end| start + end);
         if end + 1 < styling.text.len() {
-            make_room(styling, end + 1, room);
+            tags::make_room(styling, end + 1, room);
         } else {
             decorations.room_below_text = room;
         }
@@ -164,19 +164,6 @@ pub(super) fn style(
         }
     }
     missing
-}
-
-/// Makes room `height` high above the line that starts at `start`.
-fn make_room(styling: &Styling, start: usize, height: i32) {
-    let name = format!("images {height}");
-    tags::get_or_add(&styling.buffer, &name, || {
-        gtk::TextTag::builder()
-            .name(&name)
-            .pixels_above_lines(height)
-            .build()
-    });
-    let line = styling.offset(start);
-    tags::apply_to_lines(&styling.buffer, &name, line..line);
 }
 
 /// Whether `line` of `text` holds only whitespace besides the sorted
@@ -227,7 +214,7 @@ impl ImageCard {
     /// Whether the image has another height in `view` than it has room
     /// for, as the view changed its width.
     pub(super) fn misfits(&self, view: &gtk::TextView) -> bool {
-        self.picture.fit(view).1.round() as i32 != self.height
+        self.picture.height(view) != self.height
     }
 
     /// Where the image is drawn in `view`, in buffer coordinates, unless

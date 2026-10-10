@@ -350,11 +350,7 @@ impl Highlighting {
 /// Highlights `code` by syntect, if it knows `language`.
 fn syntect_spans(theme: &Theme, language: &str, code: &str) -> Option<Vec<Span>> {
     let syntaxes = &*SYNTAXES;
-    let language = match language.to_lowercase().as_str() {
-        "console" | "shell" | "zsh" => "bash".to_owned(),
-        language => language.to_owned(),
-    };
-    let syntax = syntaxes.find_syntax_by_token(&language)?;
+    let syntax = syntaxes.find_syntax_by_token(&language_name(language))?;
     let mut highlighter = HighlightLines::new(syntax, theme);
     let mut spans = Vec::new();
     let mut offset = 0;
@@ -393,12 +389,20 @@ fn buffer_spans(buffer: &sourceview5::Buffer, code: &str) -> Vec<Span> {
     spans
 }
 
+/// The language a code block names, in lowercase, with the shells as Bash.
+fn language_name(name: &str) -> String {
+    match name.to_lowercase().as_str() {
+        "console" | "shell" | "zsh" => "bash".to_owned(),
+        name => name.to_owned(),
+    }
+}
+
 /// The language `name` stands for in GtkSourceView, by its ID or file
 /// extension, as in `python3` or `py`.
 fn find_language(name: &str) -> Option<sourceview5::Language> {
-    let name = name.to_lowercase();
+    let name = language_name(name);
     let name = match name.as_str() {
-        "bash" | "console" | "shell" | "zsh" => "sh",
+        "bash" => "sh",
         "dockerfile" => "docker",
         name => name,
     };

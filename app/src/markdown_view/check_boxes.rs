@@ -3,13 +3,13 @@
 
 use std::ops::Range;
 
+use gtk::graphene;
 use gtk::prelude::*;
-use gtk::{gdk, graphene, gsk};
 
 use super::decorations::char_location;
 use super::styling::Styling;
-use super::{GRID_ALPHA, tags};
-use crate::colors::with_alpha;
+use super::tags;
+use crate::drawing::append_check_box;
 
 /// The size of check boxes, as a share of the height of the font.
 const SCALE: f32 = 0.8;
@@ -76,26 +76,7 @@ impl CheckBox {
     }
 
     pub(super) fn snapshot(&self, view: &gtk::TextView, snapshot: &gtk::Snapshot) {
-        let bounds = self.bounds(view);
-        let (x, y, size) = (bounds.x(), bounds.y(), bounds.width());
-        let check_box = gsk::RoundedRect::from_rect(bounds, size / 4.0);
-        if self.checked {
-            let accent = adw::StyleManager::default().accent_color_rgba();
-            snapshot.push_rounded_clip(&check_box);
-            snapshot.append_color(&accent, &bounds);
-            snapshot.pop();
-            let check = gsk::PathBuilder::new();
-            check.move_to(x + size * 0.25, y + size * 0.52);
-            check.line_to(x + size * 0.43, y + size * 0.7);
-            check.line_to(x + size * 0.75, y + size * 0.32);
-            let stroke = gsk::Stroke::new(size / 8.0);
-            stroke.set_line_cap(gsk::LineCap::Round);
-            stroke.set_line_join(gsk::LineJoin::Round);
-            snapshot.append_stroke(&check.to_path(), &stroke, &gdk::RGBA::WHITE);
-        } else {
-            let color = with_alpha(&view.color(), GRID_ALPHA * 2.0);
-            snapshot.append_border(&check_box, &[1.5; 4], &[color; 4]);
-        }
+        append_check_box(snapshot, self.bounds(view), self.checked, &view.color());
     }
 }
 

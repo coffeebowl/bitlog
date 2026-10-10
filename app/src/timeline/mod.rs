@@ -11,6 +11,8 @@ use glib::subclass::Signal;
 use gtk::{gdk, glib, graphene, gsk, pango};
 
 use crate::colors::{self, sea_green, with_alpha};
+use crate::drawing::{append_dot, append_layout, fill_rounded};
+use crate::widgets::redraw_animation;
 
 /// Height of one minute. A 15 minute block is just high enough for one line.
 const MINUTE_HEIGHT: f32 = 1.6;
@@ -25,8 +27,6 @@ const KNOT_RADIUS: f32 = 5.0;
 const CURRENT_KNOT_RADIUS: f32 = 7.0;
 /// Half the height of the arrow that marks the time now.
 const NOW_ARROW: f32 = 5.0;
-/// How long blocks and the marked span take to glide to their new place.
-const GLIDE_MS: u32 = 200;
 /// Height of the edges that change start or end of a block when dragged.
 const EDGE: f32 = 6.0;
 /// Words of text a block hides from which it shows one more dot.
@@ -140,22 +140,7 @@ mod imp {
             self.parent_constructed();
             self.obj().setup_input();
 
-            let target = adw::CallbackAnimationTarget::new(glib::clone!(
-                #[weak(rename_to = timeline)]
-                self.obj(),
-                move |_| {
-                    timeline.queue_allocate();
-                    timeline.queue_draw();
-                }
-            ));
-            let glide = adw::TimedAnimation::builder()
-                .widget(&*self.obj())
-                .value_from(0.0)
-                .value_to(1.0)
-                .duration(GLIDE_MS)
-                .easing(adw::Easing::EaseOutCubic)
-                .target(&target)
-                .build();
+            let glide = redraw_animation(&*self.obj(), true);
             self.glide.set(glide).expect("constructed runs once");
 
             // Moves the highlight on while the day is open.
@@ -309,10 +294,9 @@ mod imp {
 
             if let Some((start, end)) = self.shown_pending() {
                 let accent = adw::StyleManager::default().accent_color_rgba();
-                let rounded = gsk::RoundedRect::from_rect(self.minutes_area(start, end), 6.0);
-                snapshot.push_rounded_clip(&rounded);
-                snapshot.append_color(&with_alpha(&accent, 0.3), rounded.bounds());
-                snapshot.pop();
+                let area = self.minutes_area(start, end);
+                fill_rounded(snapshot, area, 6.0, &with_alpha(&accent, 0.3));
+                let rounded = gsk::RoundedRect::from_rect(area, 6.0);
                 snapshot.append_border(&rounded, &[2.0; 4], &[accent; 4]);
             }
 
@@ -487,14 +471,8 @@ mod imp {
                 if is_hour {
                     let text = format!("{:02}:00", minute / 60 % 24);
                     let layout = self.obj().create_pango_layout(Some(&text));
-                    let (text_width, text_height) = layout.pixel_size();
-                    snapshot.save();
-                    snapshot.translate(&graphene::Point::new(
-                        LABEL_WIDTH - text_width as f32,
-                        y - text_height as f32 / 2.0,
-                    ));
-                    snapshot.append_layout(&layout, &with_alpha(foreground, 0.55));
-                    snapshot.restore();
+                    let color = with_alpha(foreground, 0.55);
+                    append_layout(snapshot, &layout, (LABEL_WIDTH, y), (1.0, 0.5), &color);
                 }
             }
         }
@@ -764,13 +742,6 @@ pub(crate) fn append_dots(
         let x = right - DOT_RADIUS - index as f32 * DOT_STEP;
         append_dot(snapshot, x, y, DOT_RADIUS, &with_alpha(color, 0.65));
     }
-}
-
-fn append_dot(snapshot: &gtk::Snapshot, x: f32, y: f32, radius: f32, color: &gdk::RGBA) {
-    let bounds = graphene::Rect::new(x - radius, y - radius, 2.0 * radius, 2.0 * radius);
-    snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bounds, radius));
-    snapshot.append_color(color, &bounds);
-    snapshot.pop();
 }
 
 /// How many dots stand for `words` words of hidden text.

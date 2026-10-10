@@ -46,11 +46,8 @@ impl MarkdownView {
                 };
                 click.set_state(gtk::EventSequenceState::Claimed);
                 let buffer = view.buffer();
-                let mut start = buffer.iter_at_offset(range.start);
-                let mut end = buffer.iter_at_offset(range.end);
                 buffer.begin_user_action();
-                buffer.delete(&mut start, &mut end);
-                buffer.insert(&mut start, &replacement);
+                replace_range(&buffer, range, &replacement);
                 buffer.end_user_action();
             }
         ));
@@ -66,14 +63,13 @@ impl MarkdownView {
             move || {
                 let buffer = view.buffer();
                 let (table, text) = &tidied.table;
-                let mut start = buffer.iter_at_offset(table.start);
-                let mut end = buffer.iter_at_offset(table.end);
+                let start = buffer.iter_at_offset(table.start);
+                let end = buffer.iter_at_offset(table.end);
                 if !view.is_editable() || buffer.text(&start, &end, true) != text.as_str() {
                     return;
                 }
                 buffer.begin_user_action();
-                buffer.delete(&mut start, &mut end);
-                buffer.insert(&mut start, &tidied.tidied);
+                replace_range(&buffer, table.clone(), &tidied.tidied);
                 buffer.end_user_action();
             }
         ));
@@ -207,13 +203,8 @@ impl MarkdownView {
             });
         match link {
             Some(link) => {
-                let (mut start, mut end) = (
-                    buffer.iter_at_offset(selection.start),
-                    buffer.iter_at_offset(selection.end),
-                );
                 buffer.begin_user_action();
-                buffer.delete(&mut start, &mut end);
-                buffer.insert(&mut start, &link);
+                replace_range(&buffer, selection, &link);
                 buffer.end_user_action();
             }
             None => buffer.paste_clipboard(clipboard, None, self.is_editable()),
@@ -240,10 +231,7 @@ impl MarkdownView {
         let chars = |byte: usize| i32::try_from(text[..byte].chars().count()).expect("texts fit");
         buffer.begin_user_action();
         for (range, line) in toggled_tasks(&text, selection).into_iter().rev() {
-            let mut line_start = buffer.iter_at_offset(chars(range.start));
-            let mut line_end = buffer.iter_at_offset(chars(range.end));
-            buffer.delete(&mut line_start, &mut line_end);
-            buffer.insert(&mut line_start, &line);
+            replace_range(&buffer, chars(range.start)..chars(range.end), &line);
         }
         let at_place = |(line, from_end): (i32, i32)| {
             let mut iter = buffer.iter_at_line(line).expect("lines stay");
@@ -381,6 +369,20 @@ impl MarkdownView {
         buffer.select_range(&buffer.iter_at_offset(start), &buffer.iter_at_offset(end));
         buffer.end_user_action();
     }
+}
+
+/// Puts `text` in place of the characters of `range` in `buffer`. Returns
+/// where it ends.
+pub(super) fn replace_range(
+    buffer: &gtk::TextBuffer,
+    range: Range<i32>,
+    text: &str,
+) -> gtk::TextIter {
+    let mut start = buffer.iter_at_offset(range.start);
+    let mut end = buffer.iter_at_offset(range.end);
+    buffer.delete(&mut start, &mut end);
+    buffer.insert(&mut start, text);
+    start
 }
 
 /// What the key `key` puts around a selection, instead of replacing it.

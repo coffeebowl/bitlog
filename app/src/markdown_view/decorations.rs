@@ -7,7 +7,7 @@ use std::ops::Range;
 
 use bitlog_core::{Formatting, MarkdownStyle};
 use gtk::prelude::*;
-use gtk::{gdk, graphene, gsk, pango};
+use gtk::{gdk, graphene};
 
 use super::callouts::CalloutCard;
 use super::check_boxes::CheckBox;
@@ -18,6 +18,7 @@ use super::styling::{Styling, holds};
 use super::tables::{DelimiterDashes, Fit, Grid, TidiedTable};
 use super::{GRID_ALPHA, MARKUP_ALPHA, lists, tags};
 use crate::colors::with_alpha;
+use crate::drawing::{self, append_layout, fill_rounded};
 
 pub(super) const QUOTE_BAR_WIDTH: f32 = 3.0;
 /// The bullets of lists, by depth, over again for deeper ones.
@@ -155,11 +156,9 @@ impl Decorations {
         }
         for range in &self.quotes {
             if let Some((top, bottom)) = line_span(view, range, &visible) {
-                let bounds = graphene::Rect::new(left, top, QUOTE_BAR_WIDTH, bottom - top);
-                let bar = gsk::RoundedRect::from_rect(bounds, QUOTE_BAR_WIDTH / 2.0);
-                snapshot.push_rounded_clip(&bar);
-                snapshot.append_color(&with_alpha(&color, MARKUP_ALPHA), &bounds);
-                snapshot.pop();
+                let bar = graphene::Rect::new(left, top, QUOTE_BAR_WIDTH, bottom - top);
+                let bar_color = with_alpha(&color, MARKUP_ALPHA);
+                fill_rounded(snapshot, bar, QUOTE_BAR_WIDTH / 2.0, &bar_color);
             }
         }
         for callout in &self.callouts {
@@ -198,18 +197,12 @@ impl Decorations {
                 continue;
             }
             let bullet = BULLETS[usize::from(depth.max(1) - 1) % BULLETS.len()];
-            let layout = view.create_pango_layout(Some(bullet));
-            let attributes = pango::AttrList::new();
-            attributes.insert(pango::AttrFloat::new_scale(BULLET_SCALE));
-            layout.set_attributes(Some(&attributes));
-            let (width, height) = layout.pixel_size();
-            snapshot.save();
-            snapshot.translate(&graphene::Point::new(
-                marker.x() as f32 + (markers - width as f32) / 2.0,
-                marker.y() as f32 + (marker.height() - height) as f32 / 2.0,
-            ));
-            snapshot.append_layout(&layout, &color);
-            snapshot.restore();
+            let layout = drawing::layout(view, bullet, BULLET_SCALE, false);
+            let center = (
+                marker.x() as f32 + markers / 2.0,
+                marker.y() as f32 + marker.height() as f32 / 2.0,
+            );
+            append_layout(snapshot, &layout, center, (0.5, 0.5), &color);
         }
     }
 }

@@ -26,20 +26,28 @@ pub fn set_class(widget: &impl IsA<gtk::Widget>, class: &str, on: bool) {
     }
 }
 
-/// An animation from 0 to 1 over `duration` milliseconds that redraws
-/// `widget` at every step, eased out as the others in the app.
-pub fn redraw_animation(widget: &impl IsA<gtk::Widget>, duration: u32) -> adw::TimedAnimation {
+/// How long what moves in the app glides or fades, in milliseconds.
+const ANIMATION_MS: u32 = 250;
+
+/// An animation from 0 to 1 that redraws `widget` at every step, and lays
+/// it out again if `relayout`.
+pub fn redraw_animation(widget: &impl IsA<gtk::Widget>, relayout: bool) -> adw::TimedAnimation {
     let widget = widget.as_ref();
     let target = adw::CallbackAnimationTarget::new(glib::clone!(
         #[weak]
         widget,
-        move |_| widget.queue_draw()
+        move |_| {
+            if relayout {
+                widget.queue_allocate();
+            }
+            widget.queue_draw();
+        }
     ));
     adw::TimedAnimation::builder()
         .widget(widget)
         .value_from(0.0)
         .value_to(1.0)
-        .duration(duration)
+        .duration(ANIMATION_MS)
         .easing(adw::Easing::EaseOutCubic)
         .target(&target)
         .build()

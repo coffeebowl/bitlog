@@ -62,7 +62,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         append_page(widget, snapshot, rect, page, &color);
         let name = layout(widget, name, Some(page_width));
         let y = top + page_height + NAME_HEIGHT / 2.0;
-        append_layout(snapshot, &name, x, y, 0.0, &foreground);
+        append_layout(snapshot, &name, (x, y), (0.0, 0.5), &foreground);
     }
 }
 
@@ -120,9 +120,8 @@ fn append_page(
             append_layout(
                 snapshot,
                 &label,
-                center_x,
-                center_y,
-                0.5,
+                (center_x, center_y),
+                (0.5, 0.5),
                 &gtk::gdk::RGBA::WHITE,
             );
         }

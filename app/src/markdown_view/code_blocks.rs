@@ -5,12 +5,13 @@ use std::ops::Range;
 
 use bitlog_core::Formatting;
 use gtk::prelude::*;
-use gtk::{gdk, graphene, gsk, pango};
+use gtk::{gdk, graphene};
 
 use super::decorations::{Decorations, line_span, text_edges};
 use super::styling::Styling;
 use super::{CODE_ALPHA, CORNER_RADIUS, MARKUP_ALPHA, tags};
 use crate::colors::with_alpha;
+use crate::drawing::{self, append_layout, fill_rounded};
 
 /// The language of a code block, in its top right corner.
 const LABEL_SCALE: f64 = 0.75;
@@ -78,22 +79,17 @@ impl CodeCard {
         let (left, right) = text_edges(view, visible);
         let color = view.color();
         let bounds = graphene::Rect::new(left, top, right - left, bottom - top);
-        snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(bounds, CORNER_RADIUS));
-        snapshot.append_color(&with_alpha(&color, CODE_ALPHA), &bounds);
-        snapshot.pop();
+        fill_rounded(
+            snapshot,
+            bounds,
+            CORNER_RADIUS,
+            &with_alpha(&color, CODE_ALPHA),
+        );
         if let Some(language) = &self.language {
-            let layout = view.create_pango_layout(Some(language));
-            let attributes = pango::AttrList::new();
-            attributes.insert(pango::AttrFloat::new_scale(LABEL_SCALE));
-            layout.set_attributes(Some(&attributes));
-            let width = layout.pixel_size().0 as f32;
-            snapshot.save();
-            snapshot.translate(&graphene::Point::new(
-                right - LABEL_PADDING - width,
-                top + LABEL_PADDING / 2.0,
-            ));
-            snapshot.append_layout(&layout, &with_alpha(&color, MARKUP_ALPHA));
-            snapshot.restore();
+            let layout = drawing::layout(view, language, LABEL_SCALE, false);
+            let corner = (right - LABEL_PADDING, top + LABEL_PADDING / 2.0);
+            let label_color = with_alpha(&color, MARKUP_ALPHA);
+            append_layout(snapshot, &layout, corner, (1.0, 0.0), &label_color);
         }
     }
 }

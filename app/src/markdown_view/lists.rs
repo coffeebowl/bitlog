@@ -14,6 +14,7 @@ use gtk::{glib, pango};
 
 use super::check_boxes::CheckBox;
 use super::decorations::Decorations;
+use super::editing::replace_range;
 use super::styling::Styling;
 use super::{char_offsets, tags};
 
@@ -174,10 +175,11 @@ fn replace(buffer: &gtk::TextBuffer, text: &str, edits: &[(Range<usize>, String)
     let offsets = char_offsets(text);
     // From the back, so that earlier offsets stay valid.
     for (range, replacement) in edits.iter().rev() {
-        let mut start = buffer.iter_at_offset(offsets[range.start]);
-        let mut end = buffer.iter_at_offset(offsets[range.end]);
-        buffer.delete(&mut start, &mut end);
-        buffer.insert(&mut start, replacement);
+        replace_range(
+            buffer,
+            offsets[range.start]..offsets[range.end],
+            replacement,
+        );
     }
 }
 
@@ -211,9 +213,7 @@ pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
             renumber(&buffer, mode);
         }
         Continuation::End(marker) => {
-            let mut start = buffer.iter_at_offset(offsets[marker.start]);
-            let mut end = buffer.iter_at_offset(offsets[marker.end]);
-            buffer.delete(&mut start, &mut end);
+            replace_range(&buffer, offsets[marker.start]..offsets[marker.end], "");
         }
         Continuation::Outdent => {
             nest(view, mode, false);
@@ -223,11 +223,10 @@ pub(super) fn continue_item(view: &gtk::TextView, mode: MarkdownMode) -> bool {
             before,
             after,
         } => {
-            let mut start = buffer.iter_at_offset(offsets[range.start]);
-            let mut end = buffer.iter_at_offset(offsets[range.end]);
-            buffer.delete(&mut start, &mut end);
-            let cursor = start.offset() + before.chars().count() as i32;
-            buffer.insert(&mut start, &format!("{before}{after}"));
+            let start = offsets[range.start];
+            let replacement = format!("{before}{after}");
+            replace_range(&buffer, start..offsets[range.end], &replacement);
+            let cursor = start + before.chars().count() as i32;
             buffer.place_cursor(&buffer.iter_at_offset(cursor));
         }
     }

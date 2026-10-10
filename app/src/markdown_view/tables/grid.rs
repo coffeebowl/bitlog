@@ -12,6 +12,7 @@ use super::super::styling::Styling;
 use super::super::{CODE_ALPHA, CORNER_RADIUS, GRID_ALPHA, MARKUP_ALPHA, tags};
 use super::{Cell, ELLIPSIS, ROW_SPACING};
 use crate::colors::with_alpha;
+use crate::drawing::append_layout;
 
 /// Hides the delimiter row of tables drawn as grids.
 const DELIMITER_ROW_TAG: &str = "table-delimiter-row";
@@ -203,14 +204,11 @@ impl Grid {
         for &(at, shift) in &self.ellipses {
             let location = location(at);
             let layout = view.create_pango_layout(Some(ELLIPSIS));
-            let height = layout.pixel_size().1;
-            snapshot.save();
-            snapshot.translate(&graphene::Point::new(
+            let start = (
                 location.x() as f32 + shift,
-                location.y() as f32 + (location.height() - height) as f32 / 2.0,
-            ));
-            snapshot.append_layout(&layout, &color);
-            snapshot.restore();
+                location.y() as f32 + location.height() as f32 / 2.0,
+            );
+            append_layout(snapshot, &layout, start, (0.0, 0.5), &color);
         }
     }
 }
@@ -297,10 +295,7 @@ impl DelimiterDashes {
             } else {
                 start.y() as f32 + (start.height() - layout_height) as f32 / 2.0
             };
-            snapshot.save();
-            snapshot.translate(&graphene::Point::new(x, y));
-            snapshot.append_layout(&layout, &color);
-            snapshot.restore();
+            append_layout(snapshot, &layout, (x, y), (0.0, 0.0), &color);
         }
     }
 }

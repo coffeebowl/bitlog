@@ -68,9 +68,8 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         append_layout(
             snapshot,
             &label,
-            LABEL_WIDTH,
-            y,
-            1.0,
+            (LABEL_WIDTH, y),
+            (1.0, 0.5),
             &with_alpha(&foreground, 0.55),
         );
     }
@@ -113,9 +112,8 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         append_layout(
             snapshot,
             &label,
-            area.x() + LABEL_INSET,
-            y,
-            0.0,
+            (area.x() + LABEL_INSET, y),
+            (0.0, 0.5),
             &text_color,
         );
     }

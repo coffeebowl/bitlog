@@ -11,6 +11,7 @@ use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 use sourceview5::{Completion, CompletionCell, CompletionColumn, CompletionContext};
 
+use super::editing::replace_range;
 use super::{MarkdownView, char_offsets, lists};
 
 mod imp {
@@ -211,10 +212,7 @@ impl MarkdownView {
         let rest = &text[range.end..];
         let closing = rest.chars().take(2).take_while(|&c| c == ']').count();
         buffer.begin_user_action();
-        let mut start = buffer.iter_at_offset(offsets[range.start]);
-        let mut end = buffer.iter_at_offset(offsets[range.end]);
-        buffer.delete(&mut start, &mut end);
-        buffer.insert(&mut start, target);
+        let mut start = replace_range(&buffer, offsets[range.start]..offsets[range.end], target);
         if closing < 2 && !rest.starts_with(['|', '#']) {
             buffer.insert(&mut start, &"]".repeat(2 - closing));
         }

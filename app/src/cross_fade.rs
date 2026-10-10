@@ -6,8 +6,6 @@ use gtk::{gdk, glib};
 
 use crate::widgets::redraw_animation;
 
-const FADE_MS: u32 = 200;
-
 mod imp {
     use super::*;
 
@@ -33,7 +31,7 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let cross_fade = self.obj();
-            let fade = redraw_animation(&*cross_fade, FADE_MS);
+            let fade = redraw_animation(&*cross_fade, false);
             fade.connect_done(glib::clone!(
                 #[weak]
                 cross_fade,

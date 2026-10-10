@@ -102,7 +102,7 @@ pub(super) fn style(
         let State::Done(diagram) = pass.state(request) else {
             continue;
         };
-        let height = diagram.fit(styling.view).1.round() as i32;
+        let height = diagram.height(styling.view);
         let end = block
             .fences
             .last()
@@ -122,22 +122,13 @@ pub(super) fn style(
 /// Hides the code block from the `opening` fence to `end`, and makes room
 /// for a diagram `height` high above it.
 fn conceal(styling: &Styling, opening: &Range<usize>, end: usize, height: i32) {
-    let buffer = &styling.buffer;
     let mut start = opening.start;
     for line in styling.text[opening.start..end].split_inclusive('\n') {
         let line_end = start + line.len();
         tags::hide_line(styling, start..line_end);
         start = line_end;
     }
-    let name = format!("diagram {height}");
-    tags::get_or_add(buffer, &name, || {
-        gtk::TextTag::builder()
-            .name(&name)
-            .pixels_above_lines(PADDING + height + PADDING)
-            .build()
-    });
-    let line = styling.offset(opening.start);
-    tags::apply_to_lines(buffer, &name, line..line);
+    tags::make_room(styling, opening.start, PADDING + height + PADDING);
 }
 
 impl Request {
@@ -201,7 +192,7 @@ impl DiagramCard {
     /// Whether the diagram has another height in `view` than it has room
     /// for, as the view changed its width.
     pub(super) fn misfits(&self, view: &gtk::TextView) -> bool {
-        self.diagram.fit(view).1.round() as i32 != self.height
+        self.diagram.height(view) != self.height
     }
 
     /// Draws the diagram in the room above its line, in buffer coordinates.

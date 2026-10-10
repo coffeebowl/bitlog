@@ -231,6 +231,20 @@ pub(super) fn apply_to_lines(buffer: &gtk::TextBuffer, name: &str, range: Range<
     buffer.apply_tag_by_name(name, &start, &end);
 }
 
+/// Makes room `height` high above the line of `styling` that starts at
+/// `start`, for what is drawn there.
+pub(super) fn make_room(styling: &Styling, start: usize, height: i32) {
+    let name = format!("room {height}");
+    get_or_add(&styling.buffer, &name, || {
+        gtk::TextTag::builder()
+            .name(&name)
+            .pixels_above_lines(height)
+            .build()
+    });
+    let line = styling.offset(start);
+    apply_to_lines(&styling.buffer, &name, line..line);
+}
+
 /// Hides the text of the `line` of `styling`, with its line break, as
 /// something else is drawn for it. The line break stays, but shrunk to
 /// about a pixel: after lines hidden with their line breaks, GTK takes the

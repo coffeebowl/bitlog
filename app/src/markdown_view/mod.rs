@@ -42,6 +42,7 @@ use self::images::Location;
 use self::links::Target;
 use self::styling::Styling;
 use crate::colors::with_alpha;
+use crate::drawing::append_layout;
 use crate::help_dialog::{self, HelpDialog};
 
 /// How much Markdown syntax is dimmed, as the alpha of the text colour.
@@ -53,12 +54,13 @@ const CODE_ALPHA: f32 = 0.07;
 const GRID_ALPHA: f32 = 0.2;
 /// Of code blocks and tables.
 const CORNER_RADIUS: f32 = 6.0;
-/// The actions that change the text, only enabled while it is editable.
-const EDIT_ACTIONS: [&str; 4] = [
-    "markdown.bold",
-    "markdown.italic",
-    "markdown.code",
-    "markdown.toggle-task",
+/// The actions that change the text, only enabled while it is editable,
+/// with the key they take with Ctrl. Code as on GitHub, tasks as in Obsidian.
+const EDIT_ACTIONS: [(&str, gdk::Key); 4] = [
+    ("markdown.bold", gdk::Key::b),
+    ("markdown.italic", gdk::Key::i),
+    ("markdown.code", gdk::Key::e),
+    ("markdown.toggle-task", gdk::Key::l),
 ];
 
 /// Tells the wiki links of a text apart, see `MarkdownView::set_wiki_links`.
@@ -120,23 +122,15 @@ mod imp {
         type ParentType = sourceview5::View;
 
         fn class_init(klass: &mut Self::Class) {
-            // Code as on GitHub; GTK uses no Ctrl+E in text views.
-            let shortcuts = [
-                (EDIT_ACTIONS[0], "**", gdk::Key::b),
-                (EDIT_ACTIONS[1], "*", gdk::Key::i),
-                (EDIT_ACTIONS[2], "`", gdk::Key::e),
-            ];
-            for (action, marker, key) in shortcuts {
+            let [bold, italic, code, task] = EDIT_ACTIONS.map(|(action, _)| action);
+            for (action, marker) in [(bold, "**"), (italic, "*"), (code, "`")] {
                 klass.install_action(action, None, move |view, _, _| view.toggle_marker(marker));
+            }
+            klass.install_action(task, None, |view, _, _| view.toggle_tasks());
+            // GTK uses no Ctrl+E in text views.
+            for (action, key) in EDIT_ACTIONS {
                 klass.add_binding_action(key, gdk::ModifierType::CONTROL_MASK, action);
             }
-            // As in Obsidian.
-            klass.install_action(EDIT_ACTIONS[3], None, |view, _, _| view.toggle_tasks());
-            klass.add_binding_action(
-                gdk::Key::l,
-                gdk::ModifierType::CONTROL_MASK,
-                EDIT_ACTIONS[3],
-            );
             klass.install_action("markdown.help", None, |view, _, _| {
                 HelpDialog::new(Some(help_dialog::MARKDOWN)).present(Some(view));
             });
@@ -177,12 +171,12 @@ mod imp {
             view.set_editable(false);
             view.set_cursor_visible(false);
             self.image_width.set(images::READ_WIDTH);
-            for action in EDIT_ACTIONS {
+            for (action, _) in EDIT_ACTIONS {
                 view.action_set_enabled(action, false);
             }
             view.connect_editable_notify(|view| {
                 view.set_cursor_visible(view.is_editable());
-                for action in EDIT_ACTIONS {
+                for (action, _) in EDIT_ACTIONS {
                     view.action_set_enabled(action, view.is_editable());
                 }
                 view.queue_reveal();
@@ -281,11 +275,8 @@ mod imp {
             let start = view.iter_location(&view.buffer().start_iter());
             let (x, y) =
                 view.buffer_to_window_coords(gtk::TextWindowType::Widget, start.x(), start.y());
-            let color = view.color();
-            snapshot.save();
-            snapshot.translate(&gtk::graphene::Point::new(x as f32, y as f32));
-            snapshot.append_layout(&layout, &with_alpha(&color, MARKUP_ALPHA));
-            snapshot.restore();
+            let color = with_alpha(&view.color(), MARKUP_ALPHA);
+            append_layout(snapshot, &layout, (x as f32, y as f32), (0.0, 0.0), &color);
         }
     }
 

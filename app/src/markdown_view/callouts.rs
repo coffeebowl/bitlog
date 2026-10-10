@@ -6,12 +6,13 @@ use std::ops::Range;
 use bitlog_core::{CalloutKind, Formatting};
 use gettextrs::gettext;
 use gtk::prelude::*;
-use gtk::{gdk, graphene, gsk, pango};
+use gtk::{gdk, graphene, gsk};
 
 use super::decorations::{Decorations, QUOTE_BAR_WIDTH, char_location, line_span, text_edges};
 use super::styling::Styling;
 use super::{CORNER_RADIUS, tags};
 use crate::colors::with_alpha;
+use crate::drawing::{self, append_layout};
 
 /// The background of callouts, as the alpha of their colour.
 const BACKGROUND_ALPHA: f32 = 0.1;
@@ -67,18 +68,12 @@ impl CalloutCard {
         snapshot.pop();
         if let Some(at) = self.title {
             let location = char_location(view, at);
-            let layout = view.create_pango_layout(Some(&title));
-            let attributes = pango::AttrList::new();
-            attributes.insert(pango::AttrInt::new_weight(pango::Weight::Bold));
-            layout.set_attributes(Some(&attributes));
-            let height = layout.pixel_size().1;
-            snapshot.save();
-            snapshot.translate(&graphene::Point::new(
+            let layout = drawing::layout(view, &title, 1.0, true);
+            let start = (
                 location.x() as f32,
-                location.y() as f32 + (location.height() - height) as f32 / 2.0,
-            ));
-            snapshot.append_layout(&layout, &color);
-            snapshot.restore();
+                location.y() as f32 + location.height() as f32 / 2.0,
+            );
+            append_layout(snapshot, &layout, start, (0.0, 0.5), &color);
         }
     }
 }

@@ -2,10 +2,10 @@
 //! its shortcuts, so they can be found and learned, and the help on Markdown.
 
 use gettextrs::gettext;
-use gtk::gio;
 use gtk::prelude::*;
+use gtk::{gdk, gio};
 
-use super::MarkdownView;
+use super::{EDIT_ACTIONS, MarkdownView};
 
 impl MarkdownView {
     /// Adds the entries while the text is editable, as they change it.
@@ -19,17 +19,15 @@ impl MarkdownView {
 
 fn menu() -> gio::Menu {
     let formatting = gio::Menu::new();
-    for (label, action, accel) in [
-        (gettext("_Bold"), "markdown.bold", "<Control>b"),
-        (gettext("_Italic"), "markdown.italic", "<Control>i"),
-        (gettext("C_ode"), "markdown.code", "<Control>e"),
-        (
-            gettext("Toggle Tas_k"),
-            "markdown.toggle-task",
-            "<Control>l",
-        ),
-    ] {
-        let item = gio::MenuItem::new(Some(&label), Some(action));
+    let labels = [
+        gettext("_Bold"),
+        gettext("_Italic"),
+        gettext("C_ode"),
+        gettext("Toggle Tas_k"),
+    ];
+    for (label, (action, key)) in labels.iter().zip(EDIT_ACTIONS) {
+        let item = gio::MenuItem::new(Some(label), Some(action));
+        let accel = gtk::accelerator_name(key, gdk::ModifierType::CONTROL_MASK);
         item.set_attribute_value("accel", Some(&accel.to_variant()));
         formatting.append_item(&item);
     }

@@ -74,6 +74,11 @@ impl Drawing {
         (self.width * scale, self.height * scale)
     }
 
+    /// How high it is drawn in `view`, in whole pixels.
+    pub(super) fn height(&self, view: &gtk::TextView) -> i32 {
+        self.fit(view).1.round() as i32
+    }
+
     /// Where it is drawn in `view` from `top` down, centred in the text, in
     /// buffer coordinates, unless it is out of the `visible` part.
     pub(super) fn bounds(

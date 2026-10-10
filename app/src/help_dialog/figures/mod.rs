@@ -14,10 +14,9 @@ use std::cell::Cell;
 use gettextrs::gettext;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
-use gtk::{gdk, glib, graphene, gsk, pango};
+use gtk::{gdk, glib, graphene, pango};
 
-use crate::colors::with_alpha;
-use crate::week_chart::append_layout;
+use crate::drawing::{self, append_layout, fill_rounded};
 
 /// What a figure shows.
 #[derive(Debug, Default, Clone, Copy)]
@@ -140,14 +139,7 @@ fn markup_layout(widget: &gtk::Widget, markup: &str, width: Option<f32>) -> pang
     layout
 }
 
-fn fill_rounded(snapshot: &gtk::Snapshot, rect: graphene::Rect, radius: f32, color: &gdk::RGBA) {
-    snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(rect, radius));
-    snapshot.append_color(color, &rect);
-    snapshot.pop();
-}
-
-/// A check box as GTK draws it: an outline, or filled in the accent colour
-/// with a tick.
+/// A check box as large as GTK draws one, centred on `y`.
 fn append_check_box(
     snapshot: &gtk::Snapshot,
     x: f32,
@@ -155,19 +147,6 @@ fn append_check_box(
     checked: bool,
     foreground: &gdk::RGBA,
 ) {
-    const SIZE: f32 = 16.0;
-    let rect = graphene::Rect::new(x, y - SIZE / 2.0, SIZE, SIZE);
-    let rounded = gsk::RoundedRect::from_rect(rect, 4.0);
-    if checked {
-        let accent = adw::StyleManager::default().accent_color_rgba();
-        fill_rounded(snapshot, rect, 4.0, &accent);
-        let tick = gsk::PathBuilder::new();
-        tick.move_to(x + 4.0, y);
-        tick.line_to(x + 7.0, y + 3.0);
-        tick.line_to(x + 12.0, y - 3.5);
-        snapshot.append_stroke(&tick.to_path(), &gsk::Stroke::new(2.0), &gdk::RGBA::WHITE);
-    } else {
-        let color = with_alpha(foreground, 0.4);
-        snapshot.append_border(&rounded, &[2.0; 4], &[color; 4]);
-    }
+    let bounds = graphene::Rect::new(x, y - 8.0, 16.0, 16.0);
+    drawing::append_check_box(snapshot, bounds, checked, foreground);
 }

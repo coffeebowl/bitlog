@@ -5,7 +5,7 @@ use gettextrs::gettext;
 use gtk::prelude::*;
 use gtk::{glib, graphene, pango};
 
-use super::{append_check_box, append_layout, markup_layout};
+use super::{append_check_box, append_layout, fill_rounded, markup_layout};
 use crate::colors::with_alpha;
 
 const LINE_HEIGHT: f32 = 28.0;
@@ -29,9 +29,8 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
     append_layout(
         snapshot,
         &heading,
-        0.0,
-        HEADING_HEIGHT / 2.0,
-        0.0,
+        (0.0, HEADING_HEIGHT / 2.0),
+        (0.0, 0.5),
         &foreground,
     );
 
@@ -53,7 +52,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
     );
     let line = markup_layout(widget, &markup, Some(width));
     let y = HEADING_HEIGHT + LINE_HEIGHT / 2.0;
-    append_layout(snapshot, &line, 0.0, y, 0.0, &foreground);
+    append_layout(snapshot, &line, (0.0, y), (0.0, 0.5), &foreground);
     let cursor = (before.len() + 2 + bold.len()) as i32;
     let (strong, _) = line.cursor_pos(cursor);
     let (_, line_height) = line.pixel_size();
@@ -72,7 +71,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         let (line, color) = match item {
             Item::Bullet => {
                 let dot = graphene::Rect::new(6.0, y - 3.0, 6.0, 6.0);
-                super::fill_rounded(snapshot, dot, 3.0, &with_alpha(&foreground, 0.7));
+                fill_rounded(snapshot, dot, 3.0, &with_alpha(&foreground, 0.7));
                 (markup_layout(widget, &escape(text), room), foreground)
             }
             Item::Open => {
@@ -88,7 +87,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
                 )
             }
         };
-        append_layout(snapshot, &line, ITEM_X, y, 0.0, &color);
+        append_layout(snapshot, &line, (ITEM_X, y), (0.0, 0.5), &color);
     }
 }
 

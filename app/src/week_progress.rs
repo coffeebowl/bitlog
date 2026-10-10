@@ -5,7 +5,7 @@ use adw::subclass::prelude::*;
 use gtk::{glib, graphene, gsk};
 
 use crate::colors::{parse, with_alpha};
-use crate::week_chart::GLIDE_MS;
+use crate::drawing::fill_rounded;
 use crate::widgets::redraw_animation;
 
 /// The bar, and the mark across it.
@@ -56,7 +56,7 @@ mod imp {
     impl ObjectImpl for WeekProgress {
         fn constructed(&self) {
             self.parent_constructed();
-            let glide = redraw_animation(&*self.obj(), GLIDE_MS);
+            let glide = redraw_animation(&*self.obj(), false);
             self.glide.set(glide).expect("constructed runs once");
         }
     }
@@ -106,10 +106,7 @@ mod imp {
             // At the end of the bar, the mark would only say the week is over.
             if self.has_mark.get() && 0.0 < plan && plan < target {
                 let mark = graphene::Rect::new(x_of(plan) - 1.0, 0.0, 2.0, HEIGHT);
-                let rounded = gsk::RoundedRect::from_rect(mark, 1.0);
-                snapshot.push_rounded_clip(&rounded);
-                snapshot.append_color(&widget.color(), &mark);
-                snapshot.pop();
+                fill_rounded(snapshot, mark, 1.0, &widget.color());
             }
         }
     }

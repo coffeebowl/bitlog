@@ -9,6 +9,7 @@ mod conflict_dialog;
 mod cross_fade;
 mod day_summary;
 mod day_view;
+mod drawing;
 mod format;
 mod git_page;
 mod heatmap;

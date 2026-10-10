@@ -61,9 +61,8 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         append_layout(
             snapshot,
             &name,
-            center,
-            PLOT_HEIGHT + BOTTOM / 2.0,
-            0.5,
+            (center, PLOT_HEIGHT + BOTTOM / 2.0),
+            (0.5, 0.5),
             &foreground,
         );
     }

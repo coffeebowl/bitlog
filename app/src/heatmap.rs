@@ -6,9 +6,10 @@ use adw::subclass::prelude::*;
 use bitlog_core::week_start;
 use chrono::{Datelike, Days, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
-use gtk::{gdk, glib, graphene, gsk};
+use gtk::{gdk, glib, graphene};
 
 use crate::colors::with_alpha;
+use crate::drawing::{self, append_layout, fill_rounded};
 use crate::format::{format_date, format_duration, format_full_date};
 
 /// Weeks a year takes at most, shown before anything else is.
@@ -20,6 +21,8 @@ const CELL: f32 = 8.0;
 const MIN_CELL: f32 = 4.0;
 /// Room for the labels.
 const TOP: f32 = 16.0;
+/// The size of the numbers of weeks, as a share of the font size.
+const WEEK_SCALE: f64 = 0.9;
 /// The space between a week's line and its number.
 const LABEL_PAD: f32 = 3.0;
 
@@ -166,23 +169,17 @@ mod imp {
             for date in activity.dates() {
                 let (x, y) = widget.origin(activity, date, width);
                 if !widget.single_row() && activity.starts_month(date) {
-                    let layout = widget.small_layout(&format_date(date, &gettext("%b")), 80);
-                    snapshot.save();
-                    snapshot.translate(&graphene::Point::new(x, 0.0));
-                    snapshot.append_layout(&layout, &with_alpha(&widget.color(), 0.6));
-                    snapshot.restore();
+                    let month = format_date(date, &gettext("%b"));
+                    let layout = widget.create_pango_layout(Some(&month));
+                    let color = with_alpha(&widget.color(), 0.6);
+                    append_layout(snapshot, &layout, (x, 0.0), (0.0, 0.0), &color);
                 }
                 let color = match activity.days.get(&date) {
                     Some((time, color)) if level(*time) > 0.0 => with_alpha(color, level(*time)),
                     _ => empty,
                 };
-                let cell = gsk::RoundedRect::from_rect(
-                    graphene::Rect::new(x, y, cell_size, cell_size),
-                    gap,
-                );
-                snapshot.push_rounded_clip(&cell);
-                snapshot.append_color(&color, cell.bounds());
-                snapshot.pop();
+                let cell = graphene::Rect::new(x, y, cell_size, cell_size);
+                fill_rounded(snapshot, cell, gap, &color);
             }
             if widget.single_row() {
                 widget.snapshot_weeks(snapshot, activity);
@@ -285,12 +282,9 @@ impl Heatmap {
                 .get(index + 1)
                 .and_then(|next| line(*next))
                 .map_or(width, |x| x - LABEL_PAD);
-            let layout = self.small_layout(&week_label(activity, *first), 70);
+            let layout = drawing::layout(self, &week_label(activity, *first), WEEK_SCALE, false);
             if layout.pixel_size().0 as f32 <= right - left {
-                snapshot.save();
-                snapshot.translate(&graphene::Point::new(left, 0.0));
-                snapshot.append_layout(&layout, &label_color);
-                snapshot.restore();
+                append_layout(snapshot, &layout, (left, 0.0), (0.0, 0.0), &label_color);
             }
         }
     }
@@ -300,16 +294,11 @@ impl Heatmap {
     fn label_room(&self) -> f32 {
         // Translators: A calendar week above its days, as in "W39".
         let widest = gettext("W{week}").replace("{week}", "53");
-        self.small_layout(&widest, 70).pixel_size().0 as f32 + 1.0 + LABEL_PAD
-    }
-
-    /// `text` in the widget's font at `percent` of its size.
-    fn small_layout(&self, text: &str, percent: i32) -> gtk::pango::Layout {
-        let layout = self.create_pango_layout(Some(text));
-        let mut font = layout.context().font_description().unwrap_or_default();
-        font.set_size(font.size() * percent / 100);
-        layout.set_font_description(Some(&font));
-        layout
+        drawing::layout(self, &widest, WEEK_SCALE, false)
+            .pixel_size()
+            .0 as f32
+            + 1.0
+            + LABEL_PAD
     }
 
     /// The day under `x`, `y` with the time spent on it.

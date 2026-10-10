@@ -6,7 +6,7 @@ use gettextrs::gettext;
 use gtk::prelude::*;
 use gtk::{gdk, glib, graphene, gsk};
 
-use super::{append_check_box, append_layout, layout, markup_layout};
+use super::{append_check_box, append_layout, fill_rounded, layout, markup_layout};
 use crate::colors::{parse, with_alpha};
 use crate::format::format_short_date;
 
@@ -29,10 +29,8 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
     let width = widget.width() as f32;
     let foreground = widget.color();
     let card = graphene::Rect::new(0.0, 0.0, width, HEIGHT);
+    fill_rounded(snapshot, card, 12.0, &with_alpha(&foreground, 0.03));
     let rounded = gsk::RoundedRect::from_rect(card, 12.0);
-    snapshot.push_rounded_clip(&rounded);
-    snapshot.append_color(&with_alpha(&foreground, 0.03), &card);
-    snapshot.pop();
     let edge = with_alpha(&foreground, 0.12);
     snapshot.append_border(&rounded, &[1.0; 4], &[edge; 4]);
 
@@ -68,7 +66,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         } else {
             (layout(widget, title, Some(room)), foreground)
         };
-        append_layout(snapshot, &title, TITLE_X, middle, 0.0, &color);
+        append_layout(snapshot, &title, (TITLE_X, middle), (0.0, 0.5), &color);
 
         let (date, color) = match due {
             Due::None => continue,
@@ -76,7 +74,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
             Due::Soon => (today + Days::new(3), with_alpha(&foreground, 0.7)),
         };
         let date = layout(widget, &format_short_date(date), None);
-        append_layout(snapshot, &date, width - INSET, middle, 1.0, &color);
+        append_layout(snapshot, &date, (width - INSET, middle), (1.0, 0.5), &color);
     }
 }
 
