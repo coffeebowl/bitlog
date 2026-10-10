@@ -101,7 +101,7 @@ impl Window {
         imp.calendar_view.show(today);
         imp.day_view.show_date(today);
         imp.split_view.set_content(Some(&imp.day_view));
-        imp.sidebar_list.select_row(Some(&*imp.today_row));
+        self.select_page("win.show-today");
         imp.stack.set_visible_child_name("vault");
         for action in VAULT_ACTIONS {
             self.action_set_enabled(action, true);
@@ -170,7 +170,7 @@ impl Window {
     pub(super) fn set_vault(&self, vault: &Rc<Vault>) {
         let imp = self.imp();
         imp.vault.replace(Some(vault.clone()));
-        imp.sidebar.set_title(&vault.config().name);
+        imp.sidebar_page.set_title(&vault.config().name);
         imp.calendar_view.set_vault(vault.clone());
         imp.day_view.set_vault(vault.clone());
         imp.tasks_page.set_vault(vault.clone());

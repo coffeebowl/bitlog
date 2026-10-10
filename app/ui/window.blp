@@ -11,6 +11,7 @@ template $BitLogWindow: Adw.ApplicationWindow {
 
     setters {
       split_view.collapsed: true;
+      sidebar.mode: page;
     }
   }
 
@@ -70,7 +71,7 @@ template $BitLogWindow: Adw.ApplicationWindow {
         name: "vault";
 
         child: Adw.NavigationSplitView split_view {
-          sidebar: Adw.NavigationPage sidebar {
+          sidebar: Adw.NavigationPage sidebar_page {
             child: Adw.ToolbarView {
               [top]
               Adw.HeaderBar {
@@ -95,116 +96,10 @@ template $BitLogWindow: Adw.ApplicationWindow {
                 button-label: _("_Resolve");
               }
 
-              content: ScrolledWindow {
-                hscrollbar-policy: never;
+              content: Adw.Sidebar sidebar {
+                Adw.SidebarSection pages_section {}
 
-                child: ListBox sidebar_list {
-                  styles [
-                    "navigation-sidebar",
-                  ]
-
-                  ListBoxRow today_row {
-                    action-name: "win.show-today";
-
-                    child: Box {
-                      spacing: 12;
-
-                      Image {
-                        icon-name: "weather-clear-symbolic";
-                      }
-
-                      Label {
-                        label: _("Today");
-                        xalign: 0;
-                      }
-                    };
-                  }
-
-                  ListBoxRow calendar_row {
-                    action-name: "win.show-calendar";
-
-                    child: Box {
-                      spacing: 12;
-
-                      Image {
-                        icon-name: "x-office-calendar-symbolic";
-                      }
-
-                      Label {
-                        label: _("Calendar");
-                        xalign: 0;
-                      }
-                    };
-                  }
-
-                  ListBoxRow tasks_row {
-                    action-name: "win.show-tasks";
-
-                    child: Box {
-                      spacing: 12;
-
-                      Image {
-                        icon-name: "checkbox-checked-symbolic";
-                      }
-
-                      Label {
-                        label: _("Tasks");
-                        xalign: 0;
-                      }
-                    };
-                  }
-
-                  ListBoxRow reports_row {
-                    action-name: "win.show-reports";
-
-                    child: Box {
-                      spacing: 12;
-
-                      Image {
-                        icon-name: "view-grid-symbolic";
-                      }
-
-                      Label {
-                        label: _("Reports");
-                        xalign: 0;
-                      }
-                    };
-                  }
-
-                  ListBoxRow notes_row {
-                    action-name: "win.show-notes";
-
-                    child: Box {
-                      spacing: 12;
-
-                      Image {
-                        icon-name: "text-x-generic-symbolic";
-                      }
-
-                      Label {
-                        label: _("Notes");
-                        xalign: 0;
-                      }
-                    };
-                  }
-
-                  ListBoxRow projects_row {
-                    action-name: "win.show-projects";
-
-                    child: Box {
-                      spacing: 12;
-
-                      Image {
-                        icon-name: "folder-symbolic";
-                      }
-
-                      Label {
-                        label: _("Projects");
-                        xalign: 0;
-                      }
-                    };
-                  }
-                };
+                Adw.SidebarSection projects_section {}
               };
             };
           };

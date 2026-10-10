@@ -38,6 +38,7 @@ app/src/vault_check_dialog/problems.rs
 app/src/week_chart.rs
 app/src/widgets.rs
 app/src/window/mod.rs
+app/src/window/sidebar.rs
 app/src/window/vault.rs
 app/ui/calendar_view.blp
 app/ui/commit_dialog.blp

@@ -10,7 +10,7 @@ use gtk::{gdk, gio, glib};
 
 use crate::format::format_full_date;
 use crate::search_index::SearchIndex;
-use crate::window::show_action;
+use crate::window::{pages, show_action};
 
 /// Search results shown at most.
 const LIMIT: u32 = 50;
@@ -139,28 +139,18 @@ pub struct Command {
     action: &'static str,
 }
 
-/// The commands, with "New Block" only if `new_block`, when a day is shown.
+/// The commands: the pages, "New Block" only if `new_block`, when a day is
+/// shown, and what the main menu offers.
 fn commands(new_block: bool) -> Vec<Command> {
     let command = |title: String, icon, action| Command {
         title,
         icon,
         action,
     };
-    let mut commands = vec![
-        command(gettext("Today"), "weather-clear-symbolic", "win.show-today"),
-        command(
-            gettext("Calendar"),
-            "x-office-calendar-symbolic",
-            "win.show-calendar",
-        ),
-        command(
-            gettext("Tasks"),
-            "checkbox-checked-symbolic",
-            "win.show-tasks",
-        ),
-        command(gettext("Projects"), "folder-symbolic", "win.show-projects"),
-        command(gettext("Reports"), "view-grid-symbolic", "win.show-reports"),
-    ];
+    let mut commands: Vec<Command> = pages()
+        .into_iter()
+        .map(|(title, icon, action)| command(title, icon, action))
+        .collect();
     if new_block {
         commands.push(command(
             gettext("New Block"),
@@ -184,6 +174,22 @@ fn commands(new_block: bool) -> Vec<Command> {
             "folder-new-symbolic",
             "win.new-vault",
         ),
+        command(
+            gettext("Preferences"),
+            "preferences-system-symbolic",
+            "win.preferences",
+        ),
+        command(
+            gettext("Check Vault…"),
+            "object-select-symbolic",
+            "win.check-vault",
+        ),
+        command(
+            gettext("Keyboard Shortcuts"),
+            "input-keyboard-symbolic",
+            "app.shortcuts",
+        ),
+        command(gettext("Help"), "help-browser-symbolic", "app.help"),
         command(gettext("About BitLog"), "help-about-symbolic", "app.about"),
     ]);
     commands
