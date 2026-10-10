@@ -1,7 +1,7 @@
 //! Colours the app draws with, beside those of the theme.
 
 use bitlog_core::{ProjectSlug, Vault};
-use gtk::gdk;
+use gtk::{gdk, glib};
 
 /// For blocks of projects the vault does not know.
 const UNKNOWN_PROJECT_COLOR: &str = "#9a9996";
@@ -38,6 +38,11 @@ pub fn with_alpha(color: &gdk::RGBA, alpha: f32) -> gdk::RGBA {
 /// A dot in `color`, as in `#3584e4`, as Pango markup.
 pub fn color_dot(color: &str) -> String {
     format!("<span foreground=\"{color}\">●</span>")
+}
+
+/// `text` behind a dot in `color`, as Pango markup.
+pub fn dot_markup(color: &str, text: &str) -> String {
+    format!("{} {}", color_dot(color), glib::markup_escape_text(text))
 }
 
 /// The colors of `parts` mixed by their weights, in the Oklab color space,

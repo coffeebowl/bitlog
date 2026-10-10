@@ -3,7 +3,7 @@
 
 use std::fmt::Write;
 
-use bitlog_core::Vault;
+use bitlog_core::{Vault, time_at_minute};
 use chrono::NaiveDate;
 
 use crate::{Index, IndexError};
@@ -70,7 +70,7 @@ impl Index {
 
 /// `HH:MM` of a minute of the day, which may lie on the next day.
 fn clock(minute: u32) -> String {
-    format!("{:02}:{:02}", minute / 60 % 24, minute % 60)
+    time_at_minute(minute).format("%H:%M").to_string()
 }
 
 /// `value` as a CSV field, quoted if needed.

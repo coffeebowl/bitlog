@@ -3,14 +3,14 @@
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{BlockId, RemovedText, minute_of_day, time_at_minute};
+use bitlog_core::{BlockId, RemovedText, format_span, minute_of_day, time_at_minute};
 use chrono::NaiveTime;
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use super::DayView;
 use crate::config;
-use crate::format::{format_span, format_time};
+use crate::format::format_time;
 use crate::project_picker::{project_markup, project_popover};
 
 impl DayView {
@@ -204,8 +204,7 @@ impl DayView {
             imp.block_title.set_text(&block.title);
         }
         imp.block_title.set_placeholder_text(Some(project_name));
-        imp.block_time_button
-            .set_label(&format_span(block.start, block.end));
+        imp.block_time_button.set_label(&format_span(block.span()));
         imp.block_project_label.set_label(&project.map_or_else(
             || glib::markup_escape_text(project_name).to_string(),
             project_markup,

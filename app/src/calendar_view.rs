@@ -4,16 +4,16 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{DayFile, Period, Vault, week_start};
-use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta, Weekday};
+use bitlog_core::{DayFile, Period, Vault, format_short_duration, week_number, week_start};
+use chrono::{Datelike, Days, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{glib, pango};
 
-use crate::colors::{color_dot, project_color, project_hex};
+use crate::colors::{dot_markup, project_color, project_hex};
 use crate::day_summary::{DaySummary, Details};
 use crate::format::{
     format_date, format_duration, format_full_date, format_month, format_month_year, format_range,
-    format_short_date, format_short_duration, kind_name,
+    format_short_date, kind_name,
 };
 use crate::share_bar::ShareBar;
 use crate::week_chart::{ChartDay, WeekChart};
@@ -370,15 +370,9 @@ impl CalendarView {
         let mut per_project: Vec<_> = per_project.into_iter().collect();
         per_project.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
         for (slug, time) in per_project {
-            let name = vault.project_name(&slug);
-            let markup = format!(
-                "{} {} · {}",
-                color_dot(project_hex(&vault, &slug)),
-                glib::markup_escape_text(name),
-                glib::markup_escape_text(&format_duration(time)),
-            );
+            let text = format!("{} · {}", vault.project_name(&slug), format_duration(time));
             let label = gtk::Label::builder()
-                .label(markup)
+                .label(dot_markup(project_hex(&vault, &slug), &text))
                 .use_markup(true)
                 .xalign(0.0)
                 .build();
@@ -409,17 +403,6 @@ impl CalendarView {
 
 fn hours(time: TimeDelta) -> f32 {
     time.num_minutes() as f32 / 60.0
-}
-
-/// The ISO number of the week starting on `week`, that of its Thursday, so
-/// weeks starting on another day than Monday get a number too.
-fn week_number(week: NaiveDate) -> u32 {
-    (0..7)
-        .map(|offset| week + Days::new(offset))
-        .find(|date| date.weekday() == Weekday::Thu)
-        .expect("every week has a Thursday")
-        .iso_week()
-        .week()
 }
 
 /// How far ahead of the target or behind it `balance` is, as in
@@ -571,9 +554,8 @@ fn show_times(
         content.append(&bar);
     }
     for (slug, _) in times.iter().take(PROJECTS_SHOWN) {
-        let name = glib::markup_escape_text(vault.project_name(slug));
-        let dot = color_dot(project_hex(vault, slug));
-        let line = cell_label(&format!("{dot} {name}"), &["caption"]);
+        let markup = dot_markup(project_hex(vault, slug), vault.project_name(slug));
+        let line = cell_label(&markup, &["caption"]);
         line.set_use_markup(true);
         content.append(&line);
     }
@@ -638,16 +620,5 @@ mod tests {
         let next_monday = monday + Days::new(7);
         assert_eq!(balance(&week, next_monday), Some((hours(40), hours(-18))));
         assert_eq!(balance(&week, monday - Days::new(1)), None);
-    }
-
-    #[test]
-    fn weeks_are_numbered_by_their_thursday() {
-        let date = |month, day| NaiveDate::from_ymd_opt(2026, month, day).unwrap();
-        // From Monday and from Sunday.
-        assert_eq!(week_number(date(9, 28)), 40);
-        assert_eq!(week_number(date(9, 27)), 40);
-        // From Saturday, a week whose Thursday lies in the new year.
-        assert_eq!(week_number(date(1, 3)), 2);
-        assert_eq!(week_number(date(12, 28)), 53);
     }
 }

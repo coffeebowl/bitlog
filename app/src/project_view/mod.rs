@@ -8,7 +8,9 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Asset, AssetPath, NotePath, Period, Project, ProjectSlug, Vault};
+use bitlog_core::{
+    Asset, AssetPath, NotePath, Period, Project, ProjectSlug, Vault, capitalize, format_span,
+};
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
@@ -17,7 +19,7 @@ use gtk::{gdk, glib};
 use crate::cards::{asset_card, note_card, note_preview, show_preview};
 use crate::colors;
 use crate::format::{
-    capitalize, format_duration, format_full_date, format_range, format_share, format_weekday_date,
+    format_duration, format_full_date, format_range, format_share, format_weekday_date,
     title_markup,
 };
 use crate::git_page::GitPage;
@@ -546,14 +548,12 @@ fn block_action(block: &ProjectBlock) -> (&'static str, glib::Variant) {
 /// A block in the timeline: its title, or else the name of its project,
 /// its day and time and how long it took, opening it when activated.
 fn block_row(block: &ProjectBlock, project_name: &str, today: NaiveDate) -> adw::ActionRow {
-    let minute = |minute: u32| format!("{:02}:{:02}", minute / 60 % 24, minute % 60);
     let row = adw::ActionRow::builder()
         .title(title_markup(&block.title, project_name))
         .subtitle(glib::markup_escape_text(&format!(
-            "{} · {}–{}",
+            "{} · {}",
             format_weekday_date(block.date, today),
-            minute(block.start_minute),
-            minute(block.end_minute)
+            format_span((block.start_minute, block.end_minute))
         )))
         .activatable(true)
         .build();

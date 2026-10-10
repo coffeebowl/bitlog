@@ -1,6 +1,6 @@
 //! Time per project and remote work days as the terminal shows them.
 
-use bitlog_core::{ProjectSlug, Vault};
+use bitlog_core::{ProjectSlug, Vault, percent};
 use bitlog_index::RemoteDays;
 use chrono::{Datelike, NaiveDate, TimeDelta};
 
@@ -28,12 +28,10 @@ pub fn format_stats(
             .iter()
             .map(|(slug, time)| {
                 let name = vault.project_name(slug);
-                let total = total.num_minutes().max(1);
-                let share = (time.num_minutes() * 100 + total / 2) / total;
                 [
                     name.to_owned(),
                     format_duration(*time),
-                    format!("{share} %"),
+                    format!("{} %", percent(*time, total)),
                 ]
             })
             .collect();

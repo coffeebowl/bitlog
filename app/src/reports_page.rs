@@ -4,17 +4,15 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Period, Vault};
+use bitlog_core::{Period, Vault, capitalize};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use gtk::{gdk, glib};
 
 use crate::alert::{show_error, toast_overlay};
-use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
-use crate::format::{
-    capitalize, format_duration, format_month, format_range, format_share, format_short_date,
-};
+use crate::colors::{dot_markup, lightness, mix, parse, project_color, project_hex, sea_green};
+use crate::format::{format_duration, format_month, format_range, format_share, format_short_date};
 use crate::heatmap::Heatmap;
 use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
@@ -296,7 +294,7 @@ impl ReportsPage {
         let most = work.first().map_or(TimeDelta::zero(), |(_, time)| *time);
         for (slug, time) in &work {
             let row = time_row(
-                &color_dot(project_hex(vault, slug)),
+                project_hex(vault, slug),
                 vault.project_name(slug),
                 *time,
                 total,
@@ -338,7 +336,7 @@ impl ReportsPage {
         categories.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
         let mut parts = Vec::new();
         for ((category, time), color) in categories.iter().zip(CATEGORY_COLORS.iter().cycle()) {
-            let row = time_row(&color_dot(color), &capitalize(category), *time, total);
+            let row = time_row(color, &capitalize(category), *time, total);
             rows.push((imp.categories_group.get(), row));
             parts.push((parse(color), share(*time, total)));
         }
@@ -390,10 +388,10 @@ fn average_lightness(vault: &Vault) -> f32 {
     }
 }
 
-/// A row with a colored dot, a name, and the time and its share of `total`.
-fn time_row(dot: &str, name: &str, time: TimeDelta, total: TimeDelta) -> adw::ActionRow {
+/// A row with a dot in `color`, a name, and the time and its share of `total`.
+fn time_row(color: &str, name: &str, time: TimeDelta, total: TimeDelta) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
-        .title(format!("{dot}  {}", glib::markup_escape_text(name)))
+        .title(dot_markup(color, name))
         .build();
     row.add_suffix(&duration_label(time));
     let share = gtk::Label::builder()

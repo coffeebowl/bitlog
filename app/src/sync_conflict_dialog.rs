@@ -8,7 +8,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
     Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError, Task, TaskId,
-    TaskList, Vault, VaultChange,
+    TaskList, Vault, VaultChange, format_span,
 };
 use chrono::{DateTime, Local};
 use gettextrs::gettext;
@@ -18,7 +18,7 @@ use gtk::glib;
 use crate::alert::show_error;
 use crate::conflict_dialog::ConflictDialog;
 use crate::format::{
-    format_full_date, format_span, format_time, format_weekday_date, kind_name, task_status_name,
+    format_full_date, format_time, format_weekday_date, kind_name, task_status_name,
 };
 
 mod imp {
@@ -153,7 +153,7 @@ impl SyncConflictDialog {
                 .title(block_name(vault, block))
                 .subtitle(format!(
                     "{} · {}",
-                    format_span(block.start, block.end),
+                    format_span(block.span()),
                     vault.project_name(&block.project)
                 ))
                 .use_markup(false)
@@ -377,7 +377,7 @@ fn block_name(vault: &Vault, block: &Block) -> String {
 /// As in "09:00–10:30 · Webshop · Checkout".
 fn block_summary(vault: &Vault, block: &Block) -> String {
     let mut parts = vec![
-        format_span(block.start, block.end),
+        format_span(block.span()),
         vault.project_name(&block.project).to_owned(),
     ];
     if !block.title.is_empty() {

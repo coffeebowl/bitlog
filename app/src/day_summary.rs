@@ -5,7 +5,7 @@ use bitlog_core::{Day, ProjectSlug, Vault};
 use chrono::TimeDelta;
 use gtk::glib;
 
-use crate::colors::{color_dot, project_hex};
+use crate::colors::{dot_markup, project_hex};
 use crate::format::{format_duration, kind_name};
 
 #[derive(Debug)]
@@ -46,9 +46,8 @@ impl DaySummary {
             details.push(format!("<b>{}</b>", glib::markup_escape_text(&text)), text);
         }
         for (slug, time) in &self.times {
-            let dot = color_dot(project_hex(vault, slug));
             let text = format!("{} · {}", vault.project_name(slug), format_duration(*time));
-            details.push(format!("{dot} {}", glib::markup_escape_text(&text)), text);
+            details.push(dot_markup(project_hex(vault, slug), &text), text);
         }
         if !self.facts.is_empty() {
             let text = self.facts.join(" · ");

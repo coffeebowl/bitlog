@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::week_start;
+use bitlog_core::{week_number, week_start};
 use chrono::{Datelike, Days, NaiveDate, TimeDelta, Weekday};
 use gettextrs::gettext;
 use gtk::{gdk, glib, graphene};
@@ -341,12 +341,9 @@ fn row_units(activity: &Activity) -> f32 {
     (days - 1.0).mul_add(0.25, days)
 }
 
-/// The number of the calendar week of `date`, the ISO week most of its days
-/// are in, also for weeks that start on Sunday.
+/// The number of the calendar week of `date`.
 fn week_label(activity: &Activity, date: NaiveDate) -> String {
-    let week = (week_start(date, activity.start.weekday()) + Days::new(3))
-        .iso_week()
-        .week();
+    let week = week_number(week_start(date, activity.start.weekday()));
     // Translators: A calendar week above its days, as in "W39".
     gettext("W{week}").replace("{week}", &week.to_string())
 }

@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
+use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault, capitalize};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use glib::subclass::Signal;
@@ -13,9 +13,7 @@ use gtk::glib;
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
-use crate::format::{
-    PROJECT_STATUSES, capitalize, format_duration, format_recent_date, project_status_name,
-};
+use crate::format::{PROJECT_STATUSES, format_duration, format_recent_date, project_status_name};
 use crate::note_actions::{self, NoteHost};
 use crate::note_dialogs::ask_note_name;
 use crate::note_view::NoteView;

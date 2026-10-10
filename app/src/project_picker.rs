@@ -4,7 +4,7 @@ use adw::prelude::*;
 use bitlog_core::{Project, ProjectSlug, ProjectStatus, Vault};
 use gtk::glib;
 
-use crate::colors::color_dot;
+use crate::colors::dot_markup;
 
 /// A popover with the projects of `vault` that are not archived, in their
 /// order. Choosing one closes it and calls `on_chosen`.
@@ -48,11 +48,7 @@ pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static)
 
 /// The name of `project` behind a dot in its colour, as Pango markup.
 pub fn project_markup(project: &Project) -> String {
-    format!(
-        "{} {}",
-        color_dot(&project.color),
-        glib::markup_escape_text(&project.name),
-    )
+    dot_markup(&project.color, &project.name)
 }
 
 fn project_row(project: &Project) -> gtk::Label {

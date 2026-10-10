@@ -8,6 +8,7 @@ use std::fmt::Write;
 use chrono::{Days, NaiveDate, TimeDelta};
 
 use crate::error::ReadError;
+use crate::format::{capitalize, format_short_duration};
 use crate::{Day, Vault};
 
 impl Vault {
@@ -38,16 +39,17 @@ impl Vault {
         } else {
             report.push_str("| Project | Time |\n| --- | ---: |\n");
             for (slug, time) in &times {
-                let _ = writeln!(report, "| {} | {} |", table_cell(name(slug)), hours(*time));
+                let time = format_short_duration(*time);
+                let _ = writeln!(report, "| {} | {time} |", table_cell(name(slug)));
             }
-            let total = times.iter().map(|(_, time)| *time).sum();
-            let _ = writeln!(report, "| **Total** | **{}** |", hours(total));
+            let total = format_short_duration(times.iter().map(|(_, time)| *time).sum());
+            let _ = writeln!(report, "| **Total** | **{total}** |");
         }
         for day in &days {
             // One blank line before, whatever the day before ended with.
             report.truncate(report.trim_end().len());
             let _ = write!(report, "\n\n## {}\n\n", day.date.format("%A, %Y-%m-%d"));
-            let _ = writeln!(report, "{}", self.day_details(day, hours));
+            let _ = writeln!(report, "{}", self.day_details(day, format_short_duration));
             if !day.note.is_empty() {
                 let _ = write!(report, "\n{}\n", day.note);
             }
@@ -94,23 +96,9 @@ impl Vault {
     }
 }
 
-/// A duration as hours and minutes, as in `7:45`.
-fn hours(time: TimeDelta) -> String {
-    let minutes = time.num_minutes();
-    format!("{}:{:02}", minutes / 60, minutes % 60)
-}
-
 /// `text` for a cell of a Markdown table.
 fn table_cell(text: &str) -> String {
     text.replace('|', "\\|")
-}
-
-/// `kind` is free text, usually lowercase like `work`.
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map_or_else(String::new, |first| {
-        first.to_uppercase().chain(chars).collect()
-    })
 }
 
 #[cfg(test)]

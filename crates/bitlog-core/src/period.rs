@@ -47,6 +47,13 @@ pub fn week_start(date: NaiveDate, first_day: Weekday) -> NaiveDate {
     date - Days::new(date.weekday().days_since(first_day).into())
 }
 
+/// The ISO number of the week starting on `week`: that of the ISO week most
+/// of its days lie in, so weeks starting on another day than Monday get a
+/// number too.
+pub fn week_number(week: NaiveDate) -> u32 {
+    (week + Days::new(3)).iso_week().week()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +101,15 @@ mod tests {
         assert_eq!(Period::Year.step(today, 2), Some(date(2028, 1, 31)));
         assert_eq!(Period::Year.step(today, -1), Some(date(2025, 1, 31)));
         assert_eq!(Period::Year.step(NaiveDate::MAX, 1), None);
+    }
+
+    #[test]
+    fn weeks_are_numbered_by_most_of_their_days() {
+        // From Monday and from Sunday.
+        assert_eq!(week_number(date(2026, 9, 28)), 40);
+        assert_eq!(week_number(date(2026, 9, 27)), 40);
+        // From Saturday, a week that lies mostly in the new year.
+        assert_eq!(week_number(date(2026, 1, 3)), 2);
+        assert_eq!(week_number(date(2026, 12, 28)), 53);
     }
 }

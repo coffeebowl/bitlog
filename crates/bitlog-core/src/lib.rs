@@ -8,6 +8,7 @@ mod day;
 mod device;
 mod error;
 mod file;
+mod format;
 mod git_log;
 mod id;
 mod images;
@@ -34,6 +35,7 @@ pub use day::{
 pub use device::check_repo_path;
 pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;
+pub use format::{capitalize, format_short_duration, format_span, percent};
 pub use git_log::{
     Branch, Branches, ChangedFile, Commit, CommitDetails, FileChange, GitLogError, Uncommitted,
     Upstream, git_branches, git_commit, git_file_diff, git_log, git_uncommitted, git_upstream,
@@ -49,7 +51,7 @@ pub use markdown::{
     pairs_bracket, pasted_link, renumbered_lists, tidied_table, toggled_tasks, typed_link_target,
 };
 pub use notes::{NoteFile, SavedNote, WikiLink, link_target, wiki_links};
-pub use period::{Period, week_start};
+pub use period::{Period, week_number, week_start};
 pub use project::{Project, ProjectStatus};
 pub use tasks::{Task, TaskList, TaskStatus};
 pub use vault::{DayFile, Vault};

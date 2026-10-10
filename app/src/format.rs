@@ -1,6 +1,6 @@
 //! Dates, times, durations and counts as the app shows them.
 
-use bitlog_core::{ProjectStatus, TaskStatus};
+use bitlog_core::{ProjectStatus, TaskStatus, capitalize, percent};
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeDelta};
 use gettextrs::gettext;
 use gtk::glib;
@@ -131,11 +131,6 @@ pub fn format_time(time: NaiveTime) -> String {
     time.format("%H:%M").to_string()
 }
 
-/// From `start` to `end`, as in "09:00–10:30".
-pub fn format_span(start: NaiveTime, end: NaiveTime) -> String {
-    format!("{}–{}", format_time(start), format_time(end))
-}
-
 pub fn format_duration(duration: TimeDelta) -> String {
     let total = duration.num_minutes();
     let (hours, minutes) = (total / 60, total % 60);
@@ -151,19 +146,10 @@ pub fn format_duration(duration: TimeDelta) -> String {
         .replace("{minutes}", &minutes.to_string())
 }
 
-/// `duration` where there is little room, as in "7:45".
-pub fn format_short_duration(duration: TimeDelta) -> String {
-    let total = duration.num_minutes();
-    format!("{}:{:02}", total / 60, total % 60)
-}
-
-/// `part` as a share of `whole`, rounded to whole percent, as in "45 %".
-/// `whole` must not be zero.
+/// `part` as a share of `whole`, as in "45 %".
 pub fn format_share(part: TimeDelta, whole: TimeDelta) -> String {
-    let whole = whole.num_minutes();
-    let share = (part.num_minutes() * 100 + whole / 2) / whole;
     // Translators: A share in percent, as in "45 %".
-    gettext("{share} %").replace("{share}", &share.to_string())
+    gettext("{share} %").replace("{share}", &percent(part, whole).to_string())
 }
 
 /// The kinds of day the app offers. Files may have others, which are kept.
@@ -200,16 +186,6 @@ pub fn task_status_name(status: TaskStatus) -> String {
         TaskStatus::Open => gettext("Open"),
         TaskStatus::Done => gettext("Done"),
         TaskStatus::Dropped => gettext("Dropped"),
-    }
-}
-
-/// `text` with a capital first letter, as kinds of day and categories are
-/// usually written in lowercase.
-pub fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    match chars.next() {
-        Some(first) => first.to_uppercase().chain(chars).collect(),
-        None => String::new(),
     }
 }
 

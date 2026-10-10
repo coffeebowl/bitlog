@@ -1,7 +1,7 @@
 //! Days as the terminal shows them.
 
-use bitlog_core::{Day, Vault};
-use chrono::{NaiveDate, NaiveTime, TimeDelta};
+use bitlog_core::{Day, Vault, format_span};
+use chrono::{NaiveDate, TimeDelta};
 
 use crate::table::table;
 
@@ -24,7 +24,7 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
             let project = vault.project_name(&block.project);
             [
                 block.id.to_string(),
-                format_span(block.start, block.end),
+                format_span(block.span()),
                 format_duration(block.duration()),
                 project.to_owned(),
                 block.title.clone(),
@@ -33,16 +33,6 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
         .collect();
     text.push_str(&table(&rows, &[2]));
     text
-}
-
-/// "08:00–16:30", with "+1" for an end on the next day.
-fn format_span(start: NaiveTime, end: NaiveTime) -> String {
-    let next_day = if end <= start { "+1" } else { "" };
-    format!(
-        "{}–{}{next_day}",
-        start.format("%H:%M"),
-        end.format("%H:%M")
-    )
 }
 
 /// "7 h 45 min", leaving out parts that are zero.
