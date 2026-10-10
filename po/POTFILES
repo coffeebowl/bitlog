@@ -19,6 +19,7 @@ app/src/main.rs
 app/src/markdown_view/adding_images.rs
 app/src/markdown_view/callouts.rs
 app/src/markdown_view/menu.rs
+app/src/note_actions.rs
 app/src/note_dialogs.rs
 app/src/note_view.rs
 app/src/notes_page.rs
@@ -33,6 +34,7 @@ app/src/standup_dialog.rs
 app/src/style_switcher.rs
 app/src/sync_conflict_dialog.rs
 app/src/task_list_view.rs
+app/src/trash.rs
 app/src/vault_check_dialog/mod.rs
 app/src/vault_check_dialog/problems.rs
 app/src/week_chart.rs

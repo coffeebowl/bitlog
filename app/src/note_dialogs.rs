@@ -1,6 +1,5 @@
-//! The questions around notes that the project and note pages share, asking
-//! for a name, which assets use as well, and asking whether to delete
-//! something, which days use as well.
+//! The questions around notes that the project and note pages share, and
+//! asking for a name, which assets use as well.
 
 use adw::prelude::*;
 use bitlog_core::{NotePath, ProjectSlug, Vault};
@@ -107,35 +106,6 @@ async fn confirm_create(parent: &impl IsA<gtk::Widget>, vault: &Vault, note: &No
     ]);
     dialog.set_response_appearance("create", adw::ResponseAppearance::Suggested);
     dialog.choose_future(Some(parent)).await == "create"
-}
-
-/// Deletes the note `note` after asking. Returns whether it is gone;
-/// failing to delete it is shown.
-pub async fn delete_note(parent: &impl IsA<gtk::Widget>, vault: &Vault, note: &NotePath) -> bool {
-    let body = gettext("“{name}” will be permanently deleted.").replace("{name}", note.name());
-    if !confirm_delete(parent, &gettext("Delete Note?"), &body).await {
-        return false;
-    }
-    vault
-        .delete_note(note)
-        .inspect_err(|err| show_error(parent, &gettext("Cannot Delete Note"), &err.to_string()))
-        .is_ok()
-}
-
-/// Asks whether to delete something, with `heading` and `body` saying what.
-pub async fn confirm_delete(parent: &impl IsA<gtk::Widget>, heading: &str, body: &str) -> bool {
-    let dialog = adw::AlertDialog::builder()
-        .heading(heading)
-        .body(body)
-        .close_response("cancel")
-        .default_response("cancel")
-        .build();
-    dialog.add_responses(&[
-        ("cancel", &gettext("_Cancel")),
-        ("delete", &gettext("_Delete")),
-    ]);
-    dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
-    dialog.choose_future(Some(parent)).await == "delete"
 }
 
 /// Asks for a new name of `note` and, if other places link to it, whether

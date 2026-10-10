@@ -235,12 +235,6 @@ impl Vault {
         Ok(saved)
     }
 
-    /// Deletes the file of the day `date` for good, if there is one.
-    pub fn delete_day(&self, date: NaiveDate) -> Result<(), SaveError> {
-        self.remove(&self.day_path(date))?;
-        Ok(())
-    }
-
     /// Saves the new project `project` and adds it to the vault.
     pub fn add_project(&mut self, project: Project) -> Result<&Project, SaveError> {
         let path = Project::path(&self.root, &project.slug);
@@ -481,6 +475,13 @@ impl Vault {
         }
     }
 
+    /// Notes that this program is about to remove the vault file at `path`
+    /// itself, as the app does when it moves a day or a note to the trash,
+    /// so that watching leaves the change out.
+    pub fn record_removal(&self, path: &Path) {
+        self.record_write(path, None);
+    }
+
     /// Notes that this program is about to write `text` to `path`, or with
     /// `None` remove it, so that watching leaves the change out. Call it
     /// before changing the file, so that watching never sees it first.
@@ -688,15 +689,6 @@ mod tests {
             vault.load_day(date(2026, 9, 21)).unwrap().unwrap().day,
             again.day
         );
-    }
-
-    #[test]
-    fn delete_day() {
-        let (_dir, vault) = sample_copy();
-        vault.delete_day(date(2026, 9, 21)).unwrap();
-        assert!(vault.load_day(date(2026, 9, 21)).unwrap().is_none());
-        assert!(vault.load_day(date(2026, 9, 22)).unwrap().is_some());
-        vault.delete_day(date(2026, 9, 21)).unwrap();
     }
 
     #[test]
@@ -1038,9 +1030,9 @@ mod tests {
             .create_note(&infra, "Mine", date(2026, 10, 1))
             .unwrap();
         vault.rename_note(&note, "Still mine", false).unwrap();
-        vault
-            .delete_note(&"projects/infra/notes/deployment.md".parse().unwrap())
-            .unwrap();
+        let deployment = vault.note_path(&"projects/infra/notes/deployment.md".parse().unwrap());
+        vault.record_removal(&deployment);
+        fs::remove_file(deployment).unwrap();
         let project = Project::path(vault.root(), &infra);
         fs::write(
             &project,

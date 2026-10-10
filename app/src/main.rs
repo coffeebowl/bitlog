@@ -36,6 +36,7 @@ mod sync_conflict_dialog;
 mod task_list_view;
 mod tasks_page;
 mod timeline;
+mod trash;
 mod vault_check_dialog;
 mod week_chart;
 mod week_progress;

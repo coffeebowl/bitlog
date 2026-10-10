@@ -8,12 +8,13 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{AssetPath, Vault};
 use gettextrs::gettext;
-use gtk::{gio, glib};
+use gtk::gio;
 
 use super::ProjectView;
 use crate::alert::show_error;
 use crate::launch;
 use crate::note_dialogs::ask_name;
+use crate::trash::trash;
 
 impl ProjectView {
     /// The vault shown, which the actions on assets need.
@@ -112,10 +113,8 @@ impl ProjectView {
     }
 
     pub(super) async fn trash_asset(&self, asset: AssetPath) {
-        let file = gio::File::for_path(self.vault().asset_path(&asset));
-        if let Err(err) = file.trash_future(glib::Priority::DEFAULT).await {
-            show_error(self, &gettext("Cannot Move File to Trash"), err.message());
-        }
+        let path = self.vault().asset_path(&asset);
+        trash(self, &path, &gettext("File moved to trash")).await;
         self.show_assets();
     }
 }

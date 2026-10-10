@@ -1,18 +1,20 @@
 //! The actions on a note, `note.*`, that the notes page and the project page
-//! share: opening it, following its links, renaming and deleting it, and
-//! opening its file elsewhere.
+//! share: opening it, following its links, renaming it, moving it to the
+//! trash, and opening its file elsewhere.
 
 use std::future::Future;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use bitlog_core::{NotePath, Vault};
+use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use crate::launch;
 use crate::note_dialogs;
 use crate::note_view::NoteView;
 use crate::search_index::SearchIndex;
+use crate::trash;
 use crate::widgets::param;
 
 /// A page that lists notes and shows one in its `NoteView`. It has the
@@ -25,7 +27,7 @@ pub trait NoteHost: IsA<gtk::Widget> {
     fn open_note(&self, note: &NotePath);
     /// Goes back from the note shown, which is gone.
     fn close_note(&self);
-    /// Lists the notes again, as one was added, renamed or deleted.
+    /// Lists the notes again, as one was added, renamed or removed.
     fn refresh_notes(&self);
 }
 
@@ -46,13 +48,8 @@ pub fn add<T: NoteHost>(host: &T) {
     add_action(&group, host, "rename", |host, note| async move {
         rename(&host, note).await;
     });
-    add_action(&group, host, "delete", |host, note| async move {
-        if note_dialogs::delete_note(&host, &host.vault(), &note).await {
-            if host.note_view().note() == Some(note) {
-                host.close_note();
-            }
-            host.refresh_notes();
-        }
+    add_action(&group, host, "trash", |host, note| async move {
+        trash(&host, note).await;
     });
     // With what is being typed saved, for the other app to see.
     add_action(&group, host, "open-file", |host, note| async move {
@@ -81,6 +78,22 @@ fn add_action<T: NoteHost, F: Future<Output = ()> + 'static>(
         }
     });
     group.add_action(&action);
+}
+
+/// Moves `note` to the trash and leaves it if it is shown.
+async fn trash<T: NoteHost>(host: &T, note: NotePath) {
+    // With what is being typed, which must not bring the note back.
+    host.note_view().save_now();
+    let vault = host.vault();
+    let path = vault.note_path(&note);
+    vault.record_removal(&path);
+    if !trash::trash(host, &path, &gettext("Note moved to trash")).await {
+        return;
+    }
+    if host.note_view().note() == Some(note) {
+        host.close_note();
+    }
+    host.refresh_notes();
 }
 
 /// Asks for a new name of `note` and renames it, showing it under that name

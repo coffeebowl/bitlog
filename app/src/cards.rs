@@ -145,7 +145,7 @@ fn preview_text(text: &str) -> &str {
 }
 
 /// Opening the note `note` in another app, showing it in its folder,
-/// renaming and deleting it.
+/// renaming it and moving it to the trash.
 pub fn note_menu(note: &NotePath) -> gio::Menu {
     let target = note.to_string().to_variant();
     let menu = gio::Menu::new();
@@ -153,7 +153,7 @@ pub fn note_menu(note: &NotePath) -> gio::Menu {
         (gettext("_Open Externally"), "note.open-file"),
         (gettext("_Show in Folder"), "note.show-file"),
         (gettext("_Rename…"), "note.rename"),
-        (gettext("_Delete"), "note.delete"),
+        (gettext("Move to _Trash"), "note.trash"),
     ] {
         let item = gio::MenuItem::new(Some(&label), None);
         item.set_action_and_target_value(Some(action), Some(&target));

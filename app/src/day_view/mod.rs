@@ -19,11 +19,11 @@ use crate::cross_fade::CrossFade;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::launch;
 use crate::markdown_view::MarkdownView;
-use crate::note_dialogs::confirm_delete;
 use crate::project_picker::project_popover;
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
+use crate::trash::trash;
 use crate::widgets::{SaveTimer, param};
 use block_panel::spin_time;
 
@@ -126,8 +126,8 @@ mod imp {
             klass.install_action_async("day.delete-block", None, |view, _, _| async move {
                 view.delete_block().await;
             });
-            klass.install_action_async("day.delete", None, |view, _, _| async move {
-                view.delete_day().await;
+            klass.install_action_async("day.trash", None, |view, _, _| async move {
+                view.trash_day().await;
             });
             // With what is being typed saved, for the other app to see.
             klass.install_action_async("day.open-file", None, |view, _, _| async move {
@@ -324,7 +324,7 @@ impl DayView {
         for action in ["day.open-file", "day.show-file"] {
             self.action_set_enabled(action, exists);
         }
-        for action in ["day.new-block", "day.delete"] {
+        for action in ["day.new-block", "day.trash"] {
             self.action_set_enabled(action, readable);
         }
     }
@@ -580,19 +580,15 @@ impl DayView {
         ));
     }
 
-    /// Deletes the file of the day shown, after asking.
-    async fn delete_day(&self) {
+    /// Moves the file of the day shown to the trash.
+    async fn trash_day(&self) {
         let date = self.date();
-        let body = gettext("{date} will be permanently deleted, with its blocks and note")
-            .replace("{date}", &format_full_date(date));
-        if !confirm_delete(self, &gettext("Delete Day?"), &body).await {
-            return;
-        }
         // What is being typed goes with the day.
         self.imp().text_save.cancel();
-        if let Err(err) = self.vault().delete_day(date) {
-            show_error(self, &gettext("Cannot Delete Day"), &err.to_string());
-        }
+        let vault = self.vault();
+        let path = vault.day_path(date);
+        vault.record_removal(&path);
+        trash(self, &path, &gettext("Day moved to trash")).await;
         self.show_date(date);
     }
 

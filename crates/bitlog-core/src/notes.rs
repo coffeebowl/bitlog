@@ -384,15 +384,6 @@ impl Vault {
         }
         Ok(changed)
     }
-
-    /// Deletes the note `note` for good.
-    pub fn delete_note(&self, note: &NotePath) -> Result<(), SaveError> {
-        if self.remove(&self.note_path(note))? {
-            Ok(())
-        } else {
-            Err(EditError::UnknownNote(note.clone()).into())
-        }
-    }
 }
 
 #[cfg(test)]
@@ -724,18 +715,5 @@ mod tests {
         fs::remove_file(&path).unwrap();
         vault.save_note(&theirs, "Back.\n").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "Back.\n");
-    }
-
-    #[test]
-    fn delete_note() {
-        let (_dir, vault) = sample_copy();
-        let deployment = note("projects/infra/notes/deployment.md");
-        vault.delete_note(&deployment).unwrap();
-        assert!(vault.notes(&slug("infra")).unwrap().is_empty());
-        let err = vault.delete_note(&deployment).unwrap_err();
-        assert!(
-            matches!(err, SaveError::Edit(EditError::UnknownNote(_))),
-            "{err}"
-        );
     }
 }
