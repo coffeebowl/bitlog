@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::Vault;
+use bitlog_core::{Project, Vault};
 use bitlog_index::{Found, IndexError, SearchHit};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
@@ -226,7 +226,7 @@ impl SearchDialog {
             .expect("the dialog is set up with a vault")
     }
 
-    /// Shows the commands and texts that match what is typed.
+    /// Shows the commands, projects and texts that match what is typed.
     fn search(&self) {
         let imp = self.imp();
         let query = imp.entry.text().trim().to_owned();
@@ -251,18 +251,26 @@ impl SearchDialog {
         ));
     }
 
-    /// Lists the commands matching `query`, then `hits`, and selects the
-    /// first row.
+    /// Lists the commands matching `query`, the projects once something is
+    /// typed, then `hits`, and selects the first row.
     fn show_results(&self, query: &str, hits: Result<Vec<SearchHit>, String>) {
         let imp = self.imp();
         imp.list.remove_all();
         let query = query.to_lowercase();
+        let matches = |title: &str| {
+            let title = title.to_lowercase();
+            query.split_whitespace().all(|word| title.contains(word))
+        };
         let vault = self.vault();
         let mut rows = Vec::new();
         for command in imp.commands.borrow().iter() {
-            let title = command.title.to_lowercase();
-            if query.split_whitespace().all(|word| title.contains(word)) {
+            if matches(&command.title) {
                 rows.push(command_row(command));
+            }
+        }
+        for project in vault.projects() {
+            if !query.is_empty() && matches(&project.name) {
+                rows.push(project_row(project));
             }
         }
         let error = match hits {
@@ -340,6 +348,16 @@ fn command_row(command: &Command) -> (adw::ActionRow, RowAction) {
     (row, (command.action, None))
 }
 
+fn project_row(project: &Project) -> (adw::ActionRow, RowAction) {
+    let row = result_row(
+        &glib::markup_escape_text(&project.name),
+        &gettext("Project"),
+        "folder-symbolic",
+    );
+    let target = project.slug.to_string().to_variant();
+    (row, ("win.show-project", Some(target)))
+}
+
 fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
     let (icon, place) = match &hit.found {
         Found::Block { date, .. } => (
@@ -362,15 +380,22 @@ fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
         Found::Task(_) => ("checkbox-checked-symbolic", gettext("Task")),
     };
     let (action, target) = show_action(&hit.found);
+    let row = result_row(&snippet_markup(hit), &place, icon);
+    (row, (action, Some(target)))
+}
+
+/// A row of something found, `title` in Pango markup, `place` saying what
+/// it is and where.
+fn result_row(title: &str, place: &str, icon: &str) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
-        .title(snippet_markup(hit))
+        .title(title)
         .title_lines(1)
-        .subtitle(glib::markup_escape_text(&place))
+        .subtitle(glib::markup_escape_text(place))
         .subtitle_lines(1)
         .activatable(true)
         .build();
     row.add_prefix(&gtk::Image::from_icon_name(icon));
-    (row, (action, Some(target)))
+    row
 }
 
 /// The snippet of `hit` on one line as Pango markup, the matches in bold.
