@@ -142,6 +142,10 @@ fn contacts() -> Topic {
             Block::Text(gettext(
                 "Note who does what in which project, from either side: in the contact under <b>Projects</b>, or on the page of the project under <b>People</b>, where you can also add a new contact right away.",
             )),
+            Block::Heading(gettext("Mentions")),
+            Block::Text(gettext(
+                "Type <tt>@</tt> in a note, day note or block text to mention someone: BitLog suggests your contacts as you type their name, those of the project first. Click a mention to see how to reach the person. The contact lists every place that mentions them.",
+            )),
             Block::Heading(gettext("Pictures")),
             Block::Text(gettext(
                 "Click the picture of a contact to choose one or paste it, or drop a file onto it. BitLog keeps a small square copy, cut from the middle.",
@@ -249,6 +253,9 @@ fn markdown() -> Topic {
                 row(gettext("Note Link"))
                     .about(gettext("Notes are suggested after [["))
                     .example(gettext("[[project/note]]")),
+                row(gettext("Mention"))
+                    .about(gettext("Contacts are suggested after @"))
+                    .example(gettext("@name")),
                 row(gettext("Follow Link"))
                     .about(gettext("Or click it"))
                     .keys("<Control>Return"),

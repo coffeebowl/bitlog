@@ -35,9 +35,10 @@ bitlog project rename client-portal portal   # also in all days and notes
 bitlog log client-portal --limit 5   # latest commits of that repository
 
 bitlog contact list --all # contacts with their projects, archived ones too
-bitlog contact show kim   # all fields and the roles in projects
+bitlog contact show kim   # all fields, the roles in projects and where @kim is mentioned
 bitlog contact add kim --name "Kim Meyer" --role webshop="Product Owner"
 bitlog contact edit kim --company "Example GmbH" --no-role infra --archive
+bitlog contact rename kim kim-meyer   # also the mentions in all days and notes
 
 bitlog task list --all    # open tasks with their ids, then the finished ones
 bitlog task add "Renew the TLS certificate" --due 2026-09-30

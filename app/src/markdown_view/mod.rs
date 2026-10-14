@@ -4,6 +4,7 @@ mod check_boxes;
 mod code_blocks;
 mod code_highlight;
 mod completion;
+mod contact_cards;
 mod decorations;
 mod diagrams;
 mod drawings;
@@ -25,8 +26,8 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, trim_blank_lines,
-    wiki_links,
+    Contact, MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, mentions,
+    trim_blank_lines, wiki_links,
 };
 use glib::SignalHandlerId;
 use glib::subclass::Signal;
@@ -72,6 +73,16 @@ pub struct WikiLinks {
     existing: HashSet<NotePath>,
 }
 
+/// The contacts that mentions in a text name, see
+/// `MarkdownView::set_contacts`.
+#[derive(Debug)]
+pub struct Contacts {
+    /// That of the text, whose people come first in suggestions and show
+    /// their role there.
+    project: Option<ProjectSlug>,
+    contacts: Vec<Contact>,
+}
+
 mod imp {
     use super::*;
 
@@ -89,6 +100,10 @@ mod imp {
         pub loading: Cell<bool>,
         /// Set for texts whose wiki links can be followed.
         pub wiki_links: RefCell<Option<WikiLinks>>,
+        /// Set for texts whose mentions can be followed.
+        pub contacts: RefCell<Option<Contacts>>,
+        /// The card of a mentioned contact, while it is shown.
+        pub contact_card: RefCell<Option<gtk::Popover>>,
         /// The links in the text as last styled, as character ranges with
         /// where they lead.
         pub(super) links: RefCell<Vec<(Range<i32>, Target)>>,
@@ -216,7 +231,7 @@ mod imp {
             view.paste_images();
             view.link_pasted_addresses();
             view.add_dropped_images();
-            view.suggest_notes();
+            view.suggest_notes_and_contacts();
             view.add_menu();
 
             let style_manager = adw::StyleManager::default();
@@ -246,6 +261,9 @@ mod imp {
             for handler in self.style_handlers.take() {
                 style_manager.disconnect(handler);
             }
+            if let Some(card) = self.contact_card.take() {
+                card.unparent();
+            }
         }
     }
 
@@ -258,6 +276,9 @@ mod imp {
         /// Fits diagrams and tables to the new width.
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
             self.parent_size_allocate(width, height, baseline);
+            if let Some(card) = &*self.contact_card.borrow() {
+                card.present();
+            }
             let view = self.obj();
             if self.decorations.borrow().misfit(view.upcast_ref()) {
                 view.queue_restyle();
@@ -316,8 +337,10 @@ glib::wrapper! {
     /// vault are drawn below their lines, once the view knows where its
     /// text is saved. Tables are grids, their cells cut off if too wide, and
     /// rules are lines, but show their Markdown while the cursor is in them,
-    /// tables in a monospace font with the columns lined up. Enter continues
-    /// lists, quotes and tables, and typing a wiki link proposes notes.
+    /// tables in a monospace font with the columns lined up. Mentions of
+    /// known contacts stand out and show a card of the person when clicked.
+    /// Enter continues lists, quotes and tables, typing a wiki link proposes
+    /// notes and typing a mention proposes contacts.
     ///
     /// Read-only unless made editable, with a placeholder while empty. When
     /// editable, Ctrl+B, Ctrl+I and Ctrl+E make the selection bold, italic
@@ -356,6 +379,17 @@ impl MarkdownView {
             .wiki_links
             .replace(Some(WikiLinks { project, existing }));
         self.restyle();
+    }
+
+    /// Makes the mentions of `contacts` in this text of `project` stand out
+    /// and show their card when followed. Unlike for wiki links, a block
+    /// text belongs to the project of its block. Formats the text again
+    /// when idle, or with `set_wiki_links` if that comes right after.
+    pub fn set_contacts(&self, project: Option<ProjectSlug>, contacts: Vec<Contact>) {
+        self.imp()
+            .contacts
+            .replace(Some(Contacts { project, contacts }));
+        self.queue_restyle();
     }
 
     /// Draws the images that the text links to, as it is saved in `file`
@@ -463,11 +497,22 @@ impl MarkdownView {
         if room != added {
             self.set_bottom_margin(self.bottom_margin() - added + room);
         }
-        let mut links: Vec<_> = decorations
-            .images
-            .iter()
-            .map(|card| (card.range.clone(), Target::File(card.path.clone())))
-            .collect();
+        let mut links = Vec::new();
+        if let Some(contacts) = &*imp.contacts.borrow() {
+            for mention in mentions(&text) {
+                if contacts.contacts.iter().any(|c| c.slug == mention.contact) {
+                    let range = styling.chars(&mention.span);
+                    decorations.chips.push(range.clone());
+                    links.push((range.clone(), Target::Contact(mention.contact, range)));
+                }
+            }
+        }
+        links.extend(
+            decorations
+                .images
+                .iter()
+                .map(|card| (card.range.clone(), Target::File(card.path.clone()))),
+        );
         imp.decorations.replace(decorations);
 
         if let Some(wiki) = &*imp.wiki_links.borrow() {

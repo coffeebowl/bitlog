@@ -37,6 +37,7 @@ const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/05-no-pinned.sql")),
     M::up(include_str!("migrations/06-no-work-hours.sql")),
     M::up(include_str!("migrations/07-day-links.sql")),
+    M::up(include_str!("migrations/08-mentions.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
@@ -282,7 +283,7 @@ fn stamp(metadata: &Metadata) -> (i64, i64) {
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use bitlog_core::ProjectSlug;
+    use bitlog_core::{ContactSlug, ProjectSlug};
     use chrono::TimeDelta;
 
     use super::*;
@@ -749,6 +750,48 @@ mod tests {
     }
 
     #[test]
+    fn mentions_come_from_notes_and_days() {
+        let (_dir, vault, mut index) = sample_copy();
+        let kim: ContactSlug = "kim".parse().unwrap();
+        assert!(index.mentions(&kim, 0, 10).unwrap().is_empty());
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.note = "Call @kim, not kim@example.com.".to_owned();
+                day.blocks[0].text = "With @kim and @kim again, `@sam`.".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let note = note_path("infra", "deployment");
+        let file = vault.load_note(&note).unwrap();
+        vault.save_note(&file, "Ask @kim.\n").unwrap();
+        index.refresh(&vault).unwrap();
+
+        let mentions = index.mentions(&kim, 0, 10).unwrap();
+        let places: Vec<Found> = mentions.iter().map(|m| m.found.clone()).collect();
+        let first_block = vault.load_day(date(21)).unwrap().unwrap().day.blocks[0].clone();
+        assert_eq!(
+            places,
+            [
+                Found::Note(note),
+                Found::DayNote(date(21)),
+                Found::Block {
+                    date: date(21),
+                    id: first_block.id,
+                },
+            ]
+        );
+        assert_eq!(mentions[2].project, Some(first_block.project));
+        assert_eq!(index.mentions(&kim, 1, 1).unwrap().len(), 1);
+        assert!(
+            index
+                .mentions(&"sam".parse().unwrap(), 0, 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn remote_days_count_work_days() {
         let (_dir, vault, mut index) = sample_copy();
         let days = |index: &Index| index.remote_days().unwrap();
@@ -811,9 +854,24 @@ mod tests {
                  INSERT INTO files VALUES ('projects/infra/notes/deployment.md', 0, 0, 0);",
             )
             .unwrap();
-        MIGRATIONS.to_latest(&mut connection).unwrap();
+        MIGRATIONS.to_version(&mut connection, 7).unwrap();
         let index = Index { connection };
         assert_eq!(count(&index, "files"), 1);
+    }
+
+    #[test]
+    fn mentions_cover_content_indexed_before() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut connection, 7).unwrap();
+        connection
+            .execute(
+                "INSERT INTO files VALUES ('projects/infra/notes/deployment.md', 0, 0, 0)",
+                [],
+            )
+            .unwrap();
+        MIGRATIONS.to_latest(&mut connection).unwrap();
+        let index = Index { connection };
+        assert_eq!(count(&index, "files"), 0);
     }
 
     #[test]

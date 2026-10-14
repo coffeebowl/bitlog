@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use bitlog_core::{NotePath, ProjectSlug, Vault};
+use bitlog_core::{ContactSlug, NotePath, ProjectSlug, Vault};
 use bitlog_index::{Backlink, Index, IndexError, ProjectBlock, SearchHit};
 use chrono::{NaiveDate, TimeDelta};
 use gtk::{gio, glib};
@@ -74,6 +74,22 @@ impl SearchIndex {
         self.run(vault, move |index, vault| {
             refresh(index, vault)?;
             index.backlinks(&note)
+        })
+        .await
+    }
+
+    /// Where the contact `contact` is mentioned, after bringing the index
+    /// up to date, see [`Index::mentions`].
+    pub async fn mentions(
+        &self,
+        vault: &Vault,
+        contact: ContactSlug,
+        skip: u32,
+        limit: u32,
+    ) -> Result<Vec<Backlink>, IndexError> {
+        self.run(vault, move |index, vault| {
+            refresh(index, vault)?;
+            index.mentions(&contact, skip, limit)
         })
         .await
     }

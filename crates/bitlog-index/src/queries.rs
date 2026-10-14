@@ -1,6 +1,6 @@
 //! Sums and lookups over the whole vault.
 
-use bitlog_core::{BlockId, NotePath, ProjectSlug};
+use bitlog_core::{BlockId, ContactSlug, NotePath, ProjectSlug};
 use chrono::{NaiveDate, TimeDelta};
 
 use rusqlite::OptionalExtension;
@@ -36,7 +36,7 @@ impl ProjectBlock {
     }
 }
 
-/// A place with a wiki link to a note.
+/// A place with a wiki link to a note, or with a mention of a contact.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Backlink {
     pub found: Found,
@@ -56,6 +56,35 @@ fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
         end_minute: row.get(3)?,
         title: row.get(4)?,
         text: row.get(5)?,
+    })
+}
+
+/// The place of a row starting with the columns `note_project`,
+/// `note_name`, `date` and `block` of `links` or `mentions`, then the
+/// title and project of the block.
+fn backlink(row: &rusqlite::Row) -> rusqlite::Result<Backlink> {
+    let project: Option<String> = row.get(0)?;
+    let date: Option<NaiveDate> = row.get(2)?;
+    let block: Option<String> = row.get(3)?;
+    let found = match (project, date, block) {
+        (Some(_), _, _) => Found::Note(note_path(row, 0, 1)?),
+        (None, Some(date), Some(_)) => Found::Block {
+            date,
+            id: parsed(row, 3)?,
+        },
+        (None, Some(date), None) => Found::DayNote(date),
+        // A check of the tables keeps out what lies nowhere.
+        (None, None, _) => unreachable!("a link or mention lies in a note or a day"),
+    };
+    let title: Option<String> = row.get(4)?;
+    let project = match found {
+        Found::Block { .. } => Some(parsed(row, 5)?),
+        _ => None,
+    };
+    Ok(Backlink {
+        found,
+        title: title.filter(|title| !title.is_empty()),
+        project,
     })
 }
 
@@ -196,33 +225,35 @@ impl Index {
              ORDER BY l.note_project IS NULL, l.note_project, l.note_name, l.date DESC, l.block",
         )?;
         let backlinks = statement
-            .query_map((target.project().as_str(), target.name()), |row| {
-                let project: Option<String> = row.get(0)?;
-                let date: Option<NaiveDate> = row.get(2)?;
-                let block: Option<String> = row.get(3)?;
-                let found = match (project, date, block) {
-                    (Some(_), _, _) => Found::Note(note_path(row, 0, 1)?),
-                    (None, Some(date), Some(_)) => Found::Block {
-                        date,
-                        id: parsed(row, 3)?,
-                    },
-                    (None, Some(date), None) => Found::DayNote(date),
-                    // A check of the table keeps links out that lie nowhere.
-                    (None, None, _) => unreachable!("a link lies in a note or a day"),
-                };
-                let title: Option<String> = row.get(4)?;
-                let project = match found {
-                    Found::Block { .. } => Some(parsed(row, 5)?),
-                    _ => None,
-                };
-                Ok(Backlink {
-                    found,
-                    title: title.filter(|title| !title.is_empty()),
-                    project,
-                })
-            })?
+            .query_map((target.project().as_str(), target.name()), backlink)?
             .collect::<Result<_, _>>()?;
         Ok(backlinks)
+    }
+
+    /// Where the contact `contact` is mentioned: notes by project and name,
+    /// then days, newest first, each with its day note before its blocks.
+    /// A place with more than one mention comes once. Leaves out the first
+    /// `skip` places and returns at most `limit`.
+    pub fn mentions(
+        &self,
+        contact: &ContactSlug,
+        skip: u32,
+        limit: u32,
+    ) -> Result<Vec<Backlink>, IndexError> {
+        let mut statement = self.connection.prepare_cached(
+            "SELECT DISTINCT m.note_project, m.note_name, m.date, m.block, b.title, b.project,
+                 b.start_minute
+             FROM mentions m
+             LEFT JOIN blocks b ON b.date = m.date AND b.id = m.block
+             WHERE m.contact = ?
+             ORDER BY m.note_project IS NULL, m.note_project, m.note_name, m.date DESC,
+                 b.start_minute
+             LIMIT ? OFFSET ?",
+        )?;
+        let mentions = statement
+            .query_map((contact.as_str(), limit, skip), backlink)?
+            .collect::<Result<_, _>>()?;
+        Ok(mentions)
     }
 
     /// The remote and hybrid work days of each year that has any, oldest

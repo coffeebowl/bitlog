@@ -230,7 +230,8 @@ fn contact(mut vault: Vault, command: ContactCommand) -> Result<()> {
             Ok(())
         }
         ContactCommand::Show { slug } => {
-            print!("{}", contact::format_contact(&vault, &slug)?);
+            let mentions = open_index(&vault)?.mentions(&slug, 0, contact::MENTIONS_SHOWN + 1)?;
+            print!("{}", contact::format_contact(&vault, &slug, &mentions)?);
             Ok(())
         }
         ContactCommand::Add { slug, values } => {
@@ -245,6 +246,9 @@ fn contact(mut vault: Vault, command: ContactCommand) -> Result<()> {
         } => {
             let archived = (archive || unarchive).then_some(archive);
             contact::edit_contact(&mut vault, &slug, changes(values, no_role, archived))
+        }
+        ContactCommand::Rename { slug, new_slug } => {
+            contact::rename_contact(&mut vault, &slug, &new_slug)
         }
     }
 }

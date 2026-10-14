@@ -1,13 +1,14 @@
-//! Following links: wiki links to notes of the vault, and web links and
-//! images that other apps open.
+//! Following links: wiki links to notes of the vault, web links and images
+//! that other apps open, and mentions of contacts.
 
 use std::cell::RefCell;
+use std::ops::Range;
 use std::path::PathBuf;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::NotePath;
+use bitlog_core::{ContactSlug, NotePath};
 use gtk::{gdk, glib};
 
 use super::MarkdownView;
@@ -22,6 +23,8 @@ pub(super) enum Target {
     Web(String),
     /// An image, which another app shows.
     File(PathBuf),
+    /// A contact, mentioned at the character range.
+    Contact(ContactSlug, Range<i32>),
 }
 
 impl MarkdownView {
@@ -59,7 +62,7 @@ impl MarkdownView {
     }
 
     /// Opens a note of the vault, or another app for a web page, a mail
-    /// address or an image.
+    /// address or an image, or shows the card of a contact.
     fn follow_link(&self, target: Target) {
         match target {
             Target::Note(Some(note)) => {
@@ -81,6 +84,7 @@ impl MarkdownView {
                     async move { launch::open_file(&view, &path).await }
                 ));
             }
+            Target::Contact(slug, range) => self.show_contact_card(&slug, &range),
         }
     }
 

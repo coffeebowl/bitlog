@@ -1,8 +1,8 @@
 //! The pictures of contacts: made small for the vault, and shown in avatars.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use bitlog_core::{Contact, ContactSlug, Vault};
+use bitlog_core::{Contact, ContactSlug};
 use gtk::{gdk, gdk_pixbuf, gio, glib};
 
 /// Pictures are square, this many pixels wide: enough for the largest
@@ -52,15 +52,16 @@ pub fn jpeg(source: Source) -> Result<Vec<u8>, glib::Error> {
     small.save_to_bufferv("jpeg", &[("quality", QUALITY)])
 }
 
-/// The picture of the contact `slug`, if it has one that can be read.
-pub fn picture(vault: &Vault, slug: &ContactSlug) -> Option<gdk::Texture> {
-    gdk::Texture::from_filename(Contact::image_path(vault.root(), slug)).ok()
+/// The picture of the contact `slug` in the vault at `root`, if it has one
+/// that can be read.
+pub fn picture(root: &Path, slug: &ContactSlug) -> Option<gdk::Texture> {
+    gdk::Texture::from_filename(Contact::image_path(root, slug)).ok()
 }
 
-/// An avatar of `contact` `size` pixels wide, with their picture or else
-/// their initials.
-pub fn avatar(vault: &Vault, contact: &Contact, size: i32) -> adw::Avatar {
+/// An avatar of `contact` of the vault at `root`, `size` pixels wide, with
+/// their picture or else their initials.
+pub fn avatar(root: &Path, contact: &Contact, size: i32) -> adw::Avatar {
     let avatar = adw::Avatar::new(size, Some(&contact.name), true);
-    avatar.set_custom_image(picture(vault, &contact.slug).as_ref());
+    avatar.set_custom_image(picture(root, &contact.slug).as_ref());
     avatar
 }

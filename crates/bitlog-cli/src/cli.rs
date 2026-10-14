@@ -206,7 +206,8 @@ pub enum ContactCommand {
         #[arg(long)]
         all: bool,
     },
-    /// Show the fields of a contact and their roles in projects.
+    /// Show the fields of a contact, their roles in projects and where they
+    /// are mentioned.
     Show {
         /// The slug of the contact
         slug: ContactSlug,
@@ -236,6 +237,13 @@ pub enum ContactCommand {
         /// Show an archived contact again
         #[arg(long, group = "change")]
         unarchive: bool,
+    },
+    /// Change a contact's slug, in all days and notes that mention it.
+    Rename {
+        /// The slug of the contact
+        slug: ContactSlug,
+        /// The new slug
+        new_slug: ContactSlug,
     },
 }
 

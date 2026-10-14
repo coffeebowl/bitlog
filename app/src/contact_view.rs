@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use adw::prelude::*;
@@ -13,6 +13,12 @@ use crate::colors::color_dot;
 use crate::contact_image::picture;
 use crate::format::{contact_label, format_full_date, format_time};
 use crate::launch;
+use crate::note_view::backlink_row;
+use crate::search_index::SearchIndex;
+use crate::window::show_action;
+
+/// How many places that mention the contact are listed at once.
+const MENTIONS_AT_ONCE: u32 = 10;
 
 mod imp {
     use super::*;
@@ -42,6 +48,18 @@ mod imp {
         pub details_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub projects_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub mentions_group: TemplateChild<adw::PreferencesGroup>,
+        #[template_child]
+        pub mentions_list: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub more_button: TemplateChild<gtk::Button>,
+        pub index: RefCell<SearchIndex>,
+        pub vault: RefCell<Option<Rc<Vault>>>,
+        /// Counts the lookups of mentions, so that one finishing after a
+        /// newer one started is dropped.
+        pub lookups: Cell<u32>,
+        pub mentions_shown: Cell<u32>,
     }
 
     #[glib::object_subclass]
@@ -59,14 +77,23 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for ContactView {}
+    impl ObjectImpl for ContactView {
+        fn constructed(&self) {
+            self.parent_constructed();
+            self.more_button.connect_clicked(glib::clone!(
+                #[weak(rename_to = view)]
+                self.obj(),
+                move |_| view.show_mentions(false)
+            ));
+        }
+    }
     impl WidgetImpl for ContactView {}
     impl NavigationPageImpl for ContactView {}
 }
 
 glib::wrapper! {
-    /// One contact with the fields that have a value and the projects they
-    /// work on.
+    /// One contact with the fields that have a value, the projects they
+    /// work on and the places that mention them.
     pub struct ContactView(ObjectSubclass<imp::ContactView>)
         @extends adw::NavigationPage, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -83,16 +110,21 @@ impl ContactView {
         self.imp().picture_button.clone()
     }
 
+    pub fn set_index(&self, index: SearchIndex) {
+        self.imp().index.replace(index);
+    }
+
     /// Shows `contact` of `vault`.
     pub fn show(&self, vault: &Rc<Vault>, contact: &Contact) {
         let imp = self.imp();
+        imp.vault.replace(Some(vault.clone()));
         if imp.slug.borrow().as_ref() != Some(&contact.slug) {
             imp.scrolled.vadjustment().set_value(0.0);
         }
         imp.slug.replace(Some(contact.slug.clone()));
         self.set_title(&contact.name);
         imp.avatar.set_text(Some(&contact.name));
-        let picture = picture(vault, &contact.slug);
+        let picture = picture(vault.root(), &contact.slug);
         imp.avatar.set_custom_image(picture.as_ref());
         imp.name_label.set_label(&contact.name);
         imp.company_label.set_label(&contact.company);
@@ -102,11 +134,11 @@ impl ContactView {
             group.remove(&row);
         }
         for (label, number) in &contact.phones {
-            let uri = format!("tel:{}", number.replace(' ', ""));
+            let uri = phone_uri(number);
             self.add_row(&imp.phone_group, &contact_label(label), number, Some(uri));
         }
         for (label, address) in &contact.emails {
-            let uri = format!("mailto:{address}");
+            let uri = mail_uri(address);
             self.add_row(&imp.email_group, &contact_label(label), address, Some(uri));
         }
         let details = &imp.details_group;
@@ -159,6 +191,51 @@ impl ContactView {
             let has_rows = imp.rows.borrow().iter().any(|(other, _)| other == group);
             group.set_visible(has_rows);
         }
+        self.show_mentions(true);
+    }
+
+    /// Looks up the places that mention the contact shown in the background
+    /// and lists them, all over again if `first`, else the next batch.
+    fn show_mentions(&self, first: bool) {
+        let imp = self.imp();
+        let (Some(slug), Some(vault)) = (self.slug(), imp.vault.borrow().clone()) else {
+            return;
+        };
+        let lookup = imp.lookups.get() + u32::from(first);
+        imp.lookups.set(lookup);
+        let skip = if first { 0 } else { imp.mentions_shown.get() };
+        let index = imp.index.borrow().clone();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            async move {
+                let mentions = index.mentions(&vault, slug, skip, MENTIONS_AT_ONCE).await;
+                let imp = view.imp();
+                if imp.lookups.get() != lookup {
+                    return;
+                }
+                let mentions = mentions.unwrap_or_else(|err| {
+                    glib::g_warning!("bitlog", "{err}");
+                    Vec::new()
+                });
+                if first {
+                    imp.mentions_list.remove_all();
+                }
+                for mention in &mentions {
+                    let row = backlink_row(&vault, mention);
+                    let (action, target) = show_action(&mention.found);
+                    row.set_action_target_value(Some(&target));
+                    row.set_action_name(Some(action));
+                    row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
+                    imp.mentions_list.append(&row);
+                }
+                let added = u32::try_from(mentions.len()).expect("at most a batch comes");
+                imp.mentions_shown.set(skip + added);
+                imp.mentions_group.set_visible(skip + added > 0);
+                // A full batch may have more behind it.
+                imp.more_button.set_visible(added == MENTIONS_AT_ONCE);
+            }
+        ));
     }
 
     fn append(&self, group: &adw::PreferencesGroup, row: adw::ActionRow) {
@@ -207,6 +284,16 @@ impl ContactView {
         row.add_suffix(&copy);
         self.append(group, row);
     }
+}
+
+/// The address that calls the phone number `number`.
+pub fn phone_uri(number: &str) -> String {
+    format!("tel:{}", number.replace(' ', ""))
+}
+
+/// The address that writes to the e-mail address `address`.
+pub fn mail_uri(address: &str) -> String {
+    format!("mailto:{address}")
 }
 
 fn property_row(title: &str, text: &str) -> adw::ActionRow {

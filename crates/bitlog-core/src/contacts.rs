@@ -1,5 +1,6 @@
 //! Contacts, `contacts/<slug>.toml`, and their pictures, `contacts/<slug>.jpg`.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
@@ -11,6 +12,8 @@ use crate::file::{
     FORMAT, check_format, content_hash, parse_text, parse_toml, read_file, read_folder, read_text,
     write_atomic,
 };
+use crate::mentions::renamed_mentions;
+use crate::notes::change_texts;
 use crate::toml_values::{labeled_texts, local_date, set, set_date, set_labeled_texts, set_text};
 use crate::{ContactSlug, EditError, InvalidId, ProjectSlug, Vault};
 
@@ -65,6 +68,13 @@ struct ContactFile {
     note: Option<String>,
     #[serde(default)]
     archived: bool,
+}
+
+fn move_file(from: &Path, to: &Path) -> Result<(), SaveError> {
+    fs::rename(from, to).map_err(|source| SaveError::Write {
+        path: to.to_owned(),
+        source,
+    })
 }
 
 /// Where contacts and their pictures live in `vault`.
@@ -314,6 +324,43 @@ impl Vault {
         write_atomic(&Contact::image_path(self.root(), slug), jpeg)
     }
 
+    /// Changes the slug of the contact `from` to `to`: points the mentions
+    /// in all days and notes to `to`, then renames the contact's file and
+    /// picture. Returns the number of days and notes changed.
+    ///
+    /// Nothing is changed while a day cannot be read. The file is renamed
+    /// last, so that renaming again after an interruption finishes the job.
+    pub fn rename_contact(
+        &mut self,
+        from: &ContactSlug,
+        to: &ContactSlug,
+    ) -> Result<(usize, usize), SaveError> {
+        if self.contact(from).is_none() {
+            return Err(EditError::UnknownContact(from.clone()).into());
+        }
+        let root = self.root().to_owned();
+        let new = Contact::path(&root, to);
+        if self.contact(to).is_some() || new.exists() || Contact::image_path(&root, to).exists() {
+            return Err(EditError::ContactExists(to.clone()).into());
+        }
+        for date in self.all_days()? {
+            self.load_day(date)?;
+        }
+        let rename = |text: &str| renamed_mentions(text, from, to);
+        let days = self.change_days(|day| change_texts(day, rename))?;
+        let notes = self.change_notes(|text, _| rename(text))?;
+        let image = Contact::image_path(&root, from);
+        if image.exists() {
+            move_file(&image, &Contact::image_path(&root, to))?;
+        }
+        move_file(&Contact::path(&root, from), &new)?;
+        let contact = Contact::read(&root, to.clone(), &read_text(&new)?)?;
+        self.contacts.retain(|contact| contact.slug != *from);
+        self.contacts.push(contact);
+        self.sort_contacts();
+        Ok((days, notes))
+    }
+
     /// Points the roles in the project `from` to the project `to`.
     pub(crate) fn rename_roles(
         &mut self,
@@ -342,8 +389,6 @@ impl Vault {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use super::*;
     use crate::file::sample_copy;
 
@@ -536,5 +581,43 @@ mod tests {
         fs::write(&lone, "").unwrap();
         fs::write(vault.root().join("contacts/kim.sync-conflict-1.jpg"), "").unwrap();
         assert_eq!(Contact::lone_images(vault.root()).unwrap(), [lone]);
+    }
+
+    #[test]
+    fn rename_contact() {
+        let (_dir, mut vault) = sample_copy();
+        let date = NaiveDate::from_ymd_opt(2026, 9, 21).unwrap();
+        let file = vault.load_day(date).unwrap().unwrap();
+        vault
+            .update_day(&file, |day| {
+                day.note = "Call @kim, not kim@example.com.".to_owned();
+                day.blocks[0].text = "With @kim and @alex.".to_owned();
+                Ok(())
+            })
+            .unwrap();
+        let note = "projects/infra/notes/deployment.md".parse().unwrap();
+        let file = vault.load_note(&note).unwrap();
+        vault.save_note(&file, "Ask @kim.\n").unwrap();
+        vault.save_contact_image(&slug("kim"), b"jpeg").unwrap();
+
+        let meyer = slug("kim-meyer");
+        assert_eq!(vault.rename_contact(&slug("kim"), &meyer).unwrap(), (1, 1));
+        let day = vault.load_day(date).unwrap().unwrap().day;
+        assert_eq!(day.note, "Call @kim-meyer, not kim@example.com.");
+        assert_eq!(day.blocks[0].text, "With @kim-meyer and @alex.");
+        assert_eq!(vault.load_note(&note).unwrap().text, "Ask @kim-meyer.\n");
+        assert!(vault.contact(&slug("kim")).is_none());
+        assert_eq!(vault.contact(&meyer).unwrap().name, "Kim Meyer");
+        assert!(!Contact::path(vault.root(), &slug("kim")).exists());
+        assert!(Contact::image_path(vault.root(), &meyer).is_file());
+
+        assert!(matches!(
+            vault.rename_contact(&slug("kim"), &slug("lee")),
+            Err(SaveError::Edit(EditError::UnknownContact(_)))
+        ));
+        assert!(matches!(
+            vault.rename_contact(&meyer, &slug("sam")),
+            Err(SaveError::Edit(EditError::ContactExists(_)))
+        ));
     }
 }

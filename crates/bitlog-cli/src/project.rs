@@ -9,7 +9,7 @@ use bitlog_core::{
 };
 use chrono::NaiveDate;
 
-use crate::table::table;
+use crate::table::{plural, table};
 
 /// A table of all projects in their order: slug, name, category, status,
 /// color and the path of their repository on this device.
@@ -117,10 +117,6 @@ pub fn edit_project(vault: &mut Vault, slug: &ProjectSlug, changes: ProjectChang
 
 pub fn rename_project(vault: &mut Vault, slug: &ProjectSlug, new_slug: &ProjectSlug) -> Result<()> {
     let (days, notes) = vault.rename_project(slug, new_slug)?;
-    let plural = |count: usize, noun: &str| match count {
-        1 => format!("1 {noun}"),
-        _ => format!("{count} {noun}s"),
-    };
     println!(
         "Renamed project {slug} to {new_slug}, changed {} and {}",
         plural(days, "day"),

@@ -224,7 +224,8 @@ outline of the document belongs to BitLog:
 
 - **Allowed:** paragraphs, lists and task lists, code blocks, inline code,
   bold, italic, strikethrough, links, images (see "Images"), block quotes,
-  tables, tags (`#tag`, without a space after the hash).
+  tables, tags (`#tag`, without a space after the hash), mentions (`@kim`,
+  see "Contacts").
 - **Not intended:** headings of any level, both `# Text` and setext headings
   (`===` or `---` below a line of text).
 - **In the app:** The editor offers no headings. Typed heading syntax is shown
@@ -471,6 +472,16 @@ Only `format` is required. Missing fields take these defaults:
   such as `phone = { work = "…" }`, are written as tables of their own.
 - A contact's picture is `contacts/<slug>.jpg`, square, 256 pixels wide.
   Pictures of other names or formats are ignored.
+- **Mentions** name a contact by its slug after an `@`, as in `@kim`, in
+  project notes, day notes and block texts. The slug ends before the first
+  character that cannot be part of one; a hyphen at its end does not count.
+  There is no mention if the slug runs into a letter, digit or `_` it cannot
+  hold, as in `@Kim` or `@kim_a`, or if the `@` follows a letter, digit, `_`,
+  `/` or `\`, as in mail and web addresses. Code, links, images and front
+  matter hold no mentions. A mention of a contact that does not exist is
+  plain text.
+- **Renaming** a contact (`bitlog contact rename`) renames its file and
+  picture and changes its mentions in all notes, day notes and block texts.
 - Contacts are TOML rather than vCard: vCard has no place for roles in
   projects, and keeping its unknown fields when writing would need a parser
   and writer of their own. A person's story comes from the texts, so there
@@ -481,8 +492,8 @@ Only `format` is required. Missing fields take these defaults:
 - Live in `projects/<slug>/notes/` and belong to the project only through this
   folder.
 - Plain Markdown; front matter is allowed but not evaluated.
-- BitLog only reads wiki links from them. Tags are defined below, but not
-  evaluated yet.
+- BitLog only reads wiki links and mentions (see "Contacts") from them. Tags
+  are defined below, but not evaluated yet.
 - Full Markdown, including headings.
 - Checkboxes are text, not managed tasks.
 - Only `.md` files directly in `notes/` are notes; subfolders are ignored.

@@ -92,6 +92,35 @@ template $BitLogContactView: Adw.NavigationPage {
           Adw.PreferencesGroup projects_group {
             title: _("Projects");
           }
+
+          Adw.PreferencesGroup mentions_group {
+            title: _("Mentions");
+            visible: false;
+
+            Box {
+              orientation: vertical;
+              spacing: 18;
+
+              ListBox mentions_list {
+                selection-mode: none;
+
+                styles [
+                  "boxed-list",
+                ]
+              }
+
+              Button more_button {
+                label: _("_Load More");
+                use-underline: true;
+                halign: center;
+                visible: false;
+
+                styles [
+                  "pill",
+                ]
+              }
+            }
+          }
         };
       };
     };

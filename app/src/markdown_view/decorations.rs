@@ -1,5 +1,6 @@
 //! What is drawn beside the text: bars beside quotes, bullets over the
-//! markers of list items and lines for rules, and what the other modules
+//! markers of list items, lines for rules and the backgrounds of inline code
+//! and mentions, and what the other modules
 //! add, like the cards of code blocks, diagrams, images and the grids of
 //! tables, and the syntax that is hidden until the cursor is at it.
 
@@ -16,7 +17,7 @@ use super::diagrams::DiagramCard;
 use super::images::ImageCard;
 use super::styling::{Styling, holds};
 use super::tables::{DelimiterDashes, Fit, Grid, TidiedTable};
-use super::{GRID_ALPHA, MARKUP_ALPHA, lists, tags};
+use super::{CODE_ALPHA, GRID_ALPHA, MARKUP_ALPHA, lists, tags};
 use crate::colors::with_alpha;
 use crate::drawing::{self, append_layout, fill_rounded};
 
@@ -26,6 +27,10 @@ const BULLETS: [&str; 3] = ["•", "◦", "▪"];
 const BULLET_ALPHA: f32 = 0.7;
 /// Bullets are a little larger than the text.
 const BULLET_SCALE: f64 = 1.4;
+/// Of the backgrounds of inline code and mentions, which reach this far
+/// beyond their text on either side.
+const CHIP_RADIUS: f32 = 4.0;
+const CHIP_PADDING: f32 = 2.0;
 
 /// As of the text last styled, in characters.
 #[derive(Debug, Default)]
@@ -36,6 +41,8 @@ pub(super) struct Decorations {
     pub(super) bullets: Vec<(i32, u8)>,
     /// Rules drawn as lines, not those being edited.
     rules: Vec<Range<i32>>,
+    /// Inline code and mentions, on a background with rounded corners.
+    pub(super) chips: Vec<Range<i32>>,
     pub(super) code_blocks: Vec<CodeCard>,
     /// Code blocks drawn as diagrams, not those being edited.
     pub(super) diagrams: Vec<DiagramCard>,
@@ -87,6 +94,7 @@ impl Decorations {
                         .bullets
                         .push((styling.offset(range.start), *depth));
                 }
+                MarkdownStyle::Code => decorations.chips.push(styling.chars(range)),
                 MarkdownStyle::Rule => {
                     decorations.revealable.push(styling.chars(range));
                     if !styling.is_at(range) {
@@ -163,6 +171,12 @@ impl Decorations {
         }
         for callout in &self.callouts {
             callout.snapshot(view, snapshot, &visible);
+        }
+        let chip_color = with_alpha(&color, CODE_ALPHA);
+        for range in &self.chips {
+            for rect in text_rects(view, range, &visible) {
+                fill_rounded(snapshot, rect, CHIP_RADIUS, &chip_color);
+            }
         }
         for range in &self.rules {
             if let Some((top, bottom)) = line_span(view, range, &visible) {
@@ -242,6 +256,43 @@ pub(super) fn line_span(
     let bottom = y + height;
     (bottom >= visible.y() && top <= visible.y() + visible.height())
         .then_some((top as f32, bottom as f32))
+}
+
+/// Where the text of `range` in `view` is, one rectangle for each line it
+/// wraps onto, as high as the font and a little wider than the text, in
+/// buffer coordinates. Leaves out what is not `visible`.
+fn text_rects(
+    view: &gtk::TextView,
+    range: &Range<i32>,
+    visible: &gdk::Rectangle,
+) -> Vec<graphene::Rect> {
+    let buffer = view.buffer();
+    let end = buffer.iter_at_offset(range.end);
+    let mut start = buffer.iter_at_offset(range.start);
+    let mut rects = Vec::new();
+    loop {
+        let mut line_end = start;
+        if !view.forward_display_line_end(&mut line_end) || line_end > end {
+            line_end = end;
+        }
+        let (from, _) = view.cursor_locations(Some(&start));
+        let (to, _) = view.cursor_locations(Some(&line_end));
+        let shown =
+            from.y() + from.height() >= visible.y() && from.y() <= visible.y() + visible.height();
+        if shown && to.x() > from.x() {
+            rects.push(graphene::Rect::new(
+                from.x() as f32 - CHIP_PADDING,
+                from.y() as f32,
+                (to.x() - from.x()) as f32 + 2.0 * CHIP_PADDING,
+                from.height() as f32,
+            ));
+        }
+        // Not from its end: that is where the next line starts, too.
+        if !view.forward_display_line(&mut start) || start >= end {
+            break;
+        }
+    }
+    rects
 }
 
 /// Where the text of `view` starts and ends across, in buffer coordinates,

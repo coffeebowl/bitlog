@@ -15,6 +15,7 @@ mod id;
 mod images;
 mod init;
 mod markdown;
+mod mentions;
 mod notes;
 mod period;
 mod project;
@@ -54,6 +55,7 @@ pub use markdown::{
     continue_quote, continue_table, escape_headings, markdown_formatting, nest_list_item,
     pairs_bracket, pasted_link, renumbered_lists, tidied_table, toggled_tasks, typed_link_target,
 };
+pub use mentions::{Mention, mentions, typed_mention};
 pub use notes::{NoteFile, SavedNote, WikiLink, link_target, wiki_links};
 pub use period::{Period, week_number, week_start};
 pub use project::{Project, ProjectStatus};

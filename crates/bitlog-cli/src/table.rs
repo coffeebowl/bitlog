@@ -29,6 +29,14 @@ pub fn table<const N: usize>(rows: &[[String; N]], right: &[usize]) -> String {
         .collect()
 }
 
+/// `count` and `noun`, in the plural unless `count` is 1, as in "3 days".
+pub fn plural(count: usize, noun: &str) -> String {
+    match count {
+        1 => format!("1 {noun}"),
+        _ => format!("{count} {noun}s"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

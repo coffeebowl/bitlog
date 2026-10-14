@@ -171,14 +171,26 @@ impl DayView {
         }
     }
 
-    /// Marks the wiki links of the day note and the block texts again, as
-    /// the notes are now. Day files belong to no project, not even in a
-    /// block.
+    /// Marks the wiki links and mentions of the day note and the block texts
+    /// again, as the notes and contacts are now. Day files belong to no
+    /// project, not even in a block, but the people of the block's project
+    /// come first.
     pub fn update_links(&self) {
         let imp = self.imp();
-        let existing = existing_notes(&self.vault());
+        let vault = self.vault();
+        let existing = existing_notes(&vault);
+        imp.note_view.set_contacts(None, vault.contacts().to_vec());
         imp.note_view.set_wiki_links(None, existing.clone());
+        self.update_block_contacts();
         imp.block_text.set_wiki_links(None, existing);
+    }
+
+    /// Tells the block text which project the block shown is of, for the
+    /// mentions in it.
+    pub(super) fn update_block_contacts(&self) {
+        let project = self.shown_block().map(|block| block.project);
+        let contacts = self.vault().contacts().to_vec();
+        self.imp().block_text.set_contacts(project, contacts);
     }
 
     /// The block shown in the panel, as saved.

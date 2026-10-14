@@ -2,8 +2,10 @@
 
 use anyhow::Result;
 use bitlog_core::{Contact, ContactSlug, EditError, ProjectSlug, Vault};
+use bitlog_index::Backlink;
 
-use crate::table::table;
+use crate::search::place;
+use crate::table::{plural, table};
 
 /// A table of the contacts by name, the archived ones only if `all`: slug,
 /// name, company, the projects they work on, and whether they are archived.
@@ -30,9 +32,13 @@ pub fn format_contacts(vault: &Vault, all: bool) -> String {
     table(&rows, &[])
 }
 
+/// How many places `bitlog contact show` lists where a contact is mentioned.
+pub const MENTIONS_SHOWN: u32 = 10;
+
 /// The fields of the contact `slug` that have a value, one per line, then
-/// the projects they work on with their roles.
-pub fn format_contact(vault: &Vault, slug: &ContactSlug) -> Result<String> {
+/// the projects they work on with their roles, then the first of the
+/// places in `mentions`, with `…` if there are more.
+pub fn format_contact(vault: &Vault, slug: &ContactSlug, mentions: &[Backlink]) -> Result<String> {
     let contact = vault
         .contact(slug)
         .ok_or_else(|| EditError::UnknownContact(slug.clone()))?;
@@ -77,7 +83,39 @@ pub fn format_contact(vault: &Vault, slug: &ContactSlug) -> Result<String> {
         text.push('\n');
         text += &table(&roles, &[]);
     }
+    let places: Vec<[String; 3]> = mentions
+        .iter()
+        .take(MENTIONS_SHOWN as usize)
+        .map(|mention| {
+            [
+                place(&mention.found),
+                mention
+                    .project
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+                mention.title.clone().unwrap_or_default(),
+            ]
+        })
+        .collect();
+    if !places.is_empty() {
+        text += "\nMentioned in\n";
+        text += &table(&places, &[]);
+    }
+    if mentions.len() > MENTIONS_SHOWN as usize {
+        text += "…\n";
+    }
     Ok(text)
+}
+
+pub fn rename_contact(vault: &mut Vault, slug: &ContactSlug, new_slug: &ContactSlug) -> Result<()> {
+    let (days, notes) = vault.rename_contact(slug, new_slug)?;
+    println!(
+        "Renamed contact {slug} to {new_slug}, changed {} and {}",
+        plural(days, "day"),
+        plural(notes, "note")
+    );
+    Ok(())
 }
 
 /// Changes to a contact; `None` keeps a value as it is.
@@ -140,6 +178,8 @@ fn apply(contact: &mut Contact, changes: ContactChanges) {
 mod tests {
     use std::path::Path;
 
+    use bitlog_index::Found;
+
     use super::*;
 
     fn sample_vault() -> Vault {
@@ -165,7 +205,7 @@ mod tests {
     fn show_contact() {
         let vault = sample_vault();
         assert_eq!(
-            format_contact(&vault, &"kim".parse().unwrap()).unwrap(),
+            format_contact(&vault, &"kim".parse().unwrap(), &[]).unwrap(),
             "Name       Kim Meyer\n\
              Company    Example GmbH\n\
              Hours      Mon–Thu, 9–15\n\
@@ -180,6 +220,34 @@ mod tests {
              \n\
              webshop  Webshop  Product Owner\n"
         );
-        assert!(format_contact(&vault, &"nope".parse().unwrap()).is_err());
+        assert!(format_contact(&vault, &"nope".parse().unwrap(), &[]).is_err());
+    }
+
+    #[test]
+    fn show_mentions() {
+        let vault = sample_vault();
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 9, 21).unwrap();
+        let block = Backlink {
+            found: Found::Block {
+                date,
+                id: "k7f3".parse().unwrap(),
+            },
+            title: Some("Rebuilt auth middleware".to_owned()),
+            project: Some("infra".parse().unwrap()),
+        };
+        let note = Backlink {
+            found: Found::Note("projects/infra/notes/deployment.md".parse().unwrap()),
+            title: None,
+            project: None,
+        };
+        let text = format_contact(&vault, &"sam".parse().unwrap(), &[note, block.clone()]).unwrap();
+        assert!(text.ends_with(
+            "\nMentioned in\n\
+             infra/deployment\n\
+             2026-09-21 k7f3   infra  Rebuilt auth middleware\n"
+        ));
+        let many = vec![block; MENTIONS_SHOWN as usize + 1];
+        let text = format_contact(&vault, &"sam".parse().unwrap(), &many).unwrap();
+        assert!(text.ends_with("Rebuilt auth middleware\n…\n"));
     }
 }

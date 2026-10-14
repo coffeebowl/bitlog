@@ -178,7 +178,7 @@ fn person_row(vault: &Vault, contact: &Contact, role: &str) -> adw::ActionRow {
         .action_name("win.show-contact")
         .action_target(&target)
         .build();
-    row.add_prefix(&avatar(vault, contact, 32));
+    row.add_prefix(&avatar(vault.root(), contact, 32));
     let menu = gio::Menu::new();
     for (label, action) in [
         (gettext("_Change Role…"), "people.change-role"),

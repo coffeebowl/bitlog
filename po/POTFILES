@@ -24,6 +24,7 @@ app/src/launch.rs
 app/src/main.rs
 app/src/markdown_view/adding_images.rs
 app/src/markdown_view/callouts.rs
+app/src/markdown_view/contact_cards.rs
 app/src/markdown_view/menu.rs
 app/src/note_actions.rs
 app/src/note_dialogs.rs

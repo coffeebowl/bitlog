@@ -15,6 +15,7 @@ use crate::contact_image::{Source, avatar};
 use crate::contact_view::ContactView;
 use crate::format::plural;
 use crate::projects_page::shows;
+use crate::search_index::SearchIndex;
 use crate::trash::trash;
 use crate::widgets::param;
 
@@ -148,6 +149,10 @@ impl ContactsPage {
     /// Shows the contacts of `vault` from the next call of `reload` on.
     pub fn set_vault(&self, vault: Rc<Vault>) {
         self.imp().vault.replace(Some(vault));
+    }
+
+    pub fn set_index(&self, index: SearchIndex) {
+        self.imp().contact_view.set_index(index);
     }
 
     pub fn vault(&self) -> Rc<Vault> {
@@ -354,7 +359,7 @@ fn contact_row(vault: &Vault, contact: &Contact) -> adw::ActionRow {
         .action_name("contacts.open")
         .action_target(&contact.slug.to_string().to_variant())
         .build();
-    row.add_prefix(&avatar(vault, contact, 32));
+    row.add_prefix(&avatar(vault.root(), contact, 32));
     row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
     row
 }

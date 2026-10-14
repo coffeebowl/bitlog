@@ -8,8 +8,8 @@ use gtk::glib::translate::IntoGlib;
 use gtk::prelude::*;
 use gtk::{gdk, pango};
 
+use super::MARKUP_ALPHA;
 use super::styling::Styling;
-use super::{CODE_ALPHA, MARKUP_ALPHA};
 use crate::colors::with_alpha;
 
 const HEADING_SCALES: [f64; 6] = [1.6, 1.4, 1.25, 1.1, 1.0, 1.0];
@@ -144,7 +144,6 @@ pub(super) fn update(view: &gtk::TextView) {
     let dimmed = with_alpha(&color, MARKUP_ALPHA);
     tag(&name(MarkdownStyle::Markup)).set_foreground_rgba(Some(&dimmed));
     tag(BROKEN_LINK).set_foreground_rgba(Some(&dimmed));
-    tag(&name(MarkdownStyle::Code)).set_background_rgba(Some(&with_alpha(&color, CODE_ALPHA)));
     tag(TASK_DONE).set_foreground_rgba(Some(&dimmed));
     tag(LIST_NUMBER).set_foreground_rgba(Some(&color));
     // Tags set margins from the edge, not from those of the view.

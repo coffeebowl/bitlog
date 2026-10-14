@@ -3,7 +3,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use bitlog_core::{Day, NotePath, ProjectSlug, TaskList, Vault, wiki_links};
+use bitlog_core::{Day, NotePath, ProjectSlug, TaskList, Vault, mentions, wiki_links};
+use chrono::NaiveDate;
 use rusqlite::{Transaction, params};
 
 use crate::{Found, IndexError, IndexFile};
@@ -105,7 +106,9 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
             block.text,
         ])?;
     }
-    insert_links(tx, &Found::DayNote(day.date), &day.note, None)?;
+    let day_note = Found::DayNote(day.date);
+    insert_links(tx, &day_note, &day.note, None)?;
+    insert_mentions(tx, &day_note, &day.note)?;
     for block in &day.blocks {
         let source = Found::Block {
             date: day.date,
@@ -113,6 +116,7 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
         };
         // Day files belong to no project, not even in a block.
         insert_links(tx, &source, &block.text, None)?;
+        insert_mentions(tx, &source, &block.text)?;
     }
     Ok(())
 }
@@ -120,7 +124,20 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
 fn insert_note(tx: &Transaction, note: &NotePath, text: &str) -> rusqlite::Result<()> {
     tx.prepare_cached("INSERT INTO notes (project, name, text) VALUES (?, ?, ?)")?
         .execute(params![note.project().as_str(), note.name(), text])?;
-    insert_links(tx, &Found::Note(note.clone()), text, Some(note.project()))
+    let source = Found::Note(note.clone());
+    insert_links(tx, &source, text, Some(note.project()))?;
+    insert_mentions(tx, &source, text)
+}
+
+/// The note, or the day and block, of `source`, as the tables of links and
+/// mentions keep it.
+fn place(source: &Found) -> (Option<&NotePath>, Option<NaiveDate>, Option<&str>) {
+    match source {
+        Found::Note(note) => (Some(note), None, None),
+        Found::DayNote(date) => (None, Some(*date), None),
+        Found::Block { date, id } => (None, Some(*date), Some(id.as_str())),
+        Found::Task(_) => unreachable!("tasks hold no links or mentions"),
+    }
 }
 
 /// Puts the wiki links in `text`, found in `source` of the project
@@ -131,12 +148,7 @@ fn insert_links(
     text: &str,
     project: Option<&ProjectSlug>,
 ) -> rusqlite::Result<()> {
-    let (note, date, block) = match source {
-        Found::Note(note) => (Some(note), None, None),
-        Found::DayNote(date) => (None, Some(*date), None),
-        Found::Block { date, id } => (None, Some(*date), Some(id.as_str())),
-        Found::Task(_) => unreachable!("tasks hold no links"),
-    };
+    let (note, date, block) = place(source);
     let mut insert = tx.prepare_cached(
         "INSERT INTO links (note_project, note_name, date, block, target_project, target_name)
          VALUES (?, ?, ?, ?, ?, ?)",
@@ -152,6 +164,25 @@ fn insert_links(
             block,
             target.project().as_str(),
             target.name(),
+        ])?;
+    }
+    Ok(())
+}
+
+/// Puts the mentions in `text`, found in `source`, into the index.
+fn insert_mentions(tx: &Transaction, source: &Found, text: &str) -> rusqlite::Result<()> {
+    let (note, date, block) = place(source);
+    let mut insert = tx.prepare_cached(
+        "INSERT INTO mentions (note_project, note_name, date, block, contact)
+         VALUES (?, ?, ?, ?, ?)",
+    )?;
+    for mention in mentions(text) {
+        insert.execute(params![
+            note.map(|note| note.project().as_str()),
+            note.map(|note| note.name()),
+            date,
+            block,
+            mention.contact.as_str(),
         ])?;
     }
     Ok(())

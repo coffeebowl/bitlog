@@ -21,7 +21,7 @@ pub fn format_hits(hits: &[SearchHit], bold: bool) -> String {
 }
 
 /// Where a hit lies, notes as a wiki link would name them.
-fn place(found: &Found) -> String {
+pub fn place(found: &Found) -> String {
     match found {
         Found::Block { date, id } => format!("{date} {id}"),
         Found::DayNote(date) => format!("{date} day note"),

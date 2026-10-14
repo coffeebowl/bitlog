@@ -148,8 +148,7 @@ impl NoteView {
         imp.window_title
             .set_subtitle(self.vault().project_name(note.project()));
         imp.menu_button.set_menu_model(Some(&note_menu(note)));
-        imp.editor
-            .set_wiki_links(Some(note.project().clone()), existing_notes(&self.vault()));
+        self.mark_links(note);
         let vault = self.vault();
         imp.editor
             .set_location(vault.root(), &vault.note_path(note));
@@ -193,15 +192,22 @@ impl NoteView {
         }
     }
 
-    /// Marks the wiki links again and looks up the links to the note, after
-    /// notes were changed, added or removed.
+    /// Marks the wiki links and mentions again and looks up the links to the
+    /// note, after notes or contacts were changed, added or removed.
     pub fn update_links(&self) {
         if let Some(note) = self.note() {
-            self.imp()
-                .editor
-                .set_wiki_links(Some(note.project().clone()), existing_notes(&self.vault()));
+            self.mark_links(&note);
             self.show_backlinks();
         }
+    }
+
+    /// Marks the wiki links and mentions in the text of `note` as the notes
+    /// and contacts are now.
+    fn mark_links(&self, note: &NotePath) {
+        let editor = &self.imp().editor;
+        let vault = self.vault();
+        editor.set_contacts(Some(note.project().clone()), vault.contacts().to_vec());
+        editor.set_wiki_links(Some(note.project().clone()), existing_notes(&vault));
     }
 
     /// Looks up the places linking to the note shown in the background and
@@ -328,8 +334,9 @@ pub fn existing_notes(vault: &Vault) -> HashSet<NotePath> {
         .collect()
 }
 
-/// A row naming the note, block or day note of `backlink`.
-fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
+/// A row naming the note, block or day note of `backlink`, which may also
+/// be a mention.
+pub fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
     let escaped = |text: &str| glib::markup_escape_text(text).to_string();
     let (title, subtitle) = match &backlink.found {
         Found::Note(note) => (
@@ -345,7 +352,7 @@ fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
             (title_markup(title, &project), format_full_date(*date))
         }
         Found::DayNote(date) => (escaped(&gettext("Day Note")), format_full_date(*date)),
-        Found::Task(_) => unreachable!("tasks hold no links"),
+        Found::Task(_) => unreachable!("tasks hold no links or mentions"),
     };
     adw::ActionRow::builder()
         .title(title)

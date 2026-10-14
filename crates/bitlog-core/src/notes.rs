@@ -108,13 +108,19 @@ fn note_path(target: &str, project: Option<&ProjectSlug>) -> Option<NotePath> {
 /// note `target` gives for the one they point to, if it gives one. Returns
 /// whether any changed.
 pub(crate) fn relink_day(day: &mut Day, target: &impl Fn(&NotePath) -> Option<NotePath>) -> bool {
+    change_texts(day, |text| relinked(text, None, target))
+}
+
+/// Replaces the day note and block texts of `day` with what `change` makes
+/// of them, where it makes anything. Returns whether any changed.
+pub(crate) fn change_texts(day: &mut Day, change: impl Fn(&str) -> Option<String>) -> bool {
     let mut changed = false;
-    if let Some(note) = relinked(&day.note, None, target) {
+    if let Some(note) = change(&day.note) {
         day.note = note;
         changed = true;
     }
     for block in &mut day.blocks {
-        if let Some(text) = relinked(&block.text, None, target) {
+        if let Some(text) = change(&block.text) {
             block.text = text;
             changed = true;
         }
@@ -166,7 +172,7 @@ fn relinked(
     changed.then_some(relinked)
 }
 
-fn parser(text: &str) -> Parser<'_> {
+pub(crate) fn parser(text: &str) -> Parser<'_> {
     Parser::new_ext(
         text,
         Options::ENABLE_WIKILINKS
@@ -350,11 +356,21 @@ impl Vault {
         &self,
         target: &impl Fn(&NotePath) -> Option<NotePath>,
     ) -> Result<usize, SaveError> {
+        self.change_notes(|text, project| relinked(text, Some(project), target))
+    }
+
+    /// Replaces the text of each note with what `change` makes of it and
+    /// its project, where it makes anything. Returns the number of notes
+    /// changed.
+    pub(crate) fn change_notes(
+        &self,
+        change: impl Fn(&str, &ProjectSlug) -> Option<String>,
+    ) -> Result<usize, SaveError> {
         let mut changed = 0;
         for note in self.all_notes() {
             let note = note?;
             let text = self.load_note(&note)?.text;
-            if let Some(text) = relinked(&text, Some(note.project()), target) {
+            if let Some(text) = change(&text, note.project()) {
                 self.write(&self.note_path(&note), &text)?;
                 changed += 1;
             }

@@ -224,6 +224,7 @@ impl DayView {
         if is_other || !imp.block_text.shows(&block.text) {
             imp.block_text.set_markdown(&block.text);
         }
+        self.update_block_contacts();
         imp.split_view.set_show_sidebar(true);
     }
 }

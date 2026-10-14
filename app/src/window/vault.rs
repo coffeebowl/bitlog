@@ -126,6 +126,7 @@ impl Window {
         imp.projects_page.set_index(index.clone());
         imp.notes_page.set_index(index.clone());
         imp.reports_page.set_index(index.clone());
+        imp.contacts_page.set_index(index.clone());
         let indexed = vault.clone();
         glib::spawn_future_local(async move {
             if let Err(err) = index.update(&indexed).await {
