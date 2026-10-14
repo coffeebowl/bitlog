@@ -40,22 +40,41 @@ template $BitLogContactView: Adw.NavigationPage {
             orientation: vertical;
             spacing: 6;
 
-            // Picture files dropped onto it become the contact's picture.
-            MenuButton picture_button {
+            Overlay {
               halign: center;
               margin-bottom: 6;
-              tooltip-text: _("Change Picture");
-              menu-model: picture_menu;
 
-              child: Adw.Avatar avatar {
-                size: 128;
-                show-initials: true;
+              // Picture files dropped onto it become the contact's picture.
+              child: MenuButton picture_button {
+                tooltip-text: _("Change Picture");
+                menu-model: picture_menu;
+
+                child: Adw.Avatar avatar {
+                  size: 128;
+                  show-initials: true;
+                };
+
+                styles [
+                  "flat",
+                  "circular",
+                ]
               };
 
-              styles [
-                "flat",
-                "circular",
-              ]
+              // Shows that the picture can be changed. Outside the round
+              // button below, so it opens its menu; keys use that one.
+              [overlay]
+              Button edit_picture_button {
+                icon-name: "document-edit-symbolic";
+                tooltip-text: _("Change Picture");
+                can-focus: false;
+                halign: end;
+                valign: end;
+
+                styles [
+                  "circular",
+                  "osd",
+                ]
+              }
             }
 
             Label name_label {

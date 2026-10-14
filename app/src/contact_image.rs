@@ -39,16 +39,27 @@ pub fn jpeg(source: Source) -> Result<Vec<u8>, glib::Error> {
         side,
     );
     let size = side.min(SIZE);
-    let interpolation = gdk_pixbuf::InterpType::Hyper;
-    // JPEG has no transparency, so it goes onto white.
-    let small = if square.has_alpha() {
-        square.composite_color_simple(size, size, interpolation, 255, 16, 0xffffff, 0xffffff)
-    } else {
-        square.scale_simple(size, size, interpolation)
-    };
-    let small = small.ok_or_else(|| {
-        glib::Error::new(gdk_pixbuf::PixbufError::InsufficientMemory, "cannot scale")
-    })?;
+    // JPEG has no transparency, so it goes onto white, into a picture
+    // without an alpha channel: the JPEG writer refuses one.
+    let small = gdk_pixbuf::Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, false, 8, size, size)
+        .ok_or_else(|| {
+            glib::Error::new(gdk_pixbuf::PixbufError::InsufficientMemory, "cannot scale")
+        })?;
+    small.fill(0xffffffff);
+    let scale = f64::from(size) / f64::from(side);
+    square.composite(
+        &small,
+        0,
+        0,
+        size,
+        size,
+        0.0,
+        0.0,
+        scale,
+        scale,
+        gdk_pixbuf::InterpType::Hyper,
+        255,
+    );
     small.save_to_bufferv("jpeg", &[("quality", QUALITY)])
 }
 
@@ -64,4 +75,25 @@ pub fn avatar(root: &Path, contact: &Contact, size: i32) -> adw::Avatar {
     let avatar = adw::Avatar::new(size, Some(&contact.name), true);
     avatar.set_custom_image(picture(root, &contact.slug).as_ref());
     avatar
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transparent_pictures_become_jpeg() {
+        let png = gdk_pixbuf::Pixbuf::new(gdk_pixbuf::Colorspace::Rgb, true, 8, 40, 30)
+            .unwrap()
+            .save_to_bufferv("png", &[])
+            .unwrap();
+        let jpeg = jpeg(Source::Png(glib::Bytes::from_owned(png))).unwrap();
+        assert!(jpeg.starts_with(&[0xff, 0xd8]));
+        let read = gdk_pixbuf::Pixbuf::from_stream(
+            &gio::MemoryInputStream::from_bytes(&glib::Bytes::from_owned(jpeg)),
+            gio::Cancellable::NONE,
+        )
+        .unwrap();
+        assert_eq!((read.width(), read.height()), (30, 30));
+    }
 }

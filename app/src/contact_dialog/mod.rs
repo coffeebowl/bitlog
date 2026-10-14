@@ -391,6 +391,10 @@ impl ContactDialog {
     /// Shows the field `field` that was hidden, for the user to fill in.
     fn show_field(&self, field: &str) {
         let imp = self.imp();
+        // A hidden group hides the rows shown in it right away again.
+        if field != "note" {
+            imp.details_group.set_visible(true);
+        }
         match field {
             "company" => imp.company_row.set_visible(true),
             "hours" => imp.hours_row.set_visible(true),

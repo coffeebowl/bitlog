@@ -35,6 +35,8 @@ mod imp {
         #[template_child]
         pub picture_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
+        pub edit_picture_button: TemplateChild<gtk::Button>,
+        #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
         #[template_child]
         pub name_label: TemplateChild<gtk::Label>,
@@ -80,6 +82,9 @@ mod imp {
     impl ObjectImpl for ContactView {
         fn constructed(&self) {
             self.parent_constructed();
+            let picture_button = self.picture_button.clone();
+            self.edit_picture_button
+                .connect_clicked(move |_| picture_button.popup());
             self.more_button.connect_clicked(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
