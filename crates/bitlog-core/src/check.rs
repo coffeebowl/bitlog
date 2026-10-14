@@ -13,14 +13,15 @@ use crate::images::{ImageProblem, check_image_links, duplicates, image_files};
 use crate::markdown::{MarkdownMode, escape_headings, heading_lines};
 use crate::notes::{qualified, wiki_links};
 use crate::{
-    BlockId, ConflictCopy, Contradiction, Day, DayFile, DayWarning, NotePath, ProjectSlug, Vault,
+    BlockId, ConflictCopy, Contact, ContactSlug, Contradiction, Day, DayFile, DayWarning, NotePath,
+    ProjectSlug, Vault,
 };
 
 /// Something in a vault that needs a look. `bitlog doctor` and the app's
 /// vault check show the same problems and fixes; keep them in step.
 #[derive(Debug)]
 pub enum Problem {
-    /// A day file or note that cannot be read at all.
+    /// A day file, note or contact that cannot be read at all.
     Unreadable(ReadError),
     UnknownProject {
         date: NaiveDate,
@@ -96,6 +97,14 @@ pub enum Problem {
     /// Images in `images/` with the same content, as paths relative to the
     /// vault.
     DuplicateImages(Vec<String>),
+    /// A role of a contact in a project the vault lacks.
+    UnknownRole {
+        contact: ContactSlug,
+        project: ProjectSlug,
+    },
+    /// A picture in `contacts/` whose contact has no file, as a path
+    /// relative to the vault.
+    LoneContactImage(String),
 }
 
 impl Problem {
@@ -216,13 +225,18 @@ impl fmt::Display for Problem {
             Self::DuplicateImages(images) => {
                 write!(f, "{}: the same image", images.join(", "))
             }
+            Self::UnknownRole { contact, project } => write!(
+                f,
+                "contacts/{contact}.toml: a role in the unknown project {project}"
+            ),
+            Self::LoneContactImage(image) => write!(f, "{image}: the picture of no contact"),
         }
     }
 }
 
 impl Vault {
     /// Checks for sync conflict copies, then all day files, oldest first,
-    /// then the notes of all projects, then the images.
+    /// then the notes of all projects, then the images, then the contacts.
     pub fn check(&self) -> Result<Vec<Problem>, ReadError> {
         let mut problems = Vec::new();
         // The images the texts show, and whether all texts could be read.
@@ -283,6 +297,26 @@ impl Vault {
                     .collect(),
             )
         }));
+        for contact in Contact::load_all(self.root())? {
+            match contact {
+                Ok(contact) => problems.extend(
+                    contact
+                        .roles
+                        .iter()
+                        .filter(|(project, _)| self.project(project).is_none())
+                        .map(|(project, _)| Problem::UnknownRole {
+                            contact: contact.slug.clone(),
+                            project: project.clone(),
+                        }),
+                ),
+                Err(err) => problems.push(Problem::Unreadable(err)),
+            }
+        }
+        problems.extend(
+            Contact::lone_images(self.root())?
+                .iter()
+                .map(|image| Problem::LoneContactImage(relative(self.root(), image))),
+        );
         Ok(problems)
     }
 
@@ -647,6 +681,29 @@ mod tests {
             [
                 "2026-09-21: the text of block a1b2 has an escaped heading of block c3d4: \
               \\## Review {#c3d4}"
+            ]
+        );
+    }
+
+    #[test]
+    fn contact_problems() {
+        let (_dir, vault) = sample_copy();
+        let contacts = vault.root().join("contacts");
+        fs::write(
+            contacts.join("kim.toml"),
+            "format = 1\n[projects]\nwebshop = \"\"\ngone = \"Lead\"\n",
+        )
+        .unwrap();
+        fs::write(contacts.join("alex.toml"), "format = 2\n").unwrap();
+        fs::write(contacts.join("nobody.jpg"), "").unwrap();
+        fs::write(contacts.join("kim.jpg"), "").unwrap();
+        let messages = messages(&vault);
+        assert!(messages[messages.len() - 3].ends_with("alex.toml: unsupported format version 2"));
+        assert_eq!(
+            messages[messages.len() - 2..],
+            [
+                "contacts/kim.toml: a role in the unknown project gone",
+                "contacts/nobody.jpg: the picture of no contact",
             ]
         );
     }

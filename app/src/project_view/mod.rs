@@ -5,6 +5,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -14,6 +15,7 @@ use bitlog_core::{
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
+use glib::subclass::Signal;
 use gtk::{gdk, glib};
 
 use crate::cards::{asset_card, note_card, note_preview, show_preview};
@@ -30,6 +32,7 @@ use crate::widgets::param;
 use crate::window::show_action;
 
 mod assets;
+mod people;
 
 /// Blocks the timeline shows at first and adds with "Load More".
 const BLOCKS_AT_ONCE: u32 = 10;
@@ -95,6 +98,8 @@ mod imp {
         #[template_child]
         pub assets_error_row: TemplateChild<adw::ActionRow>,
         #[template_child]
+        pub people_list: TemplateChild<gtk::ListBox>,
+        #[template_child]
         pub timeline_list: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub more_button: TemplateChild<gtk::Button>,
@@ -142,6 +147,22 @@ mod imp {
                     view.rename_asset(param(asset.as_ref(), "assets")).await;
                 },
             );
+            klass.install_action_async("people.add", None, |view, _, _| async move {
+                view.add_person().await;
+            });
+            klass.install_action("people.new", None, |view, _, _| view.new_person());
+            klass.install_action_async(
+                "people.change-role",
+                Some(glib::VariantTy::STRING),
+                |view, _, contact| async move {
+                    view.change_role(param(contact.as_ref(), "contacts")).await;
+                },
+            );
+            klass.install_action(
+                "people.remove",
+                Some(glib::VariantTy::STRING),
+                |view, _, contact| view.remove_person(&param(contact, "contacts")),
+            );
             klass.install_action_async(
                 "assets.trash",
                 Some(glib::VariantTy::STRING),
@@ -157,6 +178,15 @@ mod imp {
     }
 
     impl ObjectImpl for ProjectView {
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                // Emitted after a contact was changed, with the changed
+                // vault available through `vault()`.
+                vec![Signal::builder("vault-changed").build()]
+            })
+        }
+
         fn constructed(&self) {
             self.parent_constructed();
             self.more_button.connect_clicked(glib::clone!(
@@ -234,6 +264,23 @@ impl ProjectView {
         self.imp().slug.borrow().clone()
     }
 
+    /// The vault shown, which may have been changed here.
+    pub fn vault(&self) -> Rc<Vault> {
+        self.imp()
+            .vault
+            .borrow()
+            .clone()
+            .expect("projects are only shown with a vault")
+    }
+
+    pub fn connect_vault_changed(&self, callback: impl Fn(&Self) + 'static) {
+        self.connect_closure(
+            "vault-changed",
+            false,
+            glib::closure_local!(move |view: &Self| callback(view)),
+        );
+    }
+
     /// Switches from the Git page back to the project's main page.
     pub fn show_project_tab(&self) {
         self.imp().view_stack.set_visible_child_name("project");
@@ -281,6 +328,7 @@ impl ProjectView {
             .set_action_target_value(Some(&target));
 
         self.show_assets();
+        self.show_people(vault, &project.slug);
 
         imp.notes_grid.remove_all();
         imp.notes.take();

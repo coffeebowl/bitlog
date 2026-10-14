@@ -12,14 +12,17 @@ use chrono::{Local, NaiveDate};
 use clap::Parser;
 
 use crate::cli::{
-    BlockCommand, Cli, Command, ExportCommand, ProjectArgs, ProjectCommand, TaskCommand,
+    BlockCommand, Cli, Command, ContactArgs, ContactCommand, ExportCommand, ProjectArgs,
+    ProjectCommand, TaskCommand,
 };
+use crate::contact::ContactChanges;
 use crate::doctor::doctor;
 use crate::edit::{BlockChanges, DayChanges};
 use crate::project::ProjectChanges;
 use crate::task::TaskChanges;
 
 mod cli;
+mod contact;
 mod day;
 mod doctor;
 mod edit;
@@ -79,6 +82,7 @@ fn main() -> Result<()> {
             stats(&vault, period)
         }
         Command::Project { command } => project(vault, command, today),
+        Command::Contact { command } => contact(vault, command),
         Command::Task { command } => task(&vault, command, today),
         Command::Set {
             kind,
@@ -204,6 +208,43 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
         }
         ProjectCommand::Rename { slug, new_slug } => {
             project::rename_project(&mut vault, &slug, &new_slug)
+        }
+    }
+}
+
+fn contact(mut vault: Vault, command: ContactCommand) -> Result<()> {
+    let changes = |values: ContactArgs, no_role: Vec<_>, archived| ContactChanges {
+        name: values.name,
+        company: values.company,
+        archived,
+        roles: values
+            .role
+            .into_iter()
+            .map(|(project, role)| (project, Some(role)))
+            .chain(no_role.into_iter().map(|project| (project, None)))
+            .collect(),
+    };
+    match command {
+        ContactCommand::List { all } => {
+            print!("{}", contact::format_contacts(&vault, all));
+            Ok(())
+        }
+        ContactCommand::Show { slug } => {
+            print!("{}", contact::format_contact(&vault, &slug)?);
+            Ok(())
+        }
+        ContactCommand::Add { slug, values } => {
+            contact::add_contact(&mut vault, slug, changes(values, Vec::new(), None))
+        }
+        ContactCommand::Edit {
+            slug,
+            values,
+            no_role,
+            archive,
+            unarchive,
+        } => {
+            let archived = (archive || unarchive).then_some(archive);
+            contact::edit_contact(&mut vault, &slug, changes(values, no_role, archived))
         }
     }
 }

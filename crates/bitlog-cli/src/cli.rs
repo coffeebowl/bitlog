@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use bitlog_core::{BlockId, LocationKey, ProjectSlug, ProjectStatus, TaskId};
+use bitlog_core::{BlockId, ContactSlug, LocationKey, ProjectSlug, ProjectStatus, TaskId};
 use chrono::{NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
 
@@ -54,6 +54,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ProjectCommand,
     },
+    /// List, show, add or change contacts.
+    Contact {
+        #[command(subcommand)]
+        command: ContactCommand,
+    },
     /// List, add or change the tasks of the global task list.
     Task {
         #[command(subcommand)]
@@ -61,8 +66,9 @@ pub enum Command {
     },
     /// Check for sync conflict copies, all days for unknown projects,
     /// overlapping blocks, headings in texts and wiki links without their
-    /// project in block texts, and all notes for broken wiki links and Git
-    /// conflict markers. Exits with 1 if something is left.
+    /// project in block texts, all notes for broken wiki links and Git
+    /// conflict markers, the images, and the contacts for roles in unknown
+    /// projects. Exits with 1 if something is left.
     Doctor {
         /// Merge conflict copies into their originals where nothing
         /// contradicts, then escape headings in block texts and day notes,
@@ -190,6 +196,70 @@ pub enum ProjectCommand {
         /// The new slug
         new_slug: ProjectSlug,
     },
+}
+
+#[derive(Subcommand)]
+pub enum ContactCommand {
+    /// List the contacts by name with the projects they work on.
+    List {
+        /// Also list archived contacts
+        #[arg(long)]
+        all: bool,
+    },
+    /// Show the fields of a contact and their roles in projects.
+    Show {
+        /// The slug of the contact
+        slug: ContactSlug,
+    },
+    /// Add a contact.
+    #[command(group(ArgGroup::new("change").multiple(true)))]
+    Add {
+        /// Lowercase letters, digits and hyphens, as in kim; mentions use it
+        slug: ContactSlug,
+        #[command(flatten)]
+        values: ContactArgs,
+    },
+    /// Change a contact. Phone numbers, e-mail addresses and other fields
+    /// are changed in the app or in the contact's file.
+    #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
+    Edit {
+        /// The slug of the contact
+        slug: ContactSlug,
+        #[command(flatten)]
+        values: ContactArgs,
+        /// Remove the contact from a project; can be given more than once
+        #[arg(long, group = "change", value_name = "PROJECT")]
+        no_role: Vec<ProjectSlug>,
+        /// Hide the contact from lists and suggestions
+        #[arg(long, group = "change", conflicts_with = "unarchive")]
+        archive: bool,
+        /// Show an archived contact again
+        #[arg(long, group = "change")]
+        unarchive: bool,
+    },
+}
+
+#[derive(Args)]
+pub struct ContactArgs {
+    /// The name shown for the contact [default for new contacts: the slug]
+    #[arg(long, group = "change")]
+    pub name: Option<String>,
+    /// The company the person works for, empty to remove it
+    #[arg(long, group = "change")]
+    pub company: Option<String>,
+    /// The person's role in a project, as in webshop="Product Owner", which
+    /// may be empty; can be given more than once
+    #[arg(long, group = "change", value_name = "PROJECT=ROLE", value_parser = parse_role)]
+    pub role: Vec<(ProjectSlug, String)>,
+}
+
+/// A project slug and a role, as in `webshop=Product Owner`.
+fn parse_role(text: &str) -> Result<(ProjectSlug, String), String> {
+    let (project, role) = text
+        .split_once('=')
+        .ok_or_else(|| format!("expected PROJECT=ROLE, found {text:?}"))?;
+    let project = project.parse().map_err(|err| format!("{err}"))?;
+    Ok((project, role.to_owned()))
 }
 
 #[derive(Subcommand)]
@@ -346,6 +416,12 @@ mod tests {
         parse("bitlog project rename docs documentation").unwrap();
         assert!(parse("bitlog project rename docs").is_err());
         assert!(parse("bitlog project rename docs Docs").is_err());
+        parse("bitlog contact list --all").unwrap();
+        parse("bitlog contact add kim --name Kim --role webshop=Owner --role infra=").unwrap();
+        assert!(parse("bitlog contact add kim --role webshop").is_err());
+        parse("bitlog contact edit kim --no-role webshop --no-role infra --archive").unwrap();
+        assert!(parse("bitlog contact edit kim").is_err());
+        assert!(parse("bitlog contact edit kim --archive --unarchive").is_err());
         parse("bitlog task edit t9x2 --title Call --no-due").unwrap();
         assert!(parse("bitlog task edit t9x2").is_err());
         assert!(parse("bitlog task edit t9x2 --due 2026-09-30 --no-due").is_err());

@@ -13,6 +13,9 @@ to work with them.
 - `images/` – images shown in day notes, block texts and project notes,
   linked like `![Login form](../../../images/login-form.png)`.
 - `tasks.toml` – a global list of small tasks, once there are any.
+- `contacts/<slug>.toml` – one file per person, with phone numbers, e-mail
+  addresses and their roles in projects; `contacts/<slug>.jpg` is their
+  picture.
 - `templates/note.md` – the template for new project notes.
 - `.bitlog/` – local data of this device, such as the search index. It can
   be deleted at any time and is never synchronised.

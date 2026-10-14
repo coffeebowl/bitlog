@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use bitlog_core::{
-    BlockId, Day, ImageProblem, NotePath, Problem, ReadError, SaveError, Vault, VaultChange,
+    BlockId, ContactSlug, Day, ImageProblem, NotePath, Problem, ReadError, SaveError, Vault,
+    VaultChange,
 };
 use chrono::NaiveDate;
 use gettextrs::{gettext, ngettext};
@@ -30,10 +31,12 @@ pub enum Kind {
     BadImage,
     UnusedImage,
     DuplicateImages,
+    UnknownRole,
+    LoneContactImage,
 }
 
 impl Kind {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 14] = [
         Self::Conflict,
         Self::Unreadable,
         Self::GitMarkers,
@@ -46,6 +49,8 @@ impl Kind {
         Self::BadImage,
         Self::UnusedImage,
         Self::DuplicateImages,
+        Self::UnknownRole,
+        Self::LoneContactImage,
     ];
 
     fn of(problem: &Problem) -> Self {
@@ -62,6 +67,8 @@ impl Kind {
             Problem::BadImage { .. } | Problem::BadNoteImage { .. } => Self::BadImage,
             Problem::UnusedImage(_) | Problem::UnusedImagesUnchecked => Self::UnusedImage,
             Problem::DuplicateImages(_) => Self::DuplicateImages,
+            Problem::UnknownRole { .. } => Self::UnknownRole,
+            Problem::LoneContactImage(_) => Self::LoneContactImage,
         }
     }
 
@@ -93,6 +100,8 @@ impl Kind {
             Self::BadImage => gettext("Image Links"),
             Self::UnusedImage => gettext("Unused Images"),
             Self::DuplicateImages => gettext("Duplicate Images"),
+            Self::UnknownRole => gettext("Roles in Unknown Projects"),
+            Self::LoneContactImage => gettext("Pictures Without Contact"),
         }
     }
 
@@ -135,6 +144,12 @@ impl Kind {
             Self::DuplicateImages => gettext(
                 "These images have the same content. Keep one, change the links to the others, then delete them.",
             ),
+            Self::UnknownRole => gettext(
+                "These contacts have a role in a project the vault doesn’t have, perhaps because its folder was removed or renamed. Remove the project from the contact, or add the project again.",
+            ),
+            Self::LoneContactImage => gettext(
+                "These pictures in the contacts folder belong to no contact, perhaps because its file was removed or renamed. Delete them in the file manager, or rename them after their contact.",
+            ),
         }
     }
 
@@ -175,6 +190,7 @@ pub enum Place {
     Day(NaiveDate),
     Block(NaiveDate, BlockId),
     Note(NotePath),
+    Contact(ContactSlug),
     /// A sync conflict copy, relative to the vault, resolved in its dialog.
     Conflict(PathBuf),
     /// A file shown in its folder, as the app cannot show it.
@@ -357,6 +373,19 @@ impl Days<'_> {
                     .replace("{images}", &escape(&images[1..].join(", ")));
                 file_entry(vault, &images[0], others)
             }
+            Problem::UnknownRole { contact, project } => {
+                let name = vault
+                    .contact(&contact)
+                    .map_or(contact.as_str(), |c| &c.name);
+                Entry {
+                    title: escape(name).into(),
+                    subtitle: gettext("Project: {project}")
+                        .replace("{project}", &escape(project.as_str())),
+                    place: Place::Contact(contact),
+                    fix: None,
+                }
+            }
+            Problem::LoneContactImage(image) => file_entry(vault, &image, String::new()),
         }
     }
 

@@ -4,6 +4,7 @@ mod assets;
 mod check;
 mod config;
 mod conflict;
+mod contacts;
 mod day;
 mod device;
 mod error;
@@ -28,6 +29,7 @@ pub use assets::Asset;
 pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, ProjectsConfig, VaultConfig, WeekConfig};
 pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};
+pub use contacts::{Contact, EMAIL_LABELS, PHONE_LABELS};
 pub use day::{
     Block, Day, DayWarning, RemovedText, minute_of_day, reordered_spans, time_at_minute,
     trim_blank_lines, without_front_matter,
@@ -41,7 +43,9 @@ pub use git_log::{
     Upstream, git_branches, git_commit, git_file_diff, git_log, git_uncommitted, git_upstream,
     short_id,
 };
-pub use id::{AssetPath, BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
+pub use id::{
+    AssetPath, BlockId, ContactSlug, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId,
+};
 pub use images::{ImageProblem, add_image, add_pasted_image, image_link, image_path};
 pub use init::CreateError;
 pub use markdown::{

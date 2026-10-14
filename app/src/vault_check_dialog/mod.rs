@@ -409,6 +409,7 @@ impl VaultCheckDialog {
                 id: id.clone(),
             }),
             Place::Note(note) => show_action(&Found::Note(note.clone())),
+            Place::Contact(slug) => ("win.show-contact", slug.to_string().to_variant()),
             Place::Conflict(copy) => ("win.resolve-conflict", copy.to_string_lossy().to_variant()),
             Place::File(path) => {
                 let path = path.clone();

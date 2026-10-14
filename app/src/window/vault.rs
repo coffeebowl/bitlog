@@ -176,6 +176,7 @@ impl Window {
         imp.tasks_page.set_vault(vault.clone());
         imp.notes_page.set_vault(vault.clone());
         imp.projects_page.set_vault(vault.clone());
+        imp.contacts_page.set_vault(vault.clone());
         imp.reports_page.set_vault(vault.clone());
         self.show_sidebar_projects(vault);
     }
@@ -325,8 +326,12 @@ impl Window {
     /// Shows the files of `changes` as they are now.
     fn show_changes(&self, changes: &[VaultChange]) {
         let imp = self.imp();
-        let changes_vault =
-            |change: &VaultChange| matches!(change, VaultChange::Config | VaultChange::Project(_));
+        let changes_vault = |change: &VaultChange| {
+            matches!(
+                change,
+                VaultChange::Config | VaultChange::Project(_) | VaultChange::Contact(_)
+            )
+        };
         if changes.iter().any(changes_vault) {
             self.reload_vault();
             return;
@@ -363,6 +368,14 @@ impl Window {
             .collect();
         if !assets.is_empty() {
             imp.projects_page.assets_changed(&assets);
+        }
+        let changes_picture = |change: &VaultChange| matches!(change, VaultChange::ContactImage(_));
+        if changes.iter().any(changes_picture) {
+            if self.shows(&imp.contacts_page) {
+                imp.contacts_page.reload();
+            } else if self.shows(&imp.projects_page) {
+                imp.projects_page.reload();
+            }
         }
         let changes_day = |change: &VaultChange| matches!(change, VaultChange::Day(_));
         if self.shows(&imp.calendar_view) && changes.iter().any(changes_day) {

@@ -36,8 +36,8 @@ pub enum Contradiction {
     DayNote,
     /// A field of a task, by its name in the file.
     TaskField(TaskId, String),
-    /// Notes, projects and the vault configuration are never merged: one
-    /// of the files is kept as a whole.
+    /// Notes, projects, contacts and the vault configuration are never
+    /// merged: one of the files is kept as a whole.
     Content,
 }
 
@@ -248,6 +248,8 @@ impl Vault {
             ),
             VaultChange::Config
             | VaultChange::Project(_)
+            | VaultChange::Contact(_)
+            | VaultChange::ContactImage(_)
             | VaultChange::Note(_)
             | VaultChange::Assets(_) => Versions::Texts(ours, theirs),
         })
@@ -322,9 +324,14 @@ pub(crate) fn original_name(name: &str) -> Option<String> {
 /// conflict copy of, if it is one.
 pub(crate) fn copy_of(relative: &Path) -> Option<VaultChange> {
     let original = original_name(relative.file_name()?.to_str()?)?;
-    // Copies of assets are assets of their own.
-    VaultChange::from_path(&relative.with_file_name(original))
-        .filter(|change| !matches!(change, VaultChange::Assets(_)))
+    // Copies of assets are assets of their own, and pictures are not
+    // merged.
+    VaultChange::from_path(&relative.with_file_name(original)).filter(|change| {
+        !matches!(
+            change,
+            VaultChange::Assets(_) | VaultChange::ContactImage(_)
+        )
+    })
 }
 
 /// Makes `ours` the value both sides agree on, where `empty` on one side
@@ -420,10 +427,16 @@ mod tests {
             "",
         )
         .unwrap();
+        fs::write(root.join("contacts/kim (conflicted copy).toml"), "").unwrap();
+        fs::write(root.join("contacts/kim (conflicted copy).jpg"), "").unwrap();
         let copies = vault.conflict_copies().unwrap();
         assert_eq!(
             copies,
             [
+                ConflictCopy {
+                    path: "contacts/kim (conflicted copy).toml".into(),
+                    of: VaultChange::Contact("kim".parse().unwrap()),
+                },
                 day_copy(),
                 ConflictCopy {
                     path:

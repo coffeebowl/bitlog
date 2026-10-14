@@ -1,0 +1,7 @@
+format = 1
+name = "Sam Berg"
+note = "Left the team in August."
+archived = true
+
+[email]
+private = "sam@example.org"

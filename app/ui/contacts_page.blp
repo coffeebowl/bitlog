@@ -1,0 +1,43 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BitLogContactsPage: Adw.NavigationPage {
+  title: _("Contacts");
+
+  // A contact is pushed on top of the list.
+  child: Adw.NavigationView nav {
+    Adw.NavigationPage overview {
+      title: _("Contacts");
+      tag: "contacts";
+
+      child: Adw.ToolbarView {
+        [top]
+        Adw.HeaderBar {
+          [start]
+          Button {
+            icon-name: "list-add-symbolic";
+            tooltip-text: _("New Contact");
+            action-name: "contacts.add";
+          }
+        }
+
+        content: Stack stack {
+          StackPage {
+            name: "list";
+            child: Adw.PreferencesPage list {};
+          }
+
+          StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "x-office-address-book-symbolic";
+              title: _("No Contacts");
+              description: _("Add the people you work with, with their roles in your projects");
+            };
+          }
+        };
+      };
+    }
+  };
+}

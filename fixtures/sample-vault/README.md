@@ -11,6 +11,8 @@ It is a test fixture and contains some deliberately unusual files.
 - `projects/<slug>/project.toml` – one folder per project, with notes in
   `notes/`.
 - `tasks.toml` – a global list of small tasks.
+- `contacts/<slug>.toml` – one file per person, with their roles in
+  projects.
 - `templates/` – templates for new notes.
 
 The full format is described in `docs/format-spec.md` in the BitLog

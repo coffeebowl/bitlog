@@ -15,7 +15,7 @@ use thiserror::Error;
 use crate::conflict::copy_of;
 use crate::file::content_hash;
 use crate::vault::{day_file, day_file_date};
-use crate::{AssetPath, NotePath, ProjectSlug};
+use crate::{AssetPath, ContactSlug, NotePath, ProjectSlug};
 
 /// Long enough to see a sync tool's burst of writes as one change.
 const DEBOUNCE: Duration = Duration::from_millis(300);
@@ -29,6 +29,8 @@ pub enum VaultChange {
     Note(NotePath),
     /// An asset of the project, or a subfolder of its assets.
     Assets(ProjectSlug),
+    Contact(ContactSlug),
+    ContactImage(ContactSlug),
     Day(NaiveDate),
 }
 
@@ -114,9 +116,9 @@ pub(crate) fn watch(
                     // A conflict copy changes what there is to merge into
                     // its original.
                     let change = VaultChange::from_path(relative).or_else(|| copy_of(relative))?;
-                    // This program never writes assets as text, and reading
-                    // one may mean reading a large file.
-                    if let VaultChange::Assets(_) = change {
+                    // This program never writes assets and pictures as
+                    // text, and reading one may mean reading a large file.
+                    if let VaultChange::Assets(_) | VaultChange::ContactImage(_) = change {
                         return Some(change);
                     }
                     let text = fs::read_to_string(path).ok();
@@ -263,6 +265,14 @@ impl VaultChange {
                     .ok()
                     .map(|asset| VaultChange::Assets(asset.project().clone()))
             }
+            ["contacts", name] => match name.strip_suffix(".toml") {
+                Some(slug) => slug.parse().ok().map(VaultChange::Contact),
+                None => name
+                    .strip_suffix(".jpg")?
+                    .parse()
+                    .ok()
+                    .map(VaultChange::ContactImage),
+            },
             ["daily", _, _, name] => day_file_date(name)
                 .filter(|date| relative == day_file(*date))
                 .map(VaultChange::Day),
@@ -320,7 +330,19 @@ mod tests {
                 NaiveDate::from_ymd_opt(2026, 9, 21).unwrap()
             ))
         );
+        assert_eq!(
+            change("contacts/kim.toml"),
+            Some(VaultChange::Contact("kim".parse().unwrap()))
+        );
+        assert_eq!(
+            change("contacts/kim.jpg"),
+            Some(VaultChange::ContactImage("kim".parse().unwrap()))
+        );
         for ignored in [
+            "contacts/kim.sync-conflict-20260922-181530-KNOTBK7.toml",
+            "contacts/.kim.toml.0badf00d.tmp",
+            "contacts/kim.png",
+            "contacts/old/kim.toml",
             "daily/2026/09/.2026-09-21.md.0badf00d.tmp",
             "daily/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md",
             "projects/infra/notes/deployment (conflicted copy 2026-09-22 181530).md",

@@ -23,6 +23,7 @@ at any time.
 | Project asset | Any other file kept with a project, such as a PDF or an image | `projects/<slug>/assets/**` |
 | Image | A picture shown in day notes, block texts and project notes | `images/**` |
 | Task | An item on the global task list | `tasks.toml` |
+| Contact | A person, with their roles in projects | `contacts/<slug>.toml` |
 
 A block refers to its project by slug. A project note belongs to its project
 only through the folder it lives in. There are no references between blocks
@@ -32,7 +33,7 @@ and project notes.
 
 | Identifier | Rule | Example |
 | --- | --- | --- |
-| Project slug, location key | lowercase letters `a-z`, digits and single hyphens, not at the start or end | `project-a` |
+| Project slug, location key, contact slug | lowercase letters `a-z`, digits and single hyphens, not at the start or end | `project-a` |
 | Block ID, task ID | exactly 4 characters from `a-z` and `0-9` | `k7f3` |
 | Note name | the file name without `.md`; not empty, no `/`, `\` or control characters, not starting with `.`, not a sync conflict copy | `Auth middleware` |
 
@@ -50,6 +51,8 @@ my-vault/
   bitlog.toml
   tasks.toml                         # global task list
   tasks-archive-2026.toml            # tasks finished in 2026, once archived
+  contacts/kim.toml                  # one person
+  contacts/kim.jpg                   # their picture
   daily/2026/09/2026-09-23.md        # one day: front matter, day note, blocks with text
   projects/project-a/project.toml
   projects/project-a/notes/auth-middleware.md
@@ -294,7 +297,8 @@ outline of the document belongs to BitLog:
 - Known drawbacks, accepted deliberately: no real time types (hence strings and
   own validation), no format-preserving YAML editing in Rust (hence canonical
   rewriting; comments in the front matter are lost).
-- Standalone files (`bitlog.toml`, `project.toml`, `tasks.toml`) stay TOML,
+- Standalone files (`bitlog.toml`, `project.toml`, `tasks.toml`, contacts)
+  stay TOML,
   because they are also edited and commented by hand, and TOML can be edited
   while preserving formatting and comments.
 
@@ -342,8 +346,8 @@ BitLog writes the file. BitLog only sets paths of folders that hold
 `.git`.
 
 **Renaming** a project changes its slug, which must not be taken. BitLog
-renames its folder, sets the new slug in all its blocks, in `projects.order`
-and in `.bitlog/device.toml`, and changes the targets of wiki links to its
+renames its folder, sets the new slug in all its blocks, in `projects.order`,
+in the roles of contacts and in `.bitlog/device.toml`, and changes the targets of wiki links to its
 notes in all notes, day notes and block texts.
 
 **Default projects of a new vault:**
@@ -411,6 +415,66 @@ take these defaults:
   archive gets a new one there.
 - **Project tasks** are reserved for a later format extension. They will live
   in separate files per project and will not change the global list.
+
+## Contacts: `contacts/<slug>.toml`
+
+One file per person. The slug is the file name without `.toml`; files
+below `contacts/` whose name is no valid slug, such as sync conflict
+copies, are ignored.
+
+```toml
+format = 1
+name = "Kim Meyer"
+company = "Example GmbH"
+hours = "Mon–Thu, 9–15"          # free text
+timezone = "Europe/Berlin"
+birthday = 1990-05-17
+note = "Prefers calls in the morning."
+archived = true
+
+[phone]
+work = "+49 30 1234567"
+mobile = "+49 170 1234567"
+
+[email]
+work = "kim.meyer@example.com"
+
+[fields]
+"Office" = "Berlin, 3rd floor, 3.14"
+"GitHub" = "https://github.com/kimm"
+
+[projects]
+webshop = "Product Owner"
+```
+
+Only `format` is required. Missing fields take these defaults:
+
+| Field | Default | Rule |
+| --- | --- | --- |
+| `name` | the slug | |
+| `company`, `hours`, `note` | none | text; `note` is plain text, not Markdown |
+| `timezone` | none | an IANA time zone name; unknown names are kept but show no local time |
+| `birthday` | none | TOML local date |
+| `archived` | `false` | archived contacts are hidden from lists and suggestions |
+| `[phone]`, `[email]` | none | label → number or address |
+| `[fields]` | none | label → text, for anything else, such as an office or a profile |
+| `[projects]` | none | project slug → the person's role there, which may be empty |
+
+- In `[phone]`, `[email]` and `[fields]`, the keys are labels in free text.
+  Their order is the file's; the first number and address are the
+  preferred ones. The labels `work`, `mobile` and `private` are shown
+  translated, all others as written. Texts that are web addresses can be
+  opened.
+- BitLog writes `format` and `name`, the other fields only if they have a
+  value, `archived` only if it is `true`. Comments, formatting, unchanged
+  values and unknown fields are kept as they are. Tables written inline,
+  such as `phone = { work = "…" }`, are written as tables of their own.
+- A contact's picture is `contacts/<slug>.jpg`, square, 256 pixels wide.
+  Pictures of other names or formats are ignored.
+- Contacts are TOML rather than vCard: vCard has no place for roles in
+  projects, and keeping its unknown fields when writing would need a parser
+  and writer of their own. A person's story comes from the texts, so there
+  is little free text to keep, unlike in a Markdown note.
 
 ## Project notes
 
@@ -519,7 +583,8 @@ their texts.
 
 | File or part | Written by | When |
 | --- | --- | --- |
-| `bitlog.toml`, `tasks.toml`, `project.toml` | BitLog | any time, preserving formatting and comments |
+| `bitlog.toml`, `tasks.toml`, `project.toml`, `contacts/*.toml` | BitLog | any time, preserving formatting and comments |
+| `contacts/*.jpg` | BitLog | when the user sets a picture |
 | `tasks-archive-YYYY.toml` | BitLog | when archiving, preserving formatting and comments |
 | Day file: front matter, date heading and block headings | BitLog | any time |
 | Day file: day note and block texts | user | always; BitLog keeps them unchanged, except for wiki links to a renamed note, if the user agrees, or to the notes of a renamed project |
@@ -556,8 +621,8 @@ Every write:
 - `tasks.toml`: tasks are merged by their IDs, field by field. A task only
   one side has whose ID is in a task archive was archived on the other side
   and stays archived.
-- Project notes, `project.toml` and `bitlog.toml`: never merged; the user
-  picks a version.
+- Project notes, `project.toml`, contacts and `bitlog.toml`: never merged;
+  the user picks a version. Copies of pictures are left alone.
 - A copy that is the same as its original, or whose original is missing, is
   merged without asking. After merging, the copy is removed.
 - Git conflict markers (lines starting with `<<<<<<<` and `>>>>>>>`) are

@@ -1,0 +1,21 @@
+format = 1
+name = "Kim Meyer"
+company = "Example GmbH"
+hours = "Mon–Thu, 9–15"
+timezone = "Europe/Berlin"
+birthday = 1990-05-17
+note = "Prefers calls in the morning."
+
+[phone]
+work = "+49 30 1234567"
+mobile = "+49 170 1234567"
+
+[email]
+work = "kim.meyer@example.com"
+
+[fields]
+"Office" = "Berlin, 3rd floor, 3.14"
+"GitHub" = "https://github.com/kimm"
+
+[projects]
+webshop = "Product Owner"

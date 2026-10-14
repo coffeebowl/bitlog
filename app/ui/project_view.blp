@@ -267,6 +267,44 @@ template $BitLogProjectView: Adw.NavigationPage {
               }
 
               Adw.PreferencesGroup {
+                title: _("People");
+
+                header-suffix: MenuButton {
+                  icon-name: "list-add-symbolic";
+                  tooltip-text: _("Add Person");
+                  menu-model: people_menu;
+                  valign: center;
+
+                  styles [
+                    "flat",
+                  ]
+                };
+
+                ListBox people_list {
+                  selection-mode: none;
+
+                  [placeholder]
+                  Label {
+                    label: _("Contacts with a role in this project show up here");
+                    wrap: true;
+                    justify: center;
+                    margin-top: 18;
+                    margin-bottom: 18;
+                    margin-start: 12;
+                    margin-end: 12;
+
+                    styles [
+                      "dim-label",
+                    ]
+                  }
+
+                  styles [
+                    "boxed-list",
+                  ]
+                }
+              }
+
+              Adw.PreferencesGroup {
                 title: _("Timeline");
 
                 Box {
@@ -322,4 +360,18 @@ template $BitLogProjectView: Adw.NavigationPage {
       }
     };
   };
+}
+
+menu people_menu {
+  section {
+    item {
+      label: _("_Add Contact…");
+      action: "people.add";
+    }
+
+    item {
+      label: _("_New Contact…");
+      action: "people.new";
+    }
+  }
 }

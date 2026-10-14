@@ -128,7 +128,11 @@ impl IndexFile {
             VaultChange::Day(date) => Some(Self::Day(date)),
             VaultChange::Note(note) => Some(Self::Note(note)),
             VaultChange::Tasks => Some(Self::Tasks),
-            VaultChange::Config | VaultChange::Project(_) | VaultChange::Assets(_) => None,
+            VaultChange::Config
+            | VaultChange::Project(_)
+            | VaultChange::Assets(_)
+            | VaultChange::Contact(_)
+            | VaultChange::ContactImage(_) => None,
         }
     }
 }

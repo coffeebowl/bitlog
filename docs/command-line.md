@@ -34,6 +34,11 @@ bitlog project edit client-portal --repo ~/code/client-portal   # only on this d
 bitlog project rename client-portal portal   # also in all days and notes
 bitlog log client-portal --limit 5   # latest commits of that repository
 
+bitlog contact list --all # contacts with their projects, archived ones too
+bitlog contact show kim   # all fields and the roles in projects
+bitlog contact add kim --name "Kim Meyer" --role webshop="Product Owner"
+bitlog contact edit kim --company "Example GmbH" --no-role infra --archive
+
 bitlog task list --all    # open tasks with their ids, then the finished ones
 bitlog task add "Renew the TLS certificate" --due 2026-09-30
 bitlog task done h4c8     # also: drop, reopen
@@ -54,7 +59,8 @@ bitlog doctor             # sync conflict copies, unknown projects, overlaps, he
                           # texts, wiki links without their project in block texts,
                           # broken wiki links and Git conflict markers in notes,
                           # links to missing images or out of the vault,
-                          # unused and duplicate images
+                          # unused and duplicate images, unreadable contacts,
+                          # roles in unknown projects, pictures without a contact
 bitlog doctor --fix       # merge conflict copies without contradictions,
                           # escape those headings so they read as text,
                           # name the block's project in those wiki links

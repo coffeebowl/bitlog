@@ -12,7 +12,7 @@ use crate::drawing;
 
 /// The pages in the order of the sidebar, each with its title, its icon and
 /// the action that shows it. The search offers them as commands.
-pub fn pages() -> [(String, &'static str, &'static str); 6] {
+pub fn pages() -> [(String, &'static str, &'static str); 7] {
     [
         (gettext("Today"), "weather-clear-symbolic", "win.show-today"),
         (
@@ -30,6 +30,11 @@ pub fn pages() -> [(String, &'static str, &'static str); 6] {
             gettext("Notes"),
             "text-x-generic-symbolic",
             "win.show-notes",
+        ),
+        (
+            gettext("Contacts"),
+            "x-office-address-book-symbolic",
+            "win.show-contacts",
         ),
         (gettext("Projects"), "folder-symbolic", "win.show-projects"),
     ]

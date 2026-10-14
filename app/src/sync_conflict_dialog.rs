@@ -270,6 +270,9 @@ pub fn file_title(vault: &Vault, of: &VaultChange) -> String {
         VaultChange::Project(slug) | VaultChange::Assets(slug) => {
             vault.project_name(slug).to_owned()
         }
+        VaultChange::Contact(slug) | VaultChange::ContactImage(slug) => vault
+            .contact(slug)
+            .map_or_else(|| slug.to_string(), |contact| contact.name.clone()),
         VaultChange::Config => gettext("Vault Settings"),
     }
 }

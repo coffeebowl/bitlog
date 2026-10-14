@@ -8,7 +8,8 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    BlockId, NotePath, ProjectSlug, SaveError, TaskId, Vault, VaultConfig, VaultWatcher,
+    BlockId, ContactSlug, NotePath, ProjectSlug, SaveError, TaskId, Vault, VaultConfig,
+    VaultWatcher,
 };
 use bitlog_index::Found;
 use chrono::{Local, NaiveDate, TimeDelta};
@@ -16,6 +17,7 @@ use gtk::{gio, glib};
 
 use crate::calendar_view::CalendarView;
 use crate::config;
+use crate::contacts_page::ContactsPage;
 use crate::day_view::DayView;
 use crate::note_actions::NoteHost;
 use crate::notes_page::NotesPage;
@@ -32,7 +34,7 @@ use crate::widgets::param;
 pub use sidebar::pages;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 20] = [
+const VAULT_ACTIONS: [&str; 23] = [
     "win.preferences",
     "win.check-vault",
     "win.previous",
@@ -44,6 +46,8 @@ const VAULT_ACTIONS: [&str; 20] = [
     "win.show-notes",
     "win.show-projects",
     "win.show-project",
+    "win.show-contacts",
+    "win.show-contact",
     "win.show-reports",
     "win.show-day",
     "win.show-block",
@@ -51,6 +55,7 @@ const VAULT_ACTIONS: [&str; 20] = [
     "win.show-task",
     "win.new-block",
     "win.new-project",
+    "win.new-contact",
     "win.search",
     "win.resolve-conflict",
 ];
@@ -105,6 +110,7 @@ mod imp {
         pub tasks_page: TasksPage,
         pub notes_page: NotesPage,
         pub projects_page: ProjectsPage,
+        pub contacts_page: ContactsPage,
         pub reports_page: ReportsPage,
         /// The folder of the open vault.
         pub vault_path: RefCell<Option<PathBuf>>,
@@ -134,6 +140,7 @@ mod imp {
                 tasks_page: glib::Object::new(),
                 notes_page: glib::Object::new(),
                 projects_page: glib::Object::new(),
+                contacts_page: glib::Object::new(),
                 reports_page: glib::Object::new(),
                 vault_path: RefCell::default(),
                 vault: RefCell::default(),
@@ -202,6 +209,24 @@ mod imp {
                 WidgetExt::activate_action(&window.imp().projects_page, "projects.add", None)
                     .expect("the project page adds projects");
             });
+            klass.install_action("win.show-contacts", None, |window, _, _| {
+                window.imp().contacts_page.show_overview();
+                window.show_contacts();
+            });
+            klass.install_action(
+                "win.show-contact",
+                Some(glib::VariantTy::STRING),
+                |window, _, slug| {
+                    let slug: ContactSlug = param(slug, "contacts");
+                    window.show_contacts();
+                    window.imp().contacts_page.open_contact(&slug);
+                },
+            );
+            klass.install_action("win.new-contact", None, |window, _, _| {
+                window.show_contacts();
+                WidgetExt::activate_action(&window.imp().contacts_page, "contacts.add", None)
+                    .expect("the contact page adds contacts");
+            });
             klass.install_action("win.search", None, |window, _, _| window.search());
             klass.install_action("win.preferences", None, |window, _, _| {
                 window.show_preferences();
@@ -254,6 +279,14 @@ mod imp {
             style_switcher::add_to(&self.vault_menu_button);
             self.split_view.set_content(Some(&self.day_view));
             self.projects_page.connect_vault_changed(glib::clone!(
+                #[weak(rename_to = window)]
+                self.obj(),
+                move |page| {
+                    window.set_vault(&page.vault());
+                    window.show_vault_again();
+                }
+            ));
+            self.contacts_page.connect_vault_changed(glib::clone!(
                 #[weak(rename_to = window)]
                 self.obj(),
                 move |page| {
@@ -426,6 +459,13 @@ impl Window {
         self.select_project_item();
     }
 
+    fn show_contacts(&self) {
+        let imp = self.imp();
+        self.save_texts_now();
+        imp.contacts_page.reload();
+        self.show_page(&imp.contacts_page, "win.show-contacts");
+    }
+
     /// Shows `note` on the notes page if that is shown, which shows notes
     /// itself, or else in its project.
     fn show_note(&self, note: &NotePath) {
@@ -489,6 +529,8 @@ impl Window {
             imp.notes_page.reload();
         } else if self.shows(&imp.projects_page) {
             imp.projects_page.reload();
+        } else if self.shows(&imp.contacts_page) {
+            imp.contacts_page.reload();
         } else if self.shows(&imp.reports_page) {
             imp.reports_page.reload();
         }

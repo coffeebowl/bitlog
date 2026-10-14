@@ -1,0 +1,11 @@
+format = 1
+name = "Alex Novak"
+company = "Hosting Partner s.r.o."
+timezone = "Europe/Prague"
+
+[email]
+work = "alex@hosting.example"
+
+[projects]
+infra = "Account manager" # handles the staging contract
+webshop = ""

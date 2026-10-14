@@ -3,6 +3,7 @@
 //! they take the colours of the theme, their words are translated and
 //! they do not age with the app.
 
+mod contacts;
 mod day;
 mod markdown;
 mod projects;
@@ -24,6 +25,7 @@ pub enum Kind {
     #[default]
     Day,
     Projects,
+    Contacts,
     Tasks,
     Week,
     Markdown,
@@ -34,6 +36,7 @@ impl Kind {
         match self {
             Self::Day => day::HEIGHT,
             Self::Projects => projects::HEIGHT,
+            Self::Contacts => contacts::HEIGHT,
             Self::Tasks => tasks::HEIGHT,
             Self::Week => week::HEIGHT,
             Self::Markdown => markdown::HEIGHT,
@@ -48,6 +51,9 @@ impl Kind {
             ),
             Self::Projects => {
                 gettext("The activity of a project over 30 days, with two of its notes and a file")
+            }
+            Self::Contacts => {
+                gettext("A contact with a phone number, an e-mail address and a role in a project")
             }
             Self::Tasks => gettext("A task list with an overdue task and a finished one"),
             Self::Week => gettext("A week of working time per day and project, with the target"),
@@ -97,6 +103,7 @@ mod imp {
             match self.kind.get() {
                 Kind::Day => day::snapshot(widget, snapshot),
                 Kind::Projects => projects::snapshot(widget, snapshot),
+                Kind::Contacts => contacts::snapshot(widget, snapshot),
                 Kind::Tasks => tasks::snapshot(widget, snapshot),
                 Kind::Week => week::snapshot(widget, snapshot),
                 Kind::Markdown => markdown::snapshot(widget, snapshot),

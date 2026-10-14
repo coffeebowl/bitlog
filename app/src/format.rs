@@ -166,6 +166,17 @@ pub fn kind_name(kind: &str) -> String {
     }
 }
 
+/// The label `label` of a phone number or e-mail address, translated if it
+/// is one of the usual ones, see [`bitlog_core::PHONE_LABELS`].
+pub fn contact_label(label: &str) -> String {
+    match label {
+        "work" => gettext("Work"),
+        "mobile" => gettext("Mobile"),
+        "private" => gettext("Private"),
+        _ => label.to_owned(),
+    }
+}
+
 /// The project statuses in the order the app lists them.
 pub const PROJECT_STATUSES: [ProjectStatus; 3] = [
     ProjectStatus::Active,

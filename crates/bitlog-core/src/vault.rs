@@ -12,7 +12,9 @@ use crate::file::{content_hash, read_folder, read_optional, read_text, write_ato
 use crate::notes::relink_day;
 use crate::project::project_folder;
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
-use crate::{Day, DayWarning, EditError, NotePath, Project, ProjectSlug, TaskList, VaultConfig};
+use crate::{
+    Contact, Day, DayWarning, EditError, NotePath, Project, ProjectSlug, TaskList, VaultConfig,
+};
 
 /// The folder exports go to, relative to the vault.
 pub(crate) const EXPORTS: &str = "exports";
@@ -23,6 +25,8 @@ pub struct Vault {
     config: VaultConfig,
     /// In the order of the settings, see [`Vault::projects`].
     projects: Vec<Project>,
+    /// Those that can be read, sorted by name, see [`Vault::contacts`].
+    pub(crate) contacts: Vec<Contact>,
     /// Shared by all clones, so that watching knows about every write.
     own_writes: OwnWrites,
 }
@@ -58,16 +62,18 @@ impl DayFile {
 }
 
 impl Vault {
-    /// Opens the vault in the folder `root`, reading its configuration and
-    /// projects. Days are read on demand.
+    /// Opens the vault in the folder `root`, reading its configuration,
+    /// projects and contacts. Days are read on demand.
     pub fn open(root: &Path) -> Result<Self, ReadError> {
         let mut vault = Self {
             root: root.to_owned(),
             config: VaultConfig::load(&Self::config_path(root))?,
             projects: Project::load_all(root)?,
+            contacts: Vec::new(),
             own_writes: OwnWrites::default(),
         };
         vault.sort_projects();
+        vault.reload_contacts()?;
         Ok(vault)
     }
 
@@ -288,9 +294,9 @@ impl Vault {
     }
 
     /// Changes the slug of the project `from` to `to`: points the blocks of
-    /// all days, wiki links in days and notes, the order of the projects
-    /// and the repository of this device to `to`, then moves the project's
-    /// folder. Returns the number of days and notes changed.
+    /// all days, wiki links in days and notes, the order of the projects,
+    /// the roles of contacts and the repository of this device to `to`,
+    /// then moves the project's folder. Returns the number of days and notes changed.
     ///
     /// Nothing is changed while a day cannot be read. The folder is moved
     /// last, so that renaming again after an interruption finishes the job.
@@ -335,6 +341,7 @@ impl Vault {
                 Ok(())
             })?;
         }
+        self.rename_roles(from, to)?;
         self.rename_repo_path(from, to)?;
         fs::rename(&old, &new).map_err(|source| SaveError::Write {
             path: new.clone(),
@@ -1129,6 +1136,9 @@ mod tests {
             vault.repo_paths().unwrap(),
             BTreeMap::from([(platform.clone(), repo)])
         );
+        let alex = vault.contact(&"alex".parse().unwrap()).unwrap();
+        assert_eq!(alex.role(&platform), Some("Account manager"));
+        assert_eq!(alex.roles[0].0, platform);
         let reopened = Vault::open(vault.root()).unwrap();
         assert_eq!(slugs(&reopened), slugs(&vault));
 

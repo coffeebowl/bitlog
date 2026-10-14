@@ -101,6 +101,57 @@ pub(crate) fn set_date(table: &mut Table, key: &str, date: Option<NaiveDate>) {
     }
 }
 
+/// Sets `key` to `text`, or removes it if `text` is empty.
+pub(crate) fn set_text(table: &mut Table, key: &str, text: &str) {
+    if text.is_empty() {
+        table.remove(key);
+    } else {
+        set(table, key, text.into());
+    }
+}
+
+/// The texts of the table `key` in `table` with their labels, the keys, in
+/// the order of the file. None if there is no such table.
+pub(crate) fn labeled_texts(table: &Table, key: &str) -> Result<Vec<(String, String)>, String> {
+    let Some(item) = table.get(key) else {
+        return Ok(Vec::new());
+    };
+    let labeled = item
+        .as_table_like()
+        .ok_or_else(|| format!("{key} must be a table"))?;
+    labeled
+        .iter()
+        .map(|(label, item)| {
+            item.as_str()
+                .map(|text| (label.to_owned(), text.to_owned()))
+                .ok_or_else(|| format!("{key}.{label} must be a string"))
+        })
+        .collect()
+}
+
+/// Makes `key` a table of `texts` with their labels as keys, in this order,
+/// or removes it if there are none. The comments around texts that stay are
+/// kept; an inline table becomes a table of its own.
+pub(crate) fn set_labeled_texts(table: &mut Table, key: &str, texts: &[(String, String)]) {
+    if texts.is_empty() {
+        table.remove(key);
+        return;
+    }
+    if !table.get(key).is_some_and(Item::is_table) {
+        table.insert(key, Item::Table(Table::new()));
+    }
+    let labeled = table
+        .get_mut(key)
+        .and_then(Item::as_table_mut)
+        .expect("the table was just made");
+    labeled.retain(|label, _| texts.iter().any(|(other, _)| other == label));
+    for (label, text) in texts {
+        set(labeled, label, text.as_str().into());
+    }
+    let position = |label: &str| texts.iter().position(|(other, _)| other == label);
+    labeled.sort_values_by(|a, _, b, _| position(a.get()).cmp(&position(b.get())));
+}
+
 /// Whether `a` and `b` hold the same, however they are written.
 pub(crate) fn same_item(a: &Item, b: &Item) -> bool {
     match (a.as_value(), b.as_value()) {

@@ -87,6 +87,33 @@ fn generate_short_id<T>(make: fn(String) -> T, is_taken: impl Fn(&T) -> bool) ->
     }
 }
 
+/// A slug made from `name`, as in "Web Shop" → `web-shop`, empty if
+/// nothing of it fits.
+fn slug_from_name(name: &str) -> String {
+    let mut slug = String::new();
+    let mut hyphen = false;
+    for c in name.chars().flat_map(char::to_lowercase) {
+        let mut buffer = [0; 4];
+        let part: &str = match c {
+            'a'..='z' | '0'..='9' => c.encode_utf8(&mut buffer),
+            'ä' => "ae",
+            'ö' => "oe",
+            'ü' => "ue",
+            'ß' => "ss",
+            _ => {
+                hyphen = !slug.is_empty();
+                continue;
+            }
+        };
+        if hyphen {
+            slug.push('-');
+            hyphen = false;
+        }
+        slug.push_str(part);
+    }
+    slug
+}
+
 /// Identifies a project, and names its folder below `projects/`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ProjectSlug(String);
@@ -95,28 +122,7 @@ impl ProjectSlug {
     /// A slug made from the project name `name`, as in "Web Shop" →
     /// `web-shop`, or `None` if nothing of it fits.
     pub fn from_name(name: &str) -> Option<Self> {
-        let mut slug = String::new();
-        let mut hyphen = false;
-        for c in name.chars().flat_map(char::to_lowercase) {
-            let mut buffer = [0; 4];
-            let part: &str = match c {
-                'a'..='z' | '0'..='9' => c.encode_utf8(&mut buffer),
-                'ä' => "ae",
-                'ö' => "oe",
-                'ü' => "ue",
-                'ß' => "ss",
-                _ => {
-                    hyphen = !slug.is_empty();
-                    continue;
-                }
-            };
-            if hyphen {
-                slug.push('-');
-                hyphen = false;
-            }
-            slug.push_str(part);
-        }
-        slug.parse().ok()
+        slug_from_name(name).parse().ok()
     }
 
     pub fn as_str(&self) -> &str {
@@ -141,6 +147,37 @@ impl fmt::Display for ProjectSlug {
 impl<'de> Deserialize<'de> for ProjectSlug {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         deserialize_parsed(deserializer)
+    }
+}
+
+/// Identifies a contact, names its file below `contacts/` and mentions it
+/// in texts.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct ContactSlug(String);
+
+impl ContactSlug {
+    /// A slug made from the name `name`, as in "Kim Meyer" → `kim-meyer`,
+    /// or `None` if nothing of it fits.
+    pub fn from_name(name: &str) -> Option<Self> {
+        slug_from_name(name).parse().ok()
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl FromStr for ContactSlug {
+    type Err = InvalidId;
+
+    fn from_str(value: &str) -> Result<Self, InvalidId> {
+        parse_id(value, is_slug, "contact slug", SLUG_RULE).map(Self)
+    }
+}
+
+impl fmt::Display for ContactSlug {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
     }
 }
 
@@ -389,12 +426,14 @@ mod tests {
         for valid in ["webshop", "project-a", "a", "2026-q3", "a-b-c"] {
             assert_eq!(valid.parse::<ProjectSlug>().unwrap().as_str(), valid);
             assert_eq!(valid.parse::<LocationKey>().unwrap().as_str(), valid);
+            assert_eq!(valid.parse::<ContactSlug>().unwrap().as_str(), valid);
         }
         for invalid in [
             "", "-a", "a-", "a--b", "Webshop", "web shop", "web_shop", "ü", "a/b",
         ] {
             assert!(invalid.parse::<ProjectSlug>().is_err(), "{invalid:?}");
             assert!(invalid.parse::<LocationKey>().is_err(), "{invalid:?}");
+            assert!(invalid.parse::<ContactSlug>().is_err(), "{invalid:?}");
         }
     }
 
@@ -408,6 +447,8 @@ mod tests {
         );
         assert_eq!(slug("infra").as_deref(), Some("infra"));
         assert_eq!(slug(" – ?"), None);
+        let contact = ContactSlug::from_name("Kim Meyer").unwrap();
+        assert_eq!(contact.as_str(), "kim-meyer");
     }
 
     #[test]

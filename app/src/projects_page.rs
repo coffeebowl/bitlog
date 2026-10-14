@@ -109,6 +109,14 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             note_actions::add(&*self.obj());
+            self.project_view.connect_vault_changed(glib::clone!(
+                #[weak(rename_to = page)]
+                self.obj(),
+                move |view| {
+                    page.set_vault(view.vault());
+                    page.emit_by_name::<()>("vault-changed", &[]);
+                }
+            ));
             // Back from a note, the previews show it as just typed.
             self.project_view.connect_showing(glib::clone!(
                 #[weak(rename_to = note_view)]

@@ -6,7 +6,7 @@
 
 ![BitLog in light and dark style: a day with its blocks in front, a week chart and a project behind it](data/screenshots/hero.webp)
 
-BitLog splits the working day into blocks and assigns them to projects, roughly and without a stopwatch. Blocks can carry Markdown notes, projects keep a small set of notes and files of their own.
+BitLog splits the working day into blocks and assigns them to projects, roughly and without a stopwatch. Blocks can carry Markdown notes, projects keep a small set of notes and files of their own, and contacts keep the people you work with along with their roles in your projects.
 
 One task list stays in view on every day, so open tasks never need to be carried over. Reports show where your time went per week, month or year, and a standup summary is ready to be pasted into the chat. All data lives in plain text files in an ordinary directory, which you can sync with Git or anything else.
 

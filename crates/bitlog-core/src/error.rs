@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-use crate::{AssetPath, BlockId, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId};
+use crate::{
+    AssetPath, BlockId, ContactSlug, InvalidId, LocationKey, NotePath, ProjectSlug, TaskId,
+};
 
 /// A vault file that cannot be read or does not follow the format.
 #[derive(Debug, Error)]
@@ -14,7 +16,8 @@ pub enum ReadError {
     Invalid { path: PathBuf, message: String },
 }
 
-/// A change that would make a day, project, task list or note invalid.
+/// A change that would make a day, project, contact, task list or note
+/// invalid.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum EditError {
     #[error("there is no block {0}")]
@@ -45,6 +48,10 @@ pub enum EditError {
     UnknownNote(NotePath),
     #[error("the note {0} exists already")]
     NoteExists(NotePath),
+    #[error("there is no contact {0}")]
+    UnknownContact(ContactSlug),
+    #[error("the contact {0} exists already")]
+    ContactExists(ContactSlug),
     #[error("there is no file {0}")]
     UnknownAsset(AssetPath),
     #[error("the file {0} exists already")]

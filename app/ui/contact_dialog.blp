@@ -1,0 +1,195 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BitLogContactDialog: Adw.Dialog {
+  content-width: 460;
+  content-height: 640;
+  default-widget: save_button;
+  focus-widget: name_row;
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      show-start-title-buttons: false;
+      show-end-title-buttons: false;
+
+      [start]
+      Button cancel_button {
+        label: _("_Cancel");
+        use-underline: true;
+      }
+
+      [end]
+      Button save_button {
+        use-underline: true;
+
+        styles [
+          "suggested-action",
+        ]
+      }
+    }
+
+    content: Adw.PreferencesPage {
+      Adw.PreferencesGroup {
+        Adw.EntryRow name_row {
+          title: _("Name");
+          activates-default: true;
+        }
+      }
+
+      Adw.PreferencesGroup slug_group {
+        description: _("Names the contact’s file and mentions them in texts, as in @kim.");
+
+        Adw.EntryRow slug_row {
+          title: _("ID");
+          activates-default: true;
+        }
+
+        Label slug_hint {
+          margin-top: 12;
+          wrap: true;
+          xalign: 0;
+        }
+      }
+
+      Adw.PreferencesGroup phone_group {
+        title: _("Phone");
+
+        header-suffix: MenuButton phone_button {
+          icon-name: "list-add-symbolic";
+          tooltip-text: _("Add Phone Number");
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        };
+      }
+
+      Adw.PreferencesGroup email_group {
+        title: _("Email");
+
+        header-suffix: MenuButton email_button {
+          icon-name: "list-add-symbolic";
+          tooltip-text: _("Add Email Address");
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        };
+      }
+
+      // Holds the fields added with "Add Field", the other fields after
+      // these.
+      Adw.PreferencesGroup details_group {
+        title: _("Details");
+
+        Adw.EntryRow company_row {
+          title: _("Company");
+          activates-default: true;
+          visible: false;
+        }
+
+        Adw.EntryRow hours_row {
+          title: _("Working Hours");
+          activates-default: true;
+          visible: false;
+        }
+
+        Adw.ComboRow timezone_row {
+          title: _("Time Zone");
+          enable-search: true;
+          visible: false;
+        }
+
+        Adw.ActionRow birthday_row {
+          title: _("Birthday");
+          visible: false;
+
+          [suffix]
+          MenuButton birthday_button {
+            valign: center;
+
+            popover: Popover {
+              child: Box {
+                spacing: 6;
+
+                SpinButton day_button {
+                  orientation: vertical;
+                  numeric: true;
+
+                  adjustment: Adjustment {
+                    lower: 1;
+                    upper: 31;
+                    step-increment: 1;
+                    page-increment: 7;
+                  };
+                }
+
+                DropDown month_dropdown {
+                  valign: center;
+                }
+
+                SpinButton year_button {
+                  orientation: vertical;
+                  numeric: true;
+
+                  adjustment: Adjustment {
+                    lower: 1900;
+                    upper: 2100;
+                    step-increment: 1;
+                    page-increment: 10;
+                  };
+                }
+              };
+            };
+          }
+        }
+      }
+
+      Adw.PreferencesGroup note_group {
+        title: _("Note");
+        visible: false;
+
+        Frame {
+          child: TextView note_view {
+            wrap-mode: word_char;
+            accepts-tab: false;
+            height-request: 96;
+            top-margin: 12;
+            bottom-margin: 12;
+            left-margin: 12;
+            right-margin: 12;
+          };
+        }
+      }
+
+      Adw.PreferencesGroup projects_group {
+        title: _("Projects");
+
+        header-suffix: MenuButton projects_button {
+          icon-name: "list-add-symbolic";
+          tooltip-text: _("Add Project");
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        };
+      }
+
+      Adw.PreferencesGroup {
+        MenuButton add_field_button {
+          label: _("_Add Field");
+          use-underline: true;
+          halign: center;
+
+          styles [
+            "pill",
+          ]
+        }
+      }
+    };
+  };
+}

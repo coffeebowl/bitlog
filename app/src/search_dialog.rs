@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Project, Vault};
+use bitlog_core::{Contact, Project, Vault};
 use bitlog_index::{Found, IndexError, SearchHit};
 use gettextrs::gettext;
 use gtk::{gdk, gio, glib};
@@ -165,6 +165,11 @@ fn commands(new_block: bool) -> Vec<Command> {
             "win.new-project",
         ),
         command(
+            gettext("New Contact"),
+            "list-add-symbolic",
+            "win.new-contact",
+        ),
+        command(
             gettext("Open Vault…"),
             "folder-open-symbolic",
             "win.open-vault",
@@ -226,7 +231,8 @@ impl SearchDialog {
             .expect("the dialog is set up with a vault")
     }
 
-    /// Shows the commands, projects and texts that match what is typed.
+    /// Shows the commands, projects, contacts and texts that match what is
+    /// typed.
     fn search(&self) {
         let imp = self.imp();
         let query = imp.entry.text().trim().to_owned();
@@ -251,8 +257,8 @@ impl SearchDialog {
         ));
     }
 
-    /// Lists the commands matching `query`, the projects once something is
-    /// typed, then `hits`, and selects the first row.
+    /// Lists the commands matching `query`, the projects and contacts once
+    /// something is typed, then `hits`, and selects the first row.
     fn show_results(&self, query: &str, hits: Result<Vec<SearchHit>, String>) {
         let imp = self.imp();
         imp.list.remove_all();
@@ -271,6 +277,11 @@ impl SearchDialog {
         for project in vault.projects() {
             if !query.is_empty() && matches(&project.name) {
                 rows.push(project_row(project));
+            }
+        }
+        for contact in vault.contacts() {
+            if !query.is_empty() && matches(&contact.name) {
+                rows.push(contact_row(contact));
             }
         }
         let error = match hits {
@@ -356,6 +367,16 @@ fn project_row(project: &Project) -> (adw::ActionRow, RowAction) {
     );
     let target = project.slug.to_string().to_variant();
     (row, ("win.show-project", Some(target)))
+}
+
+fn contact_row(contact: &Contact) -> (adw::ActionRow, RowAction) {
+    let row = result_row(
+        &glib::markup_escape_text(&contact.name),
+        &gettext("Contact"),
+        "avatar-default-symbolic",
+    );
+    let target = contact.slug.to_string().to_variant();
+    (row, ("win.show-contact", Some(target)))
 }
 
 fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {

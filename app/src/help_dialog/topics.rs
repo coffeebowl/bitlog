@@ -62,7 +62,15 @@ fn row(title: String) -> Row {
 
 /// All topics, in the order the help lists them.
 pub(super) fn all() -> Vec<Topic> {
-    vec![days(), projects(), tasks(), reports(), markdown(), vault()]
+    vec![
+        days(),
+        projects(),
+        contacts(),
+        tasks(),
+        reports(),
+        markdown(),
+        vault(),
+    ]
 }
 
 fn days() -> Topic {
@@ -116,6 +124,35 @@ fn projects() -> Topic {
             Block::Heading(gettext("Git")),
             Block::Text(gettext(
                 "If a project has a Git repository on this computer, add its folder under <b>Edit Project</b>. The project then shows its commits, and the standup includes yours. The folder is stored per computer, since it’s usually different on each one.",
+            )),
+        ],
+    }
+}
+
+fn contacts() -> Topic {
+    Topic {
+        tag: "contacts",
+        title: gettext("Contacts"),
+        blocks: vec![
+            Block::Figure(Kind::Contacts),
+            Block::Text(gettext(
+                "Keep the people you work with at hand: phone numbers, e-mail addresses, working hours, time zone and anything else, like an office or a profile. Click a number, address or web address to open it in your system’s app.",
+            )),
+            Block::Heading(gettext("Roles in Projects")),
+            Block::Text(gettext(
+                "Note who does what in which project, from either side: in the contact under <b>Projects</b>, or on the page of the project under <b>People</b>, where you can also add a new contact right away.",
+            )),
+            Block::Heading(gettext("Pictures")),
+            Block::Text(gettext(
+                "Click the picture of a contact to choose one or paste it, or drop a file onto it. BitLog keeps a small square copy, cut from the middle.",
+            )),
+            Block::Heading(gettext("Archive")),
+            Block::Text(gettext(
+                "Archive the contacts you no longer work with. They move to the end of the list, and their roles stay.",
+            )),
+            Block::Heading(gettext("Other People’s Data")),
+            Block::Text(gettext(
+                "Contacts hold details about other people. Like everything in the vault, they go wherever you sync the vault, so keep in mind who can read it.",
             )),
         ],
     }
@@ -284,6 +321,7 @@ const VAULT_TREE: &str = "\
 my-vault/
 ├─ bitlog.toml
 ├─ tasks.toml
+├─ contacts/kim.toml
 ├─ daily/2026/10/2026-10-06.md
 ├─ projects/webshop/
 │  ├─ project.toml

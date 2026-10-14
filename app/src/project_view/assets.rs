@@ -2,10 +2,8 @@
 
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use adw::prelude::*;
-use adw::subclass::prelude::*;
 use bitlog_core::{AssetPath, Vault};
 use gettextrs::gettext;
 use gtk::gio;
@@ -17,15 +15,6 @@ use crate::note_dialogs::ask_name;
 use crate::trash::trash;
 
 impl ProjectView {
-    /// The vault shown, which the actions on assets need.
-    fn vault(&self) -> Rc<Vault> {
-        self.imp()
-            .vault
-            .borrow()
-            .clone()
-            .expect("assets are only shown with a vault")
-    }
-
     pub(super) async fn choose_assets(&self) {
         let dialog = gtk::FileDialog::builder()
             .title(gettext("Add Files"))

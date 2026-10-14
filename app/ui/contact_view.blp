@@ -1,0 +1,142 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BitLogContactView: Adw.NavigationPage {
+  tag: "contact";
+
+  child: Adw.ToolbarView {
+    [top]
+    Adw.HeaderBar {
+      [end]
+      MenuButton {
+        icon-name: "view-more-symbolic";
+        tooltip-text: _("Contact Menu");
+        menu-model: contact_menu;
+      }
+
+      [end]
+      Button {
+        icon-name: "document-edit-symbolic";
+        tooltip-text: _("Edit Contact");
+        action-name: "contacts.edit";
+      }
+    }
+
+    content: ScrolledWindow scrolled {
+      hscrollbar-policy: never;
+
+      child: Adw.Clamp {
+        maximum-size: 600;
+        margin-top: 24;
+        margin-bottom: 24;
+        margin-start: 12;
+        margin-end: 12;
+
+        child: Box {
+          orientation: vertical;
+          spacing: 24;
+
+          Box {
+            orientation: vertical;
+            spacing: 6;
+
+            // Picture files dropped onto it become the contact's picture.
+            MenuButton picture_button {
+              halign: center;
+              margin-bottom: 6;
+              tooltip-text: _("Change Picture");
+              menu-model: picture_menu;
+
+              child: Adw.Avatar avatar {
+                size: 128;
+                show-initials: true;
+              };
+
+              styles [
+                "flat",
+                "circular",
+              ]
+            }
+
+            Label name_label {
+              wrap: true;
+              justify: center;
+
+              styles [
+                "title-1",
+              ]
+            }
+
+            Label company_label {
+              wrap: true;
+              justify: center;
+
+              styles [
+                "dim-label",
+              ]
+            }
+          }
+
+          Adw.PreferencesGroup phone_group {
+            title: _("Phone");
+          }
+
+          Adw.PreferencesGroup email_group {
+            title: _("Email");
+          }
+
+          Adw.PreferencesGroup details_group {
+            title: _("Details");
+          }
+
+          Adw.PreferencesGroup projects_group {
+            title: _("Projects");
+          }
+        };
+      };
+    };
+  };
+}
+
+menu contact_menu {
+  section {
+    item {
+      label: _("_Archive");
+      action: "contacts.archive";
+      hidden-when: "action-disabled";
+    }
+
+    item {
+      label: _("_Unarchive");
+      action: "contacts.unarchive";
+      hidden-when: "action-disabled";
+    }
+  }
+
+  section {
+    item {
+      label: _("Move to _Trash");
+      action: "contacts.trash";
+    }
+  }
+}
+
+menu picture_menu {
+  section {
+    item {
+      label: _("_Choose Picture…");
+      action: "contacts.choose-picture";
+    }
+
+    item {
+      label: _("_Paste Picture");
+      action: "contacts.paste-picture";
+    }
+
+    item {
+      label: _("_Remove Picture");
+      action: "contacts.remove-picture";
+      hidden-when: "action-disabled";
+    }
+  }
+}
