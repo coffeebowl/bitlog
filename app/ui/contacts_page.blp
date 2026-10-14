@@ -21,6 +21,18 @@ template $BitLogContactsPage: Adw.NavigationPage {
           }
         }
 
+        [top]
+        Adw.Clamp {
+          maximum-size: 600;
+          margin-bottom: 6;
+          margin-start: 12;
+          margin-end: 12;
+
+          child: SearchEntry search_entry {
+            placeholder-text: _("Search contacts");
+          };
+        }
+
         content: Stack stack {
           StackPage {
             name: "list";
@@ -34,6 +46,16 @@ template $BitLogContactsPage: Adw.NavigationPage {
               icon-name: "x-office-address-book-symbolic";
               title: _("No Contacts");
               description: _("Add the people you work with, with their roles in your projects");
+            };
+          }
+
+          StackPage {
+            name: "no-results";
+
+            child: Adw.StatusPage {
+              icon-name: "edit-find-symbolic";
+              title: _("No Matching Contacts");
+              description: _("Try another search");
             };
           }
         };

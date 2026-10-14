@@ -39,6 +39,10 @@ mod imp {
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub list: TemplateChild<adw::PreferencesPage>,
+        #[template_child]
+        pub overview: TemplateChild<adw::NavigationPage>,
+        #[template_child]
+        pub search_entry: TemplateChild<gtk::SearchEntry>,
     }
 
     impl Default for ContactsPage {
@@ -50,6 +54,8 @@ mod imp {
                 nav: TemplateChild::default(),
                 stack: TemplateChild::default(),
                 list: TemplateChild::default(),
+                overview: TemplateChild::default(),
+                search_entry: TemplateChild::default(),
             }
         }
     }
@@ -121,6 +127,14 @@ mod imp {
                 }
             ));
             self.contact_view.picture_button().add_controller(drop);
+            self.search_entry.connect_search_changed(glib::clone!(
+                #[weak]
+                page,
+                move |_| page.show_list()
+            ));
+            // Typing on the list searches.
+            self.search_entry
+                .set_key_capture_widget(Some(&*self.overview));
         }
 
         fn signals() -> &'static [Signal] {
@@ -222,17 +236,19 @@ impl ContactsPage {
         contact.is_some()
     }
 
-    /// Lists the contacts by name, the archived ones folded away at the
-    /// end.
+    /// Lists the contacts that match the search by name, the archived ones
+    /// folded away at the end, unless the search found some of them.
     fn show_list(&self) {
         let imp = self.imp();
         for group in imp.groups.take() {
             imp.list.remove(&group);
         }
         let vault = self.vault();
+        let search = imp.search_entry.text().trim().to_lowercase();
         let (archived, active): (Vec<&Contact>, Vec<&Contact>) = vault
             .contacts()
             .iter()
+            .filter(|contact| matches(&vault, contact, &search))
             .partition(|contact| contact.archived);
         let mut groups = Vec::new();
         if !active.is_empty() {
@@ -253,6 +269,7 @@ impl ContactsPage {
                     )
                     .replace("{count}", &archived.len().to_string()),
                 )
+                .expanded(!search.is_empty())
                 .build();
             for contact in archived {
                 expander.add_row(&contact_row(&vault, contact));
@@ -264,8 +281,12 @@ impl ContactsPage {
         for group in &groups {
             imp.list.add(group);
         }
-        imp.stack
-            .set_visible_child_name(if groups.is_empty() { "empty" } else { "list" });
+        let shown = match (groups.is_empty(), vault.contacts().is_empty()) {
+            (false, _) => "list",
+            (true, true) => "empty",
+            (true, false) => "no-results",
+        };
+        imp.stack.set_visible_child_name(shown);
         imp.groups.replace(groups);
     }
 
@@ -349,6 +370,19 @@ impl ContactsPage {
     }
 }
 
+/// Whether `contact` of `vault` has `search`, in lower case, in their name,
+/// company or slug, or in a project they work on or their role there.
+fn matches(vault: &Vault, contact: &Contact, search: &str) -> bool {
+    let has = |text: &str| text.to_lowercase().contains(search);
+    has(&contact.name)
+        || has(&contact.company)
+        || has(contact.slug.as_str())
+        || contact
+            .roles
+            .iter()
+            .any(|(project, role)| has(vault.project_name(project)) || has(role))
+}
+
 /// A contact in the list, with their picture and company.
 fn contact_row(vault: &Vault, contact: &Contact) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
@@ -362,4 +396,32 @@ fn contact_row(vault: &Vault, contact: &Contact) -> adw::ActionRow {
     row.add_prefix(&avatar(vault.root(), contact, 32));
     row.add_suffix(&gtk::Image::from_icon_name("go-next-symbolic"));
     row
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn search_finds_names_companies_and_roles() {
+        let vault =
+            Vault::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/sample-vault"))
+                .unwrap();
+        let found = |search: &str| -> Vec<&str> {
+            vault
+                .contacts()
+                .iter()
+                .filter(|contact| matches(&vault, contact, search))
+                .map(|contact| contact.slug.as_str())
+                .collect()
+        };
+        assert_eq!(found(""), ["alex", "kim", "sam"]);
+        assert_eq!(found("meyer"), ["kim"]);
+        assert_eq!(found("example gmbh"), ["kim"]);
+        assert_eq!(found("product owner"), ["kim"]);
+        assert_eq!(found("infrastructure"), ["alex"]);
+        assert!(found("nobody").is_empty());
+    }
 }
