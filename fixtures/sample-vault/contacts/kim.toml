@@ -1,5 +1,6 @@
 format = 1
 name = "Kim Meyer"
+nickname = "Kim"
 company = "Example GmbH"
 hours = "Mon–Thu, 9–15"
 timezone = "Europe/Berlin"

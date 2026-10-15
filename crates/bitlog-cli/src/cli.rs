@@ -252,6 +252,9 @@ pub struct ContactArgs {
     /// The name shown for the contact [default for new contacts: the slug]
     #[arg(long, group = "change")]
     pub name: Option<String>,
+    /// What mentions show instead of the name, empty to remove it
+    #[arg(long, group = "change")]
+    pub nickname: Option<String>,
     /// The company the person works for, empty to remove it
     #[arg(long, group = "change")]
     pub company: Option<String>,

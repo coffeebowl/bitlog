@@ -144,7 +144,7 @@ fn contacts() -> Topic {
             )),
             Block::Heading(gettext("Mentions")),
             Block::Text(gettext(
-                "Type <tt>@</tt> in a note, day note or block text to mention someone: BitLog suggests your contacts as you type their name, those of the project first. Click a mention to see how to reach the person. The contact lists every place that mentions them.",
+                "Type <tt>@</tt> in a note, day note or block text to mention someone: BitLog suggests your contacts as you type their name, those of the project first. A mention shows the person’s nickname, or else their name; with the cursor on it, you see what’s in the file, like <tt>@kim</tt>. Click a mention to see how to reach the person. The contact lists every place that mentions them.",
             )),
             Block::Heading(gettext("Pictures")),
             Block::Text(gettext(

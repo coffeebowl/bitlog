@@ -12,6 +12,7 @@ mod editing;
 mod images;
 mod links;
 mod lists;
+mod mentions;
 mod menu;
 mod styling;
 mod tables;
@@ -26,7 +27,7 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    Contact, MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting, mentions,
+    Contact, MarkdownMode, NotePath, ProjectSlug, escape_headings, markdown_formatting,
     trim_blank_lines, wiki_links,
 };
 use glib::SignalHandlerId;
@@ -338,7 +339,8 @@ glib::wrapper! {
     /// text is saved. Tables are grids, their cells cut off if too wide, and
     /// rules are lines, but show their Markdown while the cursor is in them,
     /// tables in a monospace font with the columns lined up. Mentions of
-    /// known contacts stand out and show a card of the person when clicked.
+    /// known contacts show their name instead of their slug while the
+    /// cursor is elsewhere, and a card of the person when clicked.
     /// Enter continues lists, quotes and tables, typing a wiki link proposes
     /// notes and typing a mention proposes contacts.
     ///
@@ -463,7 +465,6 @@ impl MarkdownView {
         let (start, end) = buffer.bounds();
         // The buffer has no other tags: it has no language and no search.
         buffer.remove_all_tags(&start, &end);
-        buffer.apply_tag_by_name(tags::BODY, &start, &end);
         let text = self.text();
         let offsets = char_offsets(&text);
         let styling = Styling::new(self.upcast_ref(), &text, &offsets, self.editing_cursor());
@@ -488,6 +489,10 @@ impl MarkdownView {
             imp.location.borrow().as_ref(),
             imp.image_width.get(),
         );
+        let mut links = match &*imp.contacts.borrow() {
+            Some(contacts) => mentions::style(&styling, &formatting, &mut decorations, contacts),
+            None => Vec::new(),
+        };
         imp.highlighter.apply(&styling, &formatting.code_blocks);
         let revealed = decorations.revealed(styling.cursor);
         let before = imp.revealed.replace(revealed.clone());
@@ -496,16 +501,6 @@ impl MarkdownView {
         let added = imp.room_below_text.replace(room);
         if room != added {
             self.set_bottom_margin(self.bottom_margin() - added + room);
-        }
-        let mut links = Vec::new();
-        if let Some(contacts) = &*imp.contacts.borrow() {
-            for mention in mentions(&text) {
-                if contacts.contacts.iter().any(|c| c.slug == mention.contact) {
-                    let range = styling.chars(&mention.span);
-                    decorations.chips.push(range.clone());
-                    links.push((range.clone(), Target::Contact(mention.contact, range)));
-                }
-            }
         }
         links.extend(
             decorations

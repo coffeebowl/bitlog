@@ -51,6 +51,7 @@ pub fn format_contact(vault: &Vault, slug: &ContactSlug, mentions: &[Backlink]) 
         }
     };
     add("Name", &contact.name);
+    add("Nickname", &contact.nickname);
     add("Company", &contact.company);
     add("Hours", &contact.hours);
     add("Time zone", &contact.timezone);
@@ -121,6 +122,7 @@ pub fn rename_contact(vault: &mut Vault, slug: &ContactSlug, new_slug: &ContactS
 /// Changes to a contact; `None` keeps a value as it is.
 pub struct ContactChanges {
     pub name: Option<String>,
+    pub nickname: Option<String>,
     pub company: Option<String>,
     pub archived: Option<bool>,
     /// Projects with the role to set there, `None` to remove the project.
@@ -162,6 +164,9 @@ fn check_projects(vault: &Vault, changes: &ContactChanges) -> Result<(), EditErr
 fn apply(contact: &mut Contact, changes: ContactChanges) {
     if let Some(name) = changes.name {
         contact.name = name;
+    }
+    if let Some(nickname) = changes.nickname {
+        contact.nickname = nickname;
     }
     if let Some(company) = changes.company {
         contact.company = company;
@@ -207,6 +212,7 @@ mod tests {
         assert_eq!(
             format_contact(&vault, &"kim".parse().unwrap(), &[]).unwrap(),
             "Name       Kim Meyer\n\
+             Nickname   Kim\n\
              Company    Example GmbH\n\
              Hours      Mon–Thu, 9–15\n\
              Time zone  Europe/Berlin\n\

@@ -147,6 +147,7 @@ impl ContactView {
             self.add_row(&imp.email_group, &contact_label(label), address, Some(uri));
         }
         let details = &imp.details_group;
+        self.add_text(details, &gettext("Nickname"), &contact.nickname);
         self.add_text(details, &gettext("Working Hours"), &contact.hours);
         if !contact.timezone.is_empty() {
             let zone = match local_time(&contact.timezone) {

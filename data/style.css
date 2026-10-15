@@ -4,6 +4,12 @@
   background: none;
 }
 
+/* As `LINE_HEIGHT` in `markdown_view/tags.rs`. Not as a tag: empty lines
+   have no text to take it. */
+.markdown-view {
+  line-height: 1.3;
+}
+
 /* Notes and files of a project show as miniatures of pages. */
 flowboxchild.page-card {
   padding: 6px;

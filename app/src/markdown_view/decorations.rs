@@ -15,6 +15,7 @@ use super::check_boxes::CheckBox;
 use super::code_blocks::CodeCard;
 use super::diagrams::DiagramCard;
 use super::images::ImageCard;
+use super::mentions::MentionName;
 use super::styling::{Styling, holds};
 use super::tables::{DelimiterDashes, Fit, Grid, TidiedTable};
 use super::{CODE_ALPHA, GRID_ALPHA, MARKUP_ALPHA, lists, tags};
@@ -43,6 +44,7 @@ pub(super) struct Decorations {
     rules: Vec<Range<i32>>,
     /// Inline code and mentions, on a background with rounded corners.
     pub(super) chips: Vec<Range<i32>>,
+    pub(super) mention_names: Vec<MentionName>,
     pub(super) code_blocks: Vec<CodeCard>,
     /// Code blocks drawn as diagrams, not those being edited.
     pub(super) diagrams: Vec<DiagramCard>,
@@ -177,6 +179,9 @@ impl Decorations {
             for rect in text_rects(view, range, &visible) {
                 fill_rounded(snapshot, rect, CHIP_RADIUS, &chip_color);
             }
+        }
+        for name in &self.mention_names {
+            name.snapshot(view, snapshot, &visible);
         }
         for range in &self.rules {
             if let Some((top, bottom)) = line_span(view, range, &visible) {

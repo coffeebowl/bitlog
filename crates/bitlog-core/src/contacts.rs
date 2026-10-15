@@ -31,6 +31,8 @@ pub struct Contact {
     /// The name of the file, without `.toml`.
     pub slug: ContactSlug,
     pub name: String,
+    /// What mentions show instead of the name, like a first name.
+    pub nickname: String,
     pub company: String,
     /// When the person works, free text.
     pub hours: String,
@@ -60,6 +62,7 @@ pub struct Contact {
 struct ContactFile {
     format: u32,
     name: Option<String>,
+    nickname: Option<String>,
     company: Option<String>,
     hours: Option<String>,
     timezone: Option<String>,
@@ -88,6 +91,7 @@ impl Contact {
         Self {
             slug,
             name: name.to_owned(),
+            nickname: String::new(),
             company: String::new(),
             hours: String::new(),
             timezone: String::new(),
@@ -112,6 +116,16 @@ impl Contact {
     /// one.
     pub fn image_path(vault: &Path, slug: &ContactSlug) -> PathBuf {
         contacts_folder(vault).join(format!("{slug}.jpg"))
+    }
+
+    /// What mentions of the person show: their nickname, or else their
+    /// name.
+    pub fn display_name(&self) -> &str {
+        if self.nickname.is_empty() {
+            &self.name
+        } else {
+            &self.nickname
+        }
     }
 
     /// The role of the person in the project `project`, if they work on it.
@@ -192,6 +206,7 @@ impl Contact {
         Ok(Self {
             name: file.name.unwrap_or_else(|| slug.to_string()),
             slug,
+            nickname: file.nickname.unwrap_or_default(),
             company: file.company.unwrap_or_default(),
             hours: file.hours.unwrap_or_default(),
             timezone: file.timezone.unwrap_or_default(),
@@ -215,6 +230,7 @@ impl Contact {
         let table = document.as_table_mut();
         set(table, "format", i64::from(FORMAT).into());
         set(table, "name", self.name.as_str().into());
+        set_text(table, "nickname", &self.nickname);
         set_text(table, "company", &self.company);
         set_text(table, "hours", &self.hours);
         set_text(table, "timezone", &self.timezone);
@@ -417,6 +433,7 @@ mod tests {
         let names: Vec<&str> = vault.contacts().iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["Alex Novak", "Kim Meyer", "Sam Berg"]);
         let kim = vault.contact(&slug("kim")).unwrap();
+        assert_eq!(kim.nickname, "Kim");
         assert_eq!(kim.company, "Example GmbH");
         assert_eq!(kim.timezone, "Europe/Berlin");
         assert_eq!(kim.birthday, NaiveDate::from_ymd_opt(1990, 5, 17));
@@ -447,6 +464,9 @@ mod tests {
     #[test]
     fn new_contact_roundtrip() {
         let mut contact = Contact::new(slug("kim"), "Kim");
+        assert_eq!(contact.display_name(), "Kim");
+        contact.nickname = "K".to_owned();
+        assert_eq!(contact.display_name(), "K");
         contact.company = "Example".to_owned();
         contact.birthday = NaiveDate::from_ymd_opt(1990, 5, 17);
         contact.phones = texts(&[("mobile", "+49 170"), ("Home office", "+49 30")]);
@@ -456,7 +476,7 @@ mod tests {
         let text = contact.to_toml();
         assert_eq!(
             text,
-            "format = 1\nname = \"Kim\"\ncompany = \"Example\"\nbirthday = 1990-05-17\narchived = true\n\n\
+            "format = 1\nname = \"Kim\"\nnickname = \"K\"\ncompany = \"Example\"\nbirthday = 1990-05-17\narchived = true\n\n\
              [phone]\nmobile = \"+49 170\"\n\"Home office\" = \"+49 30\"\n\n\
              [projects]\nwebshop = \"Product Owner\"\ninfra = \"\"\n"
         );
@@ -469,7 +489,7 @@ mod tests {
     fn writing_keeps_comments_and_order() {
         let mut contact = Contact::parse(
             slug("kim"),
-            "format = 1\nname = \"Kim\"\nphone = { work = \"1\" }\nnickname = \"K\"\n\n\
+            "format = 1\nname = \"Kim\"\nphone = { work = \"1\" }\nunknown = \"K\"\n\n\
              [email]\n# Read daily.\nwork = \"a@example.com\" # main\nprivate = \"b@example.com\"\n",
         )
         .unwrap();
@@ -479,7 +499,7 @@ mod tests {
         contact.company = "Example".to_owned();
         assert_eq!(
             contact.to_toml(),
-            "format = 1\nname = \"Kim\"\nnickname = \"K\"\ncompany = \"Example\"\n\n\
+            "format = 1\nname = \"Kim\"\nunknown = \"K\"\ncompany = \"Example\"\n\n\
              [email]\nprivate = \"b@example.com\"\n# Read daily.\nwork = \"c@example.com\" # main\n"
         );
     }

@@ -215,6 +215,7 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
 fn contact(mut vault: Vault, command: ContactCommand) -> Result<()> {
     let changes = |values: ContactArgs, no_role: Vec<_>, archived| ContactChanges {
         name: values.name,
+        nickname: values.nickname,
         company: values.company,
         archived,
         roles: values

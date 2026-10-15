@@ -59,20 +59,20 @@ impl MarkdownView {
     }
 
     /// Where the text at the character range `range` is shown, in widget
-    /// coordinates, or its start if it spans more than one line.
+    /// coordinates, or its start if it spans more than one line. Between
+    /// the cursor positions, which leave out hidden text.
     fn text_rectangle(&self, range: &Range<i32>) -> gdk::Rectangle {
         let buffer = self.buffer();
-        let start = self.iter_location(&buffer.iter_at_offset(range.start));
-        let end = self.iter_location(&buffer.iter_at_offset(range.end));
+        let (start, _) = self.cursor_locations(Some(&buffer.iter_at_offset(range.start)));
+        let (end, _) = self.cursor_locations(Some(&buffer.iter_at_offset(range.end)));
         let width = if end.y() == start.y() {
             end.x() - start.x()
         } else {
-            start.width()
+            1
         };
         let (x, y) =
             self.buffer_to_window_coords(gtk::TextWindowType::Widget, start.x(), start.y());
-        // GTK places the popovers of a text view below its top margin.
-        gdk::Rectangle::new(x, y - self.top_margin(), width, start.height())
+        gdk::Rectangle::new(x, y, width, start.height())
     }
 }
 

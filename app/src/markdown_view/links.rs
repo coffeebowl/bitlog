@@ -23,7 +23,7 @@ pub(super) enum Target {
     Web(String),
     /// An image, which another app shows.
     File(PathBuf),
-    /// A contact, mentioned at the character range.
+    /// A contact, with where its mention is shown, in characters.
     Contact(ContactSlug, Range<i32>),
 }
 

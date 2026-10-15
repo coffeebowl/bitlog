@@ -190,7 +190,7 @@ mod imp {
     }
 
     impl ContactProvider {
-        /// Fills `store` with the contacts whose name or slug matches what
+        /// Fills `store` with the contacts whose name, nickname or slug matches what
         /// is typed of the mention, those of the project of the text first,
         /// the best matches first. Archived contacts are left out. Empty if
         /// no mention is being typed.
@@ -211,7 +211,8 @@ mod imp {
                 .iter()
                 .filter(|contact| !contact.archived)
                 .filter_map(|contact| {
-                    let score = fuzzy_match(&[&contact.name, contact.slug.as_str()], &needle)?;
+                    let names = [&contact.name, &contact.nickname, contact.slug.as_str()];
+                    let score = fuzzy_match(&names, &needle)?;
                     let is_other = contacts
                         .project
                         .as_ref()

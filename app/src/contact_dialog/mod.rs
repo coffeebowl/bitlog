@@ -50,6 +50,8 @@ mod imp {
         #[template_child]
         pub name_row: TemplateChild<adw::EntryRow>,
         #[template_child]
+        pub nickname_row: TemplateChild<adw::EntryRow>,
+        #[template_child]
         pub slug_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub slug_row: TemplateChild<adw::EntryRow>,
@@ -291,6 +293,7 @@ impl ContactDialog {
         if let Some(project) = project {
             dialog.add_row(Kind::Role, project.as_str(), "");
         }
+        imp.nickname_row.set_text(&shown.nickname);
         imp.company_row.set_text(&shown.company);
         imp.company_row.set_visible(!shown.company.is_empty());
         imp.hours_row.set_text(&shown.hours);
@@ -358,6 +361,8 @@ impl ContactDialog {
                 String::new()
             }
         };
+        let nickname = imp.nickname_row.text().trim().to_owned();
+        changed(&mut contact.nickname, &shown.nickname, nickname);
         changed(&mut contact.company, &shown.company, text(&imp.company_row));
         changed(&mut contact.hours, &shown.hours, text(&imp.hours_row));
         let timezone = imp

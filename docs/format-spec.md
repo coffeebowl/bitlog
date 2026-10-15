@@ -426,6 +426,7 @@ copies, are ignored.
 ```toml
 format = 1
 name = "Kim Meyer"
+nickname = "Kim"
 company = "Example GmbH"
 hours = "Mon–Thu, 9–15"          # free text
 timezone = "Europe/Berlin"
@@ -453,6 +454,7 @@ Only `format` is required. Missing fields take these defaults:
 | Field | Default | Rule |
 | --- | --- | --- |
 | `name` | the slug | |
+| `nickname` | none | text that mentions show instead of the name |
 | `company`, `hours`, `note` | none | text; `note` is plain text, not Markdown |
 | `timezone` | none | an IANA time zone name; unknown names are kept but show no local time |
 | `birthday` | none | TOML local date |
@@ -479,7 +481,8 @@ Only `format` is required. Missing fields take these defaults:
   hold, as in `@Kim` or `@kim_a`, or if the `@` follows a letter, digit, `_`,
   `/` or `\`, as in mail and web addresses. Code, links, images and front
   matter hold no mentions. A mention of a contact that does not exist is
-  plain text.
+  plain text. In the app, a mention shows the contact's nickname, or else
+  their name, without the `@`, while the cursor is elsewhere.
 - **Renaming** a contact (`bitlog contact rename`) renames its file and
   picture and changes its mentions in all notes, day notes and block texts.
 - Contacts are TOML rather than vCard: vCard has no place for roles in

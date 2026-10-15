@@ -15,14 +15,18 @@ use crate::colors::with_alpha;
 const HEADING_SCALES: [f64; 6] = [1.6, 1.4, 1.25, 1.1, 1.0, 1.0];
 /// Dims wiki links to notes that do not exist.
 pub(super) const BROKEN_LINK: &str = "broken-link";
-/// All of the text, with the default line height.
-pub(super) const BODY: &str = "body";
-/// Of all text, as a share of the height of the font.
+/// Of all text, as a share of the height of the font. Set in `style.css`
+/// for the text, as empty lines take no tags; this is for what the view
+/// draws itself.
 pub(super) const LINE_HEIGHT: f32 = 1.3;
 /// Hides syntax that something else is drawn for, like bullets.
 pub(super) const CONCEALED: &str = "concealed";
 /// Hides syntax until the cursor is at it, taking no space.
 pub(super) const HIDDEN: &str = "hidden";
+/// Text so small that it takes next to no space, but unlike hidden text is
+/// laid out.
+pub(super) const TINY: &str = "tiny";
+const TINY_SCALE: f64 = 0.01;
 /// Space above the first line of a code block without its fences.
 pub(super) const CODE_TOP: &str = "code-top";
 /// Space below the last line of a code block without its fences.
@@ -48,9 +52,9 @@ const CODE_BLOCK_VERTICAL_PADDING: i32 = 8;
 const QUOTE_INDENT: i32 = 6;
 
 /// Creates a tag for every style, and those that hide or space out text.
-/// Tags created later win over earlier ones: the body tag comes first, the
-/// markup tag after those of the other styles, and the list number and
-/// concealed tags after it.
+/// Tags created later win over earlier ones: the markup tag comes after
+/// those of the other styles, and the list number and concealed tags after
+/// it.
 pub(super) fn create(buffer: &gtk::TextBuffer) {
     let monospace = || gtk::TextTag::builder().family("monospace");
     let bold = || gtk::TextTag::builder().weight(pango::Weight::Bold.into_glib());
@@ -72,13 +76,6 @@ pub(super) fn create(buffer: &gtk::TextBuffer) {
         (MarkdownStyle::TableHeader, bold()),
     ];
     let table = buffer.tag_table();
-    // First, so that the others win over it.
-    table.add(
-        &gtk::TextTag::builder()
-            .name(BODY)
-            .line_height(LINE_HEIGHT)
-            .build(),
-    );
     for (style, builder) in tags {
         table.add(&builder.name(name(style)).build());
     }
@@ -111,6 +108,7 @@ pub(super) fn create(buffer: &gtk::TextBuffer) {
         .build();
     table.add(&concealed);
     table.add(&gtk::TextTag::builder().name(HIDDEN).invisible(true).build());
+    table.add(&gtk::TextTag::builder().name(TINY).scale(TINY_SCALE).build());
     table.add(
         &gtk::TextTag::builder()
             .name(TASK_DONE)

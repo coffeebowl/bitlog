@@ -371,10 +371,11 @@ impl ContactsPage {
 }
 
 /// Whether `contact` of `vault` has `search`, in lower case, in their name,
-/// company or slug, or in a project they work on or their role there.
+/// nickname, company or slug, or in a project they work on or their role there.
 fn matches(vault: &Vault, contact: &Contact, search: &str) -> bool {
     let has = |text: &str| text.to_lowercase().contains(search);
     has(&contact.name)
+        || has(&contact.nickname)
         || has(&contact.company)
         || has(contact.slug.as_str())
         || contact
