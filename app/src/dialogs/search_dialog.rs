@@ -363,7 +363,7 @@ fn project_row(project: &Project) -> (adw::ActionRow, RowAction) {
     let row = result_row(
         &glib::markup_escape_text(&project.name),
         &gettext("Project"),
-        "folder-symbolic",
+        "project-symbolic",
     );
     let target = project.slug.to_string().to_variant();
     (row, ("win.show-project", Some(target)))
@@ -382,23 +382,23 @@ fn contact_row(contact: &Contact) -> (adw::ActionRow, RowAction) {
 fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
     let (icon, place) = match &hit.found {
         Found::Block { date, .. } => (
-            "x-office-calendar-symbolic",
+            "calendar-symbolic",
             // Translators: Where a search found something, as in "Block · September 22, 2026".
             gettext("Block · {date}").replace("{date}", &format_full_date(*date)),
         ),
         Found::DayNote(date) => (
-            "x-office-calendar-symbolic",
+            "calendar-symbolic",
             // Translators: Where a search found something, as in "Day Note · September 22, 2026".
             gettext("Day Note · {date}").replace("{date}", &format_full_date(*date)),
         ),
         Found::Note(note) => (
-            "text-x-generic-symbolic",
+            "note-symbolic",
             // Translators: Where a search found something, as in "Note · Webshop / Ideas".
             gettext("Note · {project} / {name}")
                 .replace("{project}", vault.project_name(note.project()))
                 .replace("{name}", note.name()),
         ),
-        Found::Task(_) => ("checkbox-checked-symbolic", gettext("Task")),
+        Found::Task(_) => ("circle-check-symbolic", gettext("Task")),
     };
     let (action, target) = show_action(&hit.found);
     let row = result_row(&snippet_markup(hit), &place, icon);

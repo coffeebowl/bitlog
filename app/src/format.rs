@@ -170,7 +170,7 @@ pub fn kind_name(kind: &str) -> String {
 pub fn category_icon(category: BlockCategory) -> &'static str {
     match category {
         BlockCategory::Work => "hammer-symbolic",
-        BlockCategory::Overhead => "x-office-calendar-symbolic",
+        BlockCategory::Overhead => "calendar-symbolic",
         BlockCategory::Filler => "view-refresh-symbolic",
     }
 }

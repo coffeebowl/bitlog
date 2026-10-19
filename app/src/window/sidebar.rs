@@ -18,29 +18,17 @@ const TIME_PAGES: usize = 3;
 /// the action that shows it. The search offers them as commands.
 pub fn pages() -> [(String, &'static str, &'static str); 7] {
     [
-        (gettext("Today"), "weather-clear-symbolic", "win.show-today"),
+        (gettext("Today"), "sun-symbolic", "win.show-today"),
         (
             gettext("Calendar"),
-            "x-office-calendar-symbolic",
+            "calendar-symbolic",
             "win.show-calendar",
         ),
-        (gettext("Reports"), "view-grid-symbolic", "win.show-reports"),
-        (
-            gettext("Tasks"),
-            "checkbox-checked-symbolic",
-            "win.show-tasks",
-        ),
-        (
-            gettext("Notes"),
-            "text-x-generic-symbolic",
-            "win.show-notes",
-        ),
-        (
-            gettext("Contacts"),
-            "x-office-address-book-symbolic",
-            "win.show-contacts",
-        ),
-        (gettext("Projects"), "folder-symbolic", "win.show-projects"),
+        (gettext("Reports"), "analyze-symbolic", "win.show-reports"),
+        (gettext("Tasks"), "circle-check-symbolic", "win.show-tasks"),
+        (gettext("Notes"), "note-symbolic", "win.show-notes"),
+        (gettext("Contacts"), "contact-symbolic", "win.show-contacts"),
+        (gettext("Projects"), "project-symbolic", "win.show-projects"),
     ]
 }
 

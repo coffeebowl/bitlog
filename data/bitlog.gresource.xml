@@ -28,6 +28,13 @@
     <file preprocess="xml-stripblanks">window.ui</file>
     <file>style.css</file>
     <!-- From the GNOME Icon Library (CC0); GTK finds icons of the app under icons/. -->
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/analyze-symbolic.svg">symbolic/analyze-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/calendar-symbolic.svg">symbolic/calendar-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/circle-check-symbolic.svg">symbolic/circle-check-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/contact-symbolic.svg">symbolic/contact-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/hammer-symbolic.svg">symbolic/hammer-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/note-symbolic.svg">symbolic/note-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/project-symbolic.svg">symbolic/project-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/sun-symbolic.svg">symbolic/sun-symbolic.svg</file>
   </gresource>
 </gresources>

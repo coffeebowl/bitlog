@@ -483,7 +483,7 @@ impl TaskListView {
                     button.add_css_class("error");
                 }
             }
-            None => button.set_icon_name("x-office-calendar-symbolic"),
+            None => button.set_icon_name("calendar-symbolic"),
         }
         let (id, due) = (task.id.clone(), task.due);
         // Built when needed, since each has a calendar.
