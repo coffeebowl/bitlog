@@ -27,6 +27,7 @@ Flatpak fetches the GNOME runtime from Flathub. The bundle currently does not up
 - [Command line](docs/command-line.md): the command line tool `bitlog`.
 - [Building](docs/building.md): building the app, the command line tool and the Flatpak.
 - [File format](docs/format-spec.md): how a vault is stored in plain text files.
+- [Architecture](docs/architecture.md): how the code is organised.
 
 ## What is a dev log?
 
