@@ -6,7 +6,7 @@ app/src/contacts_page/pictures.rs
 app/src/day_view/block_panel.rs
 app/src/day_view/mod.rs
 app/src/dialogs/commit_dialog.rs
-app/src/dialogs/conflict_dialog.rs
+app/src/dialogs/compare_dialog.rs
 app/src/dialogs/contact_dialog/labeled.rs
 app/src/dialogs/contact_dialog/mod.rs
 app/src/dialogs/help_dialog/figures/contacts.rs
@@ -51,7 +51,7 @@ app/src/window/sidebar.rs
 app/src/window/vault.rs
 app/ui/calendar_view.blp
 app/ui/commit_dialog.blp
-app/ui/conflict_dialog.blp
+app/ui/compare_dialog.blp
 app/ui/contact_dialog.blp
 app/ui/contact_view.blp
 app/ui/contacts_page.blp

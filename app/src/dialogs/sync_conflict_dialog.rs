@@ -16,7 +16,7 @@ use glib::subclass::Signal;
 use gtk::glib;
 
 use crate::alert::show_error;
-use crate::dialogs::conflict_dialog::ConflictDialog;
+use crate::dialogs::compare_dialog::CompareDialog;
 use crate::format::{
     format_full_date, format_time, format_weekday_date, kind_name, task_status_name,
 };
@@ -201,7 +201,7 @@ impl SyncConflictDialog {
                 #[weak]
                 toggles,
                 move |_| {
-                    let compare = ConflictDialog::compare(&row.title, &original, &copy);
+                    let compare = CompareDialog::compare(&row.title, &original, &copy);
                     compare.connect_chosen(move |keep_original| {
                         toggles.set_active_name(Some(if keep_original {
                             "original"

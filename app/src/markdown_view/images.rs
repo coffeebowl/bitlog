@@ -1,7 +1,7 @@
 //! Images: an image link to a file of the vault is drawn as its image below
 //! its line, and the link is hidden but while the cursor is at it. Several
 //! images of a line are drawn one below the other. Images are read in the
-//! background and kept while the text has them, see `drawings`; links to
+//! background and kept while the text has them, see `embeds`; links to
 //! images that cannot be read are dimmed.
 //!
 //! The room for them is above the next line, or below the text for the last
@@ -20,7 +20,7 @@ use gtk::prelude::*;
 use gtk::{gdk, gdk_pixbuf, graphene};
 
 use super::decorations::Decorations;
-use super::drawings::{Drawing, Drawings, LineMark, State};
+use super::embeds::{Embed, Embeds, LineMark, State};
 use super::styling::Styling;
 use super::tags;
 use crate::widgets::asset_preview::Image;
@@ -68,7 +68,7 @@ pub(super) struct ImageCard {
     line: LineMark,
     /// How far below the bottom of the line the image is drawn.
     below_line: i32,
-    picture: Rc<Drawing>,
+    picture: Rc<Embed>,
     /// How high the image is drawn.
     height: i32,
     pub(super) path: PathBuf,
@@ -82,7 +82,7 @@ pub(super) fn style(
     styling: &Styling,
     formatting: &Formatting,
     decorations: &mut Decorations,
-    images: &Drawings<Request>,
+    images: &Embeds<Request>,
     location: Option<&Location>,
     read_width: i32,
 ) -> Vec<Request> {
@@ -205,8 +205,8 @@ impl Request {
 
 impl ReadImage {
     /// The image, ready to be drawn as large as in its file.
-    pub(super) fn drawing(self) -> Drawing {
-        Drawing::new(self.image.texture(), self.width, self.height)
+    pub(super) fn embed(self) -> Embed {
+        Embed::new(self.image.texture(), self.width, self.height)
     }
 }
 

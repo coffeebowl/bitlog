@@ -12,8 +12,8 @@ mod imp {
     use super::*;
 
     #[derive(Debug, Default, gtk::CompositeTemplate)]
-    #[template(resource = "/dev/bitlog/BitLog/conflict_dialog.ui")]
-    pub struct ConflictDialog {
+    #[template(resource = "/dev/bitlog/BitLog/compare_dialog.ui")]
+    pub struct CompareDialog {
         #[template_child]
         pub header_bar: TemplateChild<adw::HeaderBar>,
         #[template_child]
@@ -33,9 +33,9 @@ mod imp {
     }
 
     #[glib::object_subclass]
-    impl ObjectSubclass for ConflictDialog {
-        const NAME: &'static str = "BitLogConflictDialog";
-        type Type = super::ConflictDialog;
+    impl ObjectSubclass for CompareDialog {
+        const NAME: &'static str = "BitLogCompareDialog";
+        type Type = super::CompareDialog;
         type ParentType = adw::Dialog;
 
         fn class_init(klass: &mut Self::Class) {
@@ -48,7 +48,7 @@ mod imp {
         }
     }
 
-    impl ObjectImpl for ConflictDialog {
+    impl ObjectImpl for CompareDialog {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             // Emitted with whether the user keeps their own version, after
@@ -78,20 +78,20 @@ mod imp {
         }
     }
 
-    impl WidgetImpl for ConflictDialog {}
-    impl AdwDialogImpl for ConflictDialog {}
+    impl WidgetImpl for CompareDialog {}
+    impl AdwDialogImpl for CompareDialog {}
 }
 
 glib::wrapper! {
     /// Shows two versions of a text side by side, to choose the one to
     /// keep: of a note that was changed elsewhere while it was being edited,
     /// or of a file and its sync conflict copy.
-    pub struct ConflictDialog(ObjectSubclass<imp::ConflictDialog>)
+    pub struct CompareDialog(ObjectSubclass<imp::CompareDialog>)
         @extends adw::Dialog, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
-impl ConflictDialog {
+impl CompareDialog {
     pub fn new(name: &str, mine: &str, theirs: &str) -> Self {
         let dialog: Self = glib::Object::new();
         let imp = dialog.imp();

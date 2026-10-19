@@ -1,7 +1,7 @@
 //! Mermaid diagrams: code blocks in `mermaid` are drawn as their diagram
 //! while the cursor is elsewhere, but as code while it is in them or when
 //! the diagram cannot be drawn. Diagrams are drawn in the background and
-//! kept while the text has them, see `drawings`.
+//! kept while the text has them, see `embeds`.
 
 use std::ops::Range;
 use std::rc::Rc;
@@ -14,7 +14,7 @@ use mermaid_rs_renderer::{RenderOptions, Theme};
 use resvg::{tiny_skia, usvg};
 
 use super::decorations::Decorations;
-use super::drawings::{Drawing, Drawings, LineMark, State};
+use super::embeds::{Embed, Embeds, LineMark, State};
 use super::styling::Styling;
 use super::tags;
 
@@ -63,7 +63,7 @@ pub(super) struct DiagramCard {
     pub(super) range: Range<i32>,
     /// The line of the opening fence, where the diagram is.
     line: LineMark,
-    diagram: Rc<Drawing>,
+    diagram: Rc<Embed>,
     /// How high the diagram is drawn, the room for it in the text.
     height: i32,
 }
@@ -76,7 +76,7 @@ pub(super) fn style(
     styling: &Styling,
     formatting: &Formatting,
     decorations: &mut Decorations,
-    diagrams: &Drawings<Request>,
+    diagrams: &Embeds<Request>,
 ) -> Vec<Request> {
     let dark = adw::StyleManager::default().is_dark();
     let scale = styling.view.scale_factor();
@@ -176,7 +176,7 @@ impl Request {
 
 impl Image {
     /// The diagram, ready to be drawn as large as Mermaid draws it.
-    pub(super) fn drawing(self) -> Drawing {
+    pub(super) fn embed(self) -> Embed {
         let texture = gdk::MemoryTexture::new(
             self.pixel_width as i32,
             self.pixel_height as i32,
@@ -184,7 +184,7 @@ impl Image {
             &glib::Bytes::from_owned(self.pixels),
             self.pixel_width as usize * 4,
         );
-        Drawing::new(texture.upcast(), self.width, self.height)
+        Embed::new(texture.upcast(), self.width, self.height)
     }
 }
 

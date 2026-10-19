@@ -1,7 +1,7 @@
 //! The dialogs of the app.
 
 pub mod commit_dialog;
-pub mod conflict_dialog;
+pub mod compare_dialog;
 pub mod contact_dialog;
 pub mod help_dialog;
 pub mod note_dialogs;

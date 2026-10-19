@@ -11,7 +11,7 @@ use gettextrs::{gettext, ngettext};
 use gtk::glib;
 
 use crate::alert::show_error;
-use crate::dialogs::conflict_dialog::ConflictDialog;
+use crate::dialogs::compare_dialog::CompareDialog;
 use crate::format::{format_full_date, plural, title_markup};
 use crate::markdown_view::MarkdownView;
 use crate::search_index::SearchIndex;
@@ -300,7 +300,7 @@ impl NoteView {
     /// Lets the user choose between `mine`, the text typed, and `theirs`,
     /// the note as changed elsewhere.
     fn choose_version(&self, mine: String, theirs: NoteFile) {
-        let dialog = ConflictDialog::new(theirs.path.name(), &mine, &theirs.text);
+        let dialog = CompareDialog::new(theirs.path.name(), &mine, &theirs.text);
         dialog.connect_chosen(glib::clone!(
             #[weak(rename_to = view)]
             self,

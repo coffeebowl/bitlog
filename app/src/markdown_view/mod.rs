@@ -7,8 +7,8 @@ mod completion;
 mod contact_cards;
 mod decorations;
 mod diagrams;
-mod drawings;
 mod editing;
+mod embeds;
 mod images;
 mod links;
 mod lists;
@@ -39,7 +39,7 @@ use sourceview5::subclass::prelude::*;
 use self::code_highlight::CodeHighlighter;
 pub use self::code_highlight::{Highlighting, Themes, themes};
 use self::decorations::Decorations;
-use self::drawings::{Drawing, Drawings};
+use self::embeds::{Embed, Embeds};
 use self::images::Location;
 use self::links::Target;
 use self::styling::Styling;
@@ -119,10 +119,10 @@ mod imp {
         /// Whether the text is to be formatted again when idle, as it
         /// changed or the view changed its width.
         pub restyle_queued: Cell<bool>,
-        pub(super) diagrams: Drawings<diagrams::Request>,
+        pub(super) diagrams: Embeds<diagrams::Request>,
         /// Where the text is saved, unless it is not.
         pub(super) location: RefCell<Option<Location>>,
-        pub(super) images: Drawings<images::Request>,
+        pub(super) images: Embeds<images::Request>,
         /// How wide images are read at most, in pixels of the view.
         pub(super) image_width: Cell<i32>,
         /// What the bottom margin of the view has more than it was given,
@@ -532,7 +532,7 @@ impl MarkdownView {
             self.draw_later(
                 request,
                 move || job.render(),
-                diagrams::Image::drawing,
+                diagrams::Image::embed,
                 |imp| &imp.diagrams,
             );
         }
@@ -541,7 +541,7 @@ impl MarkdownView {
             self.draw_later(
                 request,
                 move || job.read(),
-                images::ReadImage::drawing,
+                images::ReadImage::embed,
                 |imp| &imp.images,
             );
         }
@@ -584,27 +584,27 @@ impl MarkdownView {
         }
     }
 
-    /// Makes the drawing for `request` with `make` in the background, ready
-    /// to be drawn once `drawing` turned it into one, and formats the text
-    /// again, if it still has it, as `drawings` of the view tell.
+    /// Makes the embed for `request` with `make` in the background, ready
+    /// to be drawn once `embed` turned it into one, and formats the text
+    /// again, if it still has it, as `embeds` of the view tell.
     fn draw_later<R, T>(
         &self,
         request: R,
         make: impl FnOnce() -> Option<T> + Send + 'static,
-        drawing: fn(T) -> Drawing,
-        drawings: fn(&imp::MarkdownView) -> &Drawings<R>,
+        embed: fn(T) -> Embed,
+        embeds: fn(&imp::MarkdownView) -> &Embeds<R>,
     ) where
         R: Clone + Eq + std::hash::Hash + 'static,
         T: Send + 'static,
     {
         let view = self.downgrade();
         glib::spawn_future_local(async move {
-            // The Mermaid renderer is young: a panic only fails the drawing.
+            // The Mermaid renderer is young: a panic only fails the embed.
             let made = gio::spawn_blocking(make).await.ok().flatten();
             let Some(view) = view.upgrade() else {
                 return;
             };
-            if drawings(view.imp()).finish(request, made.map(drawing)) {
+            if embeds(view.imp()).finish(request, made.map(embed)) {
                 view.restyle();
             }
         });

@@ -13,13 +13,13 @@ use gtk::{gdk, graphene, gsk};
 use super::CORNER_RADIUS;
 use super::decorations::text_edges;
 
-/// Drawings are drawn at most this share of the width of the text, which
+/// Embeds are drawn at most this share of the width of the text, which
 /// reads calmer when scrolling.
 const WIDTH_SHARE: f32 = 0.9;
 
 /// A texture to draw, with how large it is meant to be.
 #[derive(Debug)]
-pub(super) struct Drawing {
+pub(super) struct Embed {
     texture: gdk::Texture,
     /// In pixels of the view.
     width: f32,
@@ -30,17 +30,17 @@ pub(super) struct Drawing {
 pub(super) enum State {
     Pending,
     Failed,
-    Done(Rc<Drawing>),
+    Done(Rc<Embed>),
 }
 
-/// The drawings of the text as last formatted, by what they are made of.
+/// The embeds of the text as last formatted, by what they are made of.
 #[derive(Debug)]
-pub(super) struct Drawings<R>(RefCell<HashMap<R, State>>);
+pub(super) struct Embeds<R>(RefCell<HashMap<R, State>>);
 
-/// One formatting of the text: the drawings it has are kept, the others
+/// One formatting of the text: the embeds it has are kept, the others
 /// are dropped once it ends.
 pub(super) struct Pass<'a, R> {
-    drawings: &'a Drawings<R>,
+    embeds: &'a Embeds<R>,
     known: HashMap<R, State>,
     kept: HashMap<R, State>,
     missing: Vec<R>,
@@ -51,7 +51,7 @@ pub(super) struct Pass<'a, R> {
 #[derive(Debug)]
 pub(super) struct LineMark(gtk::TextMark);
 
-impl Drawing {
+impl Embed {
     pub(super) fn new(texture: gdk::Texture, width: f32, height: f32) -> Self {
         Self {
             texture,
@@ -103,32 +103,32 @@ impl Drawing {
     }
 }
 
-impl<R> Default for Drawings<R> {
+impl<R> Default for Embeds<R> {
     fn default() -> Self {
         Self(RefCell::default())
     }
 }
 
-impl<R: Clone + Eq + Hash> Drawings<R> {
+impl<R: Clone + Eq + Hash> Embeds<R> {
     /// Starts formatting the text again.
     pub(super) fn pass(&self) -> Pass<'_, R> {
         Pass {
-            drawings: self,
+            embeds: self,
             known: self.0.take(),
             kept: HashMap::new(),
             missing: Vec::new(),
         }
     }
 
-    /// Keeps the `drawing` made for `request`, or that it cannot be made.
+    /// Keeps the `embed` made for `request`, or that it cannot be made.
     /// Returns whether the text still has it.
-    pub(super) fn finish(&self, request: R, drawing: Option<Drawing>) -> bool {
+    pub(super) fn finish(&self, request: R, embed: Option<Embed>) -> bool {
         let mut states = self.0.borrow_mut();
         let Some(state @ State::Pending) = states.get_mut(&request) else {
             return false;
         };
-        *state = match drawing {
-            Some(drawing) => State::Done(Rc::new(drawing)),
+        *state = match embed {
+            Some(embed) => State::Done(Rc::new(embed)),
             None => State::Failed,
         };
         true
@@ -136,7 +136,7 @@ impl<R: Clone + Eq + Hash> Drawings<R> {
 }
 
 impl<R: Clone + Eq + Hash> Pass<'_, R> {
-    /// How the drawing for `request` is, which the text has. One not known
+    /// How the embed for `request` is, which the text has. One not known
     /// yet is pending and to be made.
     pub(super) fn state(&mut self, request: R) -> State {
         let Self {
@@ -155,7 +155,7 @@ impl<R: Clone + Eq + Hash> Pass<'_, R> {
             .clone()
     }
 
-    /// Keeps the drawing for `request` without making it, as for a diagram
+    /// Keeps the embed for `request` without making it, as for a diagram
     /// being edited, in case it is left as it was.
     pub(super) fn keep(&mut self, request: R) {
         if let Some(state) = self.known.remove(&request) {
@@ -163,10 +163,10 @@ impl<R: Clone + Eq + Hash> Pass<'_, R> {
         }
     }
 
-    /// Ends the formatting. Returns the drawings to make, which
-    /// `Drawings::finish` takes when they are made.
+    /// Ends the formatting. Returns the embeds to make, which
+    /// `Embeds::finish` takes when they are made.
     pub(super) fn end(self) -> Vec<R> {
-        self.drawings.0.replace(self.kept);
+        self.embeds.0.replace(self.kept);
         self.missing
     }
 }
