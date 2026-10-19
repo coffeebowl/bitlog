@@ -10,6 +10,7 @@ use gtk::{gdk, gio, glib};
 
 use crate::alert::{show_error, toast_overlay};
 use crate::format::{format_short_date, glib_date, naive_date};
+use crate::widgets::wrapping_entry::WrappingEntry;
 use crate::widgets::{drag_handle, make_movable, param};
 
 mod imp {
@@ -121,7 +122,7 @@ glib::wrapper! {
 pub struct TaskRow {
     id: TaskId,
     row: gtk::ListBoxRow,
-    title: gtk::Entry,
+    title: WrappingEntry,
 }
 
 impl TaskRow {
@@ -270,7 +271,7 @@ impl TaskListView {
             .is_some_and(|task| task.title == text);
         Some(Focus {
             task: row.id.clone(),
-            cursor: in_title.then(|| row.title.position()),
+            cursor: in_title.then(|| row.title.buffer().cursor_position()),
             // Only what was typed: a title changed elsewhere is shown as
             // it is now unless it was being edited.
             typed: (!saved).then_some(text),
@@ -293,15 +294,14 @@ impl TaskListView {
         // The row keeps the title as saved, so the text typed still counts
         // as a change and is saved when the title is left, onto the file as
         // it is now.
+        let buffer = title.buffer();
         if let Some(typed) = &focus.typed {
-            title.set_text(typed);
+            buffer.set_text(typed);
         }
         match focus.cursor {
             Some(cursor) => {
-                // Typing goes on where it was, rather than replacing the
-                // whole title, which grabbing the focus would select.
-                title.grab_focus_without_selecting();
-                title.set_position(cursor);
+                title.grab_focus();
+                buffer.place_cursor(&buffer.iter_at_offset(cursor));
             }
             None => {
                 self.focus_task(&focus.task);
@@ -358,12 +358,9 @@ impl TaskListView {
     /// or drop it.
     fn task_row(&self, task: &Task, today: NaiveDate) -> TaskRow {
         let handle = drag_handle();
-        let title = gtk::Entry::builder()
-            .text(&task.title)
-            .hexpand(true)
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .build();
+        let title = WrappingEntry::new(&task.title);
+        title.set_hexpand(true);
+        title.set_valign(gtk::Align::Center);
         title.update_property(&[gtk::accessible::Property::Label(&gettext("Title"))]);
 
         let target = |action: &str| format!("tasks.{action}::{}", task.id);
@@ -449,7 +446,27 @@ impl TaskListView {
             }
         ));
         title.add_controller(focus);
-        title.connect_activate(move |title| save_title(title.text()));
+        // Before the entry, which would insert a space.
+        let keys = gtk::EventControllerKey::builder()
+            .propagation_phase(gtk::PropagationPhase::Capture)
+            .build();
+        keys.connect_key_pressed(glib::clone!(
+            #[weak]
+            title,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |_, key, _, _| {
+                if !matches!(
+                    key,
+                    gdk::Key::Return | gdk::Key::KP_Enter | gdk::Key::ISO_Enter
+                ) {
+                    return glib::Propagation::Proceed;
+                }
+                save_title(title.text());
+                glib::Propagation::Stop
+            }
+        ));
+        title.add_controller(keys);
         let id = task.id.clone();
         let on_drop = glib::clone!(
             #[weak(rename_to = view)]

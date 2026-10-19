@@ -11,6 +11,7 @@ pub mod share_bar;
 pub mod style_switcher;
 pub mod week_chart;
 pub mod week_progress;
+pub mod wrapping_entry;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
