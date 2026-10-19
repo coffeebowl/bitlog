@@ -38,6 +38,7 @@ const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/06-no-work-hours.sql")),
     M::up(include_str!("migrations/07-day-links.sql")),
     M::up(include_str!("migrations/08-mentions.sql")),
+    M::up(include_str!("migrations/09-block-categories.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
@@ -283,7 +284,7 @@ fn stamp(metadata: &Metadata) -> (i64, i64) {
 mod tests {
     use std::time::{Duration, SystemTime};
 
-    use bitlog_core::{ContactSlug, ProjectSlug};
+    use bitlog_core::{BlockCategory, ContactSlug, ProjectSlug};
     use chrono::TimeDelta;
 
     use super::*;
@@ -675,6 +676,48 @@ mod tests {
     }
 
     #[test]
+    fn category_time_sums_blocks_per_project() {
+        let (_dir, vault, mut index) = sample_copy();
+        let file = vault.load_day(date(21)).unwrap().unwrap();
+        let infra = file
+            .day
+            .blocks
+            .iter()
+            .find(|block| block.project.as_str() == "infra")
+            .unwrap()
+            .clone();
+        vault
+            .update_day(&file, |day| {
+                day.set_block_category(&infra.id, BlockCategory::Overhead)
+            })
+            .unwrap();
+        index.refresh(&vault).unwrap();
+        let times = index.category_time(date(21), date(21)).unwrap();
+        let infra_times: Vec<_> = times
+            .iter()
+            .filter(|(project, ..)| *project == infra.project)
+            .map(|(_, category, time)| (*category, *time))
+            .collect();
+        assert_eq!(
+            infra_times,
+            [(BlockCategory::Overhead, TimeDelta::minutes(225))]
+        );
+        assert!(
+            times
+                .iter()
+                .any(|(_, category, _)| *category == BlockCategory::Work)
+        );
+        let total: TimeDelta = times.iter().map(|(.., time)| *time).sum();
+        let by_project: TimeDelta = index
+            .project_time(date(21), date(21))
+            .unwrap()
+            .iter()
+            .map(|(_, time)| *time)
+            .sum();
+        assert_eq!(total, by_project);
+    }
+
+    #[test]
     fn last_days_come_per_project() {
         let vault = sample();
         let mut index = in_memory();
@@ -872,6 +915,21 @@ mod tests {
         MIGRATIONS.to_latest(&mut connection).unwrap();
         let index = Index { connection };
         assert_eq!(count(&index, "files"), 0);
+    }
+
+    #[test]
+    fn categories_cover_days_indexed_before() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        MIGRATIONS.to_version(&mut connection, 8).unwrap();
+        connection
+            .execute_batch(
+                "INSERT INTO files VALUES ('days/2026/09/2026-09-23.md', 0, 0, 0);
+                 INSERT INTO files VALUES ('projects/infra/notes/deployment.md', 0, 0, 0);",
+            )
+            .unwrap();
+        MIGRATIONS.to_latest(&mut connection).unwrap();
+        let index = Index { connection };
+        assert_eq!(count(&index, "files"), 1);
     }
 
     #[test]

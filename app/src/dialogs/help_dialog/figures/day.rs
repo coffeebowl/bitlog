@@ -1,13 +1,16 @@
-//! A morning as the day view shows it: blocks on a time line, with a gap
-//! and a break, the time that does not count, and dots for hidden text.
+//! A morning as the day view shows it: blocks on a time line, one of each
+//! category, with a gap and a break, the time that does not count, and dots
+//! for hidden text.
 
+use bitlog_core::BlockCategory;
 use gettextrs::gettext;
 use gtk::prelude::*;
 use gtk::{graphene, gsk};
 
 use super::{append_layout, fill_rounded, layout};
 use crate::colors::{parse, with_alpha};
-use crate::timeline::{DOTS_WIDTH, append_dots};
+use crate::drawing::append_stripe;
+use crate::timeline::{MARKS_WIDTH, append_marks};
 
 /// Smaller than in the day view, to show a morning at a glance.
 const MINUTE_HEIGHT: f32 = 0.9;
@@ -24,8 +27,9 @@ const LAST_MINUTE: u32 = 13 * 60;
 pub(super) const HEIGHT: f32 = 2.0 * PADDING + (LAST_MINUTE - FIRST_MINUTE) as f32 * MINUTE_HEIGHT;
 
 enum Kind {
-    /// A block of a project with this colour and dots for its hidden text.
-    Project(&'static str, usize),
+    /// A block of a project with this colour and category, and dots for its
+    /// hidden text.
+    Project(&'static str, BlockCategory, usize),
     Break,
     Gap,
 }
@@ -36,21 +40,21 @@ fn spans() -> [(u32, u32, Kind, String); 5] {
         (
             540,
             630,
-            Kind::Project("#3584e4", 0),
+            Kind::Project("#3584e4", BlockCategory::Work, 0),
             gettext("Webshop · Work"),
         ),
         (
             630,
             660,
-            Kind::Project("#e5a50a", 4),
-            gettext("Meetings · Overhead"),
+            Kind::Project("#3584e4", BlockCategory::Overhead, 4),
+            gettext("Webshop · Overhead"),
         ),
         (660, 690, Kind::Gap, gettext("No block, not counted")),
         (
             690,
             735,
-            Kind::Project("#33d17a", 1),
-            gettext("Infrastructure · Work"),
+            Kind::Project("#33d17a", BlockCategory::Filler, 1),
+            gettext("Infrastructure · Filler"),
         ),
         (735, 765, Kind::Break, gettext("Break, not counted")),
     ]
@@ -83,17 +87,21 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
             width - BLOCK_X,
             (end - start) as f32 * MINUTE_HEIGHT - 2.0,
         );
-        let (color, dots) = match kind {
-            Kind::Project(hex, dots) => (Some(parse(hex)), dots),
-            Kind::Break => (Some(with_alpha(&foreground, 0.5)), 0),
-            Kind::Gap => (None, 0),
+        let (color, category, dots) = match kind {
+            Kind::Project(hex, category, dots) => (Some(parse(hex)), Some(category), dots),
+            Kind::Break => (Some(with_alpha(&foreground, 0.5)), None, 0),
+            Kind::Gap => (None, None, 0),
         };
         let y = area.y() + area.height() / 2.0;
         let text_color = if let Some(color) = &color {
             snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(area, 6.0));
             snapshot.append_color(&with_alpha(color, 0.18), &area);
-            let stripe = graphene::Rect::new(area.x(), area.y(), 4.0, area.height());
-            snapshot.append_color(color, &stripe);
+            append_stripe(
+                snapshot,
+                &area,
+                category.unwrap_or(BlockCategory::Work),
+                color,
+            );
             snapshot.pop();
             let knot = graphene::Rect::new(
                 LINE_X - KNOT_RADIUS,
@@ -102,12 +110,13 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
                 2.0 * KNOT_RADIUS,
             );
             fill_rounded(snapshot, knot, KNOT_RADIUS, &foreground);
-            append_dots(snapshot, area.x() + area.width() - 8.0, y, dots, color);
+            let right = area.x() + area.width() - 6.0;
+            append_marks(widget, snapshot, (right, y), dots, category, color);
             foreground
         } else {
             with_alpha(&foreground, 0.55)
         };
-        let label_width = area.width() - 2.0 * LABEL_INSET - DOTS_WIDTH as f32;
+        let label_width = area.width() - 2.0 * LABEL_INSET - MARKS_WIDTH as f32;
         let label = layout(widget, &label, Some(label_width));
         append_layout(
             snapshot,

@@ -1,6 +1,6 @@
 //! Sums and lookups over the whole vault.
 
-use bitlog_core::{BlockId, ContactSlug, NotePath, ProjectSlug};
+use bitlog_core::{BlockCategory, BlockId, ContactSlug, NotePath, ProjectSlug};
 use chrono::{NaiveDate, TimeDelta};
 
 use rusqlite::OptionalExtension;
@@ -26,6 +26,7 @@ pub struct ProjectBlock {
     /// block ends on the next day.
     pub start_minute: u32,
     pub end_minute: u32,
+    pub category: BlockCategory,
     pub title: String,
     pub text: String,
 }
@@ -46,7 +47,7 @@ pub struct Backlink {
     pub project: Option<ProjectSlug>,
 }
 
-const PROJECT_BLOCK_COLUMNS: &str = "date, id, start_minute, end_minute, title, text";
+const PROJECT_BLOCK_COLUMNS: &str = "date, id, start_minute, end_minute, category, title, text";
 
 fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
     Ok(ProjectBlock {
@@ -54,8 +55,9 @@ fn project_block(row: &rusqlite::Row) -> rusqlite::Result<ProjectBlock> {
         id: parsed(row, 1)?,
         start_minute: row.get(2)?,
         end_minute: row.get(3)?,
-        title: row.get(4)?,
-        text: row.get(5)?,
+        category: parsed(row, 4)?,
+        title: row.get(5)?,
+        text: row.get(6)?,
     })
 }
 
@@ -112,6 +114,29 @@ impl Index {
         Ok(times)
     }
 
+    /// The time spent in each block category of each project from `first`
+    /// to `last`, both included. A block counts on the day it starts.
+    pub fn category_time(
+        &self,
+        first: NaiveDate,
+        last: NaiveDate,
+    ) -> Result<Vec<(ProjectSlug, BlockCategory, TimeDelta)>, IndexError> {
+        let mut statement = self.connection.prepare_cached(
+            "SELECT project, category, sum(end_minute - start_minute) FROM blocks
+             WHERE date BETWEEN ? AND ? GROUP BY project, category ORDER BY project, category",
+        )?;
+        let times = statement
+            .query_map((first, last), |row| {
+                Ok((
+                    parsed(row, 0)?,
+                    parsed(row, 1)?,
+                    TimeDelta::minutes(row.get(2)?),
+                ))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(times)
+    }
+
     /// The time spent on `project` on each day it was worked on, oldest
     /// first. A block counts on the day it starts.
     pub fn project_activity(
@@ -144,7 +169,7 @@ impl Index {
         ))?;
         let blocks = statement
             .query_map((first, last), |row| {
-                Ok((parsed(row, 6)?, project_block(row)?))
+                Ok((parsed(row, 7)?, project_block(row)?))
             })?
             .collect::<Result<_, _>>()?;
         Ok(blocks)

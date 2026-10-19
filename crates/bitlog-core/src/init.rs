@@ -115,8 +115,7 @@ mod tests {
         );
 
         let slugs: Vec<&str> = vault.projects().iter().map(|p| p.slug.as_str()).collect();
-        // By name: Break, Filler, Meetings.
-        assert_eq!(slugs, ["pause", "filler", "meetings"]);
+        assert_eq!(slugs, ["pause"]);
         assert_eq!(
             fs::read_to_string(root.join("templates/note.md")).unwrap(),
             fs::read_to_string(sample_path().join("templates/note.md")).unwrap()

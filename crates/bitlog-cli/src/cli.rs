@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use bitlog_core::{BlockId, ContactSlug, LocationKey, ProjectSlug, ProjectStatus, TaskId};
+use bitlog_core::{
+    BlockCategory, BlockId, ContactSlug, LocationKey, ProjectSlug, ProjectStatus, TaskId,
+};
 use chrono::{NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
 
@@ -369,8 +371,11 @@ pub enum BlockCommand {
         /// The title of the block
         #[arg(default_value = "")]
         title: String,
+        /// work, overhead or filler
+        #[arg(long, default_value = "work")]
+        category: BlockCategory,
     },
-    /// Change the time, project or title of a block.
+    /// Change the time, project, category or title of a block.
     #[command(group(ArgGroup::new("change").required(true).multiple(true)))]
     Edit {
         /// The id of the block, as shown by `bitlog day`
@@ -381,6 +386,9 @@ pub enum BlockCommand {
         /// The slug of the new project
         #[arg(long, group = "change")]
         project: Option<ProjectSlug>,
+        /// work, overhead or filler
+        #[arg(long, group = "change")]
+        category: Option<BlockCategory>,
         /// The new title, empty to remove it
         #[arg(long, group = "change")]
         title: Option<String>,
@@ -438,6 +446,9 @@ mod tests {
         assert!(parse("bitlog task edit t9x2 --due 2026-09-30 --no-due").is_err());
         assert!(parse("bitlog task move t9x2 0").is_err());
         parse("bitlog standup 2026-09-23").unwrap();
+        parse("bitlog block add 09:00-10:00 docs Weekly --category overhead").unwrap();
+        parse("bitlog block edit aa11 --category filler").unwrap();
+        assert!(parse("bitlog block edit aa11 --category meeting").is_err());
         parse("bitlog log webshop --limit 5").unwrap();
         assert!(parse("bitlog log").is_err());
         parse("bitlog search release notes --limit 5").unwrap();

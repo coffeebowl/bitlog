@@ -3,7 +3,7 @@
 use chrono::NaiveTime;
 
 use super::sections::trim_blank_lines;
-use super::{Block, Day, time_at_minute};
+use super::{Block, BlockCategory, Day, time_at_minute};
 use crate::{BlockId, EditError, LocationKey, Project, ProjectSlug, VaultConfig};
 
 /// What happens to the text of a removed block.
@@ -32,6 +32,7 @@ impl Day {
             start,
             end,
             project,
+            category: BlockCategory::default(),
             title,
             text: String::new(),
         };
@@ -97,6 +98,15 @@ impl Day {
     ) -> Result<(), EditError> {
         check_project(&project, projects)?;
         self.block_mut(id)?.project = project;
+        Ok(())
+    }
+
+    pub fn set_block_category(
+        &mut self,
+        id: &BlockId,
+        category: BlockCategory,
+    ) -> Result<(), EditError> {
+        self.block_mut(id)?.category = category;
         Ok(())
     }
 
@@ -482,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn titles_texts_and_projects() {
+    fn titles_texts_projects_and_categories() {
         let mut day = sample_day("2026-09-21");
         let block = day.blocks[0].id.clone();
         day.set_block_title(&block, "  New title ").unwrap();
@@ -500,6 +510,9 @@ mod tests {
             day.set_block_project(&block, slug("unknown"), &projects()),
             Err(EditError::UnknownProject(slug("unknown")))
         );
+        day.set_block_category(&block, BlockCategory::Overhead)
+            .unwrap();
+        assert_eq!(day.blocks[0].category, BlockCategory::Overhead);
         assert_eq!(Day::parse(&day.to_markdown()).unwrap().0, day);
     }
 

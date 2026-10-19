@@ -32,8 +32,8 @@ pub use config::{DefaultsConfig, GridConfig, ProjectsConfig, VaultConfig, WeekCo
 pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};
 pub use contacts::{Contact, EMAIL_LABELS, PHONE_LABELS};
 pub use day::{
-    Block, Day, DayWarning, RemovedText, minute_of_day, reordered_spans, time_at_minute,
-    trim_blank_lines, without_front_matter,
+    Block, BlockCategory, Day, DayWarning, RemovedText, minute_of_day, reordered_spans,
+    time_at_minute, trim_blank_lines, without_front_matter,
 };
 pub use device::check_repo_path;
 pub use error::{EditError, ReadError, SaveError};

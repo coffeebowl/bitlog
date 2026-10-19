@@ -27,7 +27,7 @@ pub struct ConflictCopy {
 pub enum Contradiction {
     /// A field of the day's front matter, by its name in the file.
     DayField(String),
-    /// The time, project or title of a block.
+    /// The time, project, category or title of a block.
     Block(BlockId),
     BlockText(BlockId),
     /// A block only the copy has overlaps blocks of the original. Taking

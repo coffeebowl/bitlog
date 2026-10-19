@@ -5,13 +5,16 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Block, Day, Vault, minute_of_day};
+use bitlog_core::{Block, BlockCategory, Day, Vault, minute_of_day};
 use chrono::Local;
 use glib::subclass::Signal;
 use gtk::{gdk, glib, graphene, gsk, pango};
 
 use crate::colors::{self, sea_green, with_alpha};
-use crate::drawing::{append_dot, append_layout, fill_rounded};
+use crate::drawing::{
+    ICON_SIZE, append_dot, append_icon, append_layout, append_stripe, fill_rounded,
+};
+use crate::format::{category_icon, category_name};
 use crate::widgets::redraw_animation;
 
 /// Height of one minute. A 15 minute block is just high enough for one line.
@@ -34,8 +37,8 @@ const DOT_STEPS: [usize; 5] = [1, 10, 25, 50, 100];
 const DOT_RADIUS: f32 = 2.0;
 /// Distance between the centers of two dots.
 const DOT_STEP: f32 = 6.0;
-/// Room for the dots right of the heading.
-pub(crate) const DOTS_WIDTH: i32 = 32;
+/// Room right of the heading for the dots and the icon of the category.
+pub(crate) const MARKS_WIDTH: i32 = 50;
 
 mod imp {
     use super::*;
@@ -96,6 +99,8 @@ mod imp {
         pub span: (u32, u32),
         /// `None` for a project the vault does not know.
         pub color: Option<gdk::RGBA>,
+        /// `None` for a break.
+        pub category: Option<BlockCategory>,
         pub child: gtk::Widget,
         /// The lines of text in `child`, shown as far as they fit.
         pub lines: Vec<gtk::Label>,
@@ -246,8 +251,8 @@ mod imp {
                 snapshot.push_rounded_clip(&rounded);
                 let fill = if is_current || is_selected { 0.4 } else { 0.18 };
                 snapshot.append_color(&with_alpha(&color, fill), &area);
-                let stripe = graphene::Rect::new(area.x(), area.y(), 4.0, area.height());
-                snapshot.append_color(&color, &stripe);
+                let category = entry.category.unwrap_or_default();
+                append_stripe(snapshot, &area, category, &color);
                 let hidden_words: usize = entry
                     .lines
                     .iter()
@@ -455,7 +460,15 @@ mod imp {
                 return;
             };
             let y = heading.y() + heading.height() / 2.0;
-            append_dots(snapshot, area.x() + area.width() - 8.0, y, count, color);
+            let right = area.x() + area.width() - 6.0;
+            append_marks(
+                &*self.obj(),
+                snapshot,
+                (right, y),
+                count,
+                entry.category,
+                color,
+            );
         }
 
         /// The lines of the slots and the labelled lines of full hours.
@@ -519,7 +532,10 @@ impl Timeline {
             .iter()
             .map(|block| {
                 let project = vault.project(&block.project);
-                let (child, lines) = block_content(block, vault.project_name(&block.project));
+                // Breaks are no work of any kind.
+                let category = (!vault.is_break(&block.project)).then_some(block.category);
+                let (child, lines) =
+                    block_content(block, vault.project_name(&block.project), category);
                 child.set_parent(self);
                 child.connect_has_focus_notify(glib::clone!(
                     #[weak(rename_to = timeline)]
@@ -529,6 +545,7 @@ impl Timeline {
                 imp::Entry {
                     span: block.span(),
                     color: project.map(|project| colors::parse(&project.color)),
+                    category,
                     child,
                     lines,
                 }
@@ -657,7 +674,11 @@ impl Timeline {
 
 /// Title, project and text of `block`, and the labels of its lines of text.
 /// Without a title, the project's name stands in for it as well, in italics.
-fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::Label>) {
+fn block_content(
+    block: &Block,
+    project_name: &str,
+    category: Option<BlockCategory>,
+) -> (gtk::Widget, Vec<gtk::Label>) {
     let label = |text: &str, classes: &[&str]| {
         gtk::Label::builder()
             .label(text)
@@ -669,7 +690,7 @@ fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::La
     };
     let heading = gtk::Box::builder()
         .spacing(6)
-        .margin_end(DOTS_WIDTH)
+        .margin_end(MARKS_WIDTH)
         .build();
     if block.title.is_empty() {
         heading.append(&label(project_name, &["heading", "stand-in-title"]));
@@ -694,6 +715,11 @@ fn block_content(block: &Block, project_name: &str) -> (gtk::Widget, Vec<gtk::La
             &block.title
         },
     )]);
+    if let Some(category) = category {
+        content.update_property(&[gtk::accessible::Property::Description(&category_name(
+            category,
+        ))]);
+    }
     content.append(&heading);
     let lines: Vec<_> = block
         .text
@@ -731,16 +757,30 @@ fn append_now(snapshot: &gtk::Snapshot, y: f32, width: f32, color: &gdk::RGBA) {
 
 /// `count` dots in a row ending at `right`, in a lighter `color`, for the
 /// text a block hides.
-pub(crate) fn append_dots(
+/// The icon of `category` unless it is `None`, with its right edge at
+/// `right`, and left of it `count` dots for hidden text, all centered on `y`.
+pub(crate) fn append_marks(
+    widget: &impl IsA<gtk::Widget>,
     snapshot: &gtk::Snapshot,
-    right: f32,
-    y: f32,
+    (right, y): (f32, f32),
     count: usize,
+    category: Option<BlockCategory>,
     color: &gdk::RGBA,
 ) {
+    let color = with_alpha(color, 0.65);
+    let mut dots_right = right;
+    if let Some(category) = category {
+        let x = right - ICON_SIZE / 2.0;
+        append_icon(widget, snapshot, category_icon(category), (x, y), &color);
+        dots_right -= ICON_SIZE + 6.0;
+    }
+    append_dots(snapshot, dots_right, y, count, &color);
+}
+
+fn append_dots(snapshot: &gtk::Snapshot, right: f32, y: f32, count: usize, color: &gdk::RGBA) {
     for index in 0..count {
         let x = right - DOT_RADIUS - index as f32 * DOT_STEP;
-        append_dot(snapshot, x, y, DOT_RADIUS, &with_alpha(color, 0.65));
+        append_dot(snapshot, x, y, DOT_RADIUS, color);
     }
 }
 

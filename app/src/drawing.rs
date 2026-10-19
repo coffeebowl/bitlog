@@ -1,6 +1,7 @@
 //! Drawing helpers for the widgets that draw themselves.
 
 use adw::prelude::*;
+use bitlog_core::BlockCategory;
 use gtk::{gdk, graphene, gsk, pango};
 
 use crate::colors::with_alpha;
@@ -57,6 +58,52 @@ pub fn fill_rounded(
 pub fn append_dot(snapshot: &gtk::Snapshot, x: f32, y: f32, radius: f32, color: &gdk::RGBA) {
     let bounds = graphene::Rect::new(x - radius, y - radius, 2.0 * radius, 2.0 * radius);
     fill_rounded(snapshot, bounds, radius, color);
+}
+
+/// The size of the icons of [`append_icon`].
+pub const ICON_SIZE: f32 = 12.0;
+
+/// The symbolic icon `name` of the theme of `widget` in `color`, centered on
+/// `x`, `y`.
+pub fn append_icon(
+    widget: &impl IsA<gtk::Widget>,
+    snapshot: &gtk::Snapshot,
+    name: &str,
+    (x, y): (f32, f32),
+    color: &gdk::RGBA,
+) {
+    let icon = gtk::IconTheme::for_display(&widget.display()).lookup_icon(
+        name,
+        &[],
+        ICON_SIZE as i32,
+        widget.scale_factor(),
+        widget.direction(),
+        gtk::IconLookupFlags::empty(),
+    );
+    snapshot.save();
+    snapshot.translate(&graphene::Point::new(
+        x - ICON_SIZE / 2.0,
+        y - ICON_SIZE / 2.0,
+    ));
+    icon.snapshot_symbolic(snapshot, ICON_SIZE.into(), ICON_SIZE.into(), &[*color]);
+    snapshot.restore();
+}
+
+/// The stripe in `color` at the left edge of a block in `area`: solid for
+/// work, lighter for overhead, lighter still for filler.
+pub fn append_stripe(
+    snapshot: &gtk::Snapshot,
+    area: &graphene::Rect,
+    category: BlockCategory,
+    color: &gdk::RGBA,
+) {
+    let alpha = match category {
+        BlockCategory::Work => 1.0,
+        BlockCategory::Overhead => 0.8,
+        BlockCategory::Filler => 0.6,
+    };
+    let stripe = graphene::Rect::new(area.x(), area.y(), 4.0, area.height());
+    snapshot.append_color(&with_alpha(color, alpha), &stripe);
 }
 
 /// A check box in the square `bounds` as GTK draws one: an outline in a

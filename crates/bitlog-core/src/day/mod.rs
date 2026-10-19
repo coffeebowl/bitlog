@@ -8,11 +8,12 @@ mod write;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::path::Path;
+use std::str::FromStr;
 
 use chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
 use serde::{Deserialize, Deserializer};
 
-use crate::error::ReadError;
+use crate::error::{EditError, ReadError};
 use crate::file::{check_format, parse_text};
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
@@ -50,9 +51,47 @@ pub struct Block {
     /// Not after `start` if the block ends on the next day.
     pub end: NaiveTime,
     pub project: ProjectSlug,
+    pub category: BlockCategory,
     /// Empty if the block has no title.
     pub title: String,
     pub text: String,
+}
+
+/// What kind of work a block is. Breaks have no category of their own, they
+/// are blocks of `break` projects.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockCategory {
+    /// The actual work.
+    #[default]
+    Work,
+    /// Meetings, coordination, organization.
+    Overhead,
+    /// Loose time: e-mails, chats, research.
+    Filler,
+}
+
+impl BlockCategory {
+    pub const ALL: [Self; 3] = [Self::Work, Self::Overhead, Self::Filler];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Work => "work",
+            Self::Overhead => "overhead",
+            Self::Filler => "filler",
+        }
+    }
+}
+
+impl FromStr for BlockCategory {
+    type Err = EditError;
+
+    fn from_str(text: &str) -> Result<Self, EditError> {
+        Self::ALL
+            .into_iter()
+            .find(|category| category.as_str() == text)
+            .ok_or_else(|| EditError::InvalidCategory(text.to_owned()))
+    }
 }
 
 /// Something odd in a day file that does not stop it from being read.
@@ -166,6 +205,8 @@ struct FrontMatterBlock {
     #[serde(deserialize_with = "time")]
     end: NaiveTime,
     project: ProjectSlug,
+    #[serde(default)]
+    category: BlockCategory,
 }
 
 fn date<'de, D: Deserializer<'de>>(deserializer: D) -> Result<NaiveDate, D::Error> {
@@ -246,6 +287,7 @@ impl Day {
                 start: block.start,
                 end: block.end,
                 project: block.project,
+                category: block.category,
                 title: String::new(),
                 text: String::new(),
             })
@@ -642,6 +684,22 @@ mod tests {
         assert!(parse_error(&duplicate).contains("more than once"));
         assert!(parse_error(&day(&block("aaaa", "09:00", "09:00"))).contains("same time"));
         assert!(parse_error(&day(&block("AAAA", "09:00", "10:00"))).contains("invalid block id"));
+        let category = parse_error(&day(
+            "  - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"a\", category: \"meeting\" }\n",
+        ));
+        assert!(category.contains("meeting"), "{category}");
+    }
+
+    #[test]
+    fn categories_from_text() {
+        assert_eq!("overhead".parse(), Ok(BlockCategory::Overhead));
+        assert_eq!(
+            "meeting".parse::<BlockCategory>(),
+            Err(EditError::InvalidCategory("meeting".to_owned()))
+        );
+        for category in BlockCategory::ALL {
+            assert_eq!(category.as_str().parse(), Ok(category));
+        }
     }
 
     #[test]

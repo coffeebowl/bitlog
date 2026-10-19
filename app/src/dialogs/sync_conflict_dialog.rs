@@ -7,8 +7,8 @@ use std::sync::OnceLock;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    Block, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError, Task, TaskId,
-    TaskList, Vault, VaultChange, format_span,
+    Block, BlockCategory, BlockId, ConflictCopy, ConflictVersions, Contradiction, Day, ReadError,
+    Task, TaskId, TaskList, Vault, VaultChange, format_span,
 };
 use chrono::{DateTime, Local};
 use gettextrs::gettext;
@@ -18,7 +18,7 @@ use gtk::glib;
 use crate::alert::show_error;
 use crate::dialogs::compare_dialog::CompareDialog;
 use crate::format::{
-    format_full_date, format_time, format_weekday_date, kind_name, task_status_name,
+    category_name, format_full_date, format_time, format_weekday_date, kind_name, task_status_name,
 };
 
 mod imp {
@@ -383,6 +383,9 @@ fn block_summary(vault: &Vault, block: &Block) -> String {
         format_span(block.span()),
         vault.project_name(&block.project).to_owned(),
     ];
+    if block.category != BlockCategory::Work {
+        parts.push(category_name(block.category));
+    }
     if !block.title.is_empty() {
         parts.push(block.title.clone());
     }

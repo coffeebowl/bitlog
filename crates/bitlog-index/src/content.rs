@@ -91,8 +91,8 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
             day.note,
         ])?;
     let mut insert_block = tx.prepare_cached(
-        "INSERT INTO blocks (date, id, project, start_minute, end_minute, title, text)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO blocks (date, id, project, category, start_minute, end_minute, title, text)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )?;
     for block in &day.blocks {
         let (start, end) = block.span();
@@ -100,6 +100,7 @@ fn insert_day(tx: &Transaction, day: &Day) -> rusqlite::Result<()> {
             day.date,
             block.id.as_str(),
             block.project.as_str(),
+            block.category.as_str(),
             start,
             end,
             block.title,

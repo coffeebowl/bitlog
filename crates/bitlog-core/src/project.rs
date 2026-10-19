@@ -106,21 +106,12 @@ impl Project {
 
     /// The projects every new vault starts with.
     pub fn defaults(created: NaiveDate) -> Vec<Self> {
-        [
-            ("pause", "Break", "#9a9996", BREAK_CATEGORY),
-            ("meetings", "Meetings", "#f6d32d", "overhead"),
-            ("filler", "Filler", "#c061cb", "overhead"),
-        ]
-        .into_iter()
-        .map(|(slug, name, color, category)| {
-            let slug = slug.parse().expect("default slugs are valid");
-            Self {
-                color: color.to_owned(),
-                category: category.to_owned(),
-                ..Self::new(slug, name, created)
-            }
-        })
-        .collect()
+        let slug = "pause".parse().expect("the default slug is valid");
+        vec![Self {
+            color: "#9a9996".to_owned(),
+            category: BREAK_CATEGORY.to_owned(),
+            ..Self::new(slug, "Break", created)
+        }]
     }
 
     /// Sets the color, `#` and six hex digits.

@@ -3,7 +3,7 @@
 use chrono::NaiveTime;
 
 use super::sections::escape_block_headings;
-use super::{Block, BlockId, Day};
+use super::{Block, BlockCategory, BlockId, Day};
 use crate::file::FORMAT;
 
 impl Day {
@@ -46,8 +46,12 @@ impl Day {
             lines.push("blocks:".to_owned());
         }
         lines.extend(self.blocks.iter().map(|block| {
+            let category = match block.category {
+                BlockCategory::Work => String::new(),
+                other => format!(", category: {}", quote(other.as_str())),
+            };
             format!(
-                "  - {{ id: {}, start: {}, end: {}, project: {} }}",
+                "  - {{ id: {}, start: {}, end: {}, project: {}{category} }}",
                 quote(block.id.as_str()),
                 quote_time(block.start),
                 quote_time(block.end),
@@ -181,6 +185,22 @@ mod tests {
         let written = day.to_markdown();
         assert!(written.contains("\"yes\": 1\n"), "{written}");
         assert_eq!(parse(&written), day);
+    }
+
+    #[test]
+    fn categories_other_than_work_are_written() {
+        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+                    - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\", category: \"work\" }\n  \
+                    - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", category: \"filler\", project: \"x\" }\n---\n";
+        let written = parse(text).to_markdown();
+        assert!(
+            written.contains(
+                "  - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\" }\n  \
+                 - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"x\", category: \"filler\" }\n"
+            ),
+            "{written}"
+        );
+        assert_eq!(parse(&written), parse(text));
     }
 
     #[test]

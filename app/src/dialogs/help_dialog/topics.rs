@@ -82,16 +82,19 @@ fn days() -> Topic {
             Block::Text(gettext(
                 "Your day is made of blocks. Each block records which project you worked on and when, for example from 9:00 to 10:30. You don’t need to log as you go: filling in the day afterwards works fine, and quarter hours are precise enough. You can change the grid in the preferences.",
             )),
-            Block::Heading(gettext("Work, Overhead and Breaks")),
+            Block::Heading(gettext("Categories and Breaks")),
             Block::Text(gettext(
-                "Every project belongs to one of three categories. <b>Work</b> is the actual work, such as a customer project. <b>Overhead</b> is everything around it that still counts as working time: meetings, e-mails, chats, research. <b>Break</b> is time off and doesn’t count, just like time without a block. Unlike a gap, though, a break is a block, so it can have a title and notes: “Lunch”, “Shopping”, “Talk with John”.",
+                "Each block also says what kind of work it was. <b>Work</b> is the actual work on a project. <b>Overhead</b> is everything around it: meetings, coordination, planning. <b>Filler</b> is loose time such as e-mails, chats or research. All three count as working time. In the timeline, a small symbol at the right shows the category, and the stripe of overhead and filler is lighter. The reports show how much of each project went into them.",
             )),
             Block::Text(gettext(
-                "A new vault comes with the projects Meetings and Filler for overhead and Break for breaks. Filler is for anything that fits nowhere else.",
+                "A <b>break</b> is time off and doesn’t count, just like time without a block. Unlike a gap, though, a break is a block of the project Break, so it can have a title and notes: “Lunch”, “Shopping”, “Talk with John”.",
+            )),
+            Block::Text(gettext(
+                "Time that belongs to no customer project, such as company meetings or internal tasks, is best logged in a project of its own. Simply name it after your employer.",
             )),
             Block::Heading(gettext("Logging Blocks")),
             Block::Text(gettext(
-                "To add a block, drag over free time in the timeline or press <b>Ctrl+N</b>. Drag a block to move it, or past other blocks to reorder them. Drag its top or bottom edge to change its length. Click a block to change its project, title or text. On touch screens, press and hold instead of dragging. Dots next to the title of a block show how much of its text doesn’t fit: one for a few words, up to five for a long text.",
+                "To add a block, drag over free time in the timeline or press <b>Ctrl+N</b>. Drag a block to move it, or past other blocks to reorder them. Drag its top or bottom edge to change its length. Click a block to change its project, category, title or text. On touch screens, press and hold instead of dragging. Dots next to the title of a block show how much of its text doesn’t fit: one for a few words, up to five for a long text.",
             )),
             Block::Heading(gettext("The Day")),
             Block::Text(gettext(

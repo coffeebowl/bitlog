@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Period, Vault, capitalize};
+use bitlog_core::{BlockCategory, Period, ProjectSlug, Vault};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
@@ -12,18 +12,13 @@ use gtk::{gdk, glib};
 
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{dot_markup, lightness, mix, parse, project_color, project_hex, sea_green};
-use crate::format::{format_duration, format_month, format_range, format_share, format_short_date};
+use crate::format::{
+    category_name, format_duration, format_month, format_range, format_share, format_short_date,
+};
 use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
 use crate::widgets::heatmap::Heatmap;
 use crate::widgets::share_bar::ShareBar;
-
-/// Colors for the categories, which have none of their own: the accent
-/// colors of GNOME, used in turn.
-const CATEGORY_COLORS: [&str; 9] = [
-    "#3584e4", "#2190a4", "#3a944a", "#c88800", "#ed5b00", "#e62d42", "#d56199", "#9141ac",
-    "#6f8396",
-];
 
 /// The size of a day in the heatmap of a year, and the most it grows to in
 /// the single row of a week or month.
@@ -299,6 +294,10 @@ impl ReportsPage {
                 *time,
                 total,
             );
+            let shares = category_shares(&data.categories, slug, *time);
+            if !shares.is_empty() {
+                row.set_subtitle(&shares);
+            }
             let bar = ShareBar::new(vec![(project_color(vault, slug), share(*time, most))], 10);
             // Wide enough beside long names to compare.
             bar.set_width_request(60);
@@ -324,24 +323,24 @@ impl ReportsPage {
             format_duration(total)
         });
 
-        let mut categories = BTreeMap::<String, TimeDelta>::new();
-        for (slug, time) in &work {
-            // Blocks of projects that are not in the vault are work.
-            let category = vault
-                .project(slug)
-                .map_or("work", |project| project.category.as_str());
-            *categories.entry(category.to_owned()).or_default() += *time;
-        }
-        let mut categories: Vec<(String, TimeDelta)> = categories.into_iter().collect();
-        categories.sort_by_key(|(_, time)| std::cmp::Reverse(*time));
         let mut parts = Vec::new();
-        for ((category, time), color) in categories.iter().zip(CATEGORY_COLORS.iter().cycle()) {
-            let row = time_row(color, &capitalize(category), *time, total);
+        for category in BlockCategory::ALL {
+            let time: TimeDelta = data
+                .categories
+                .iter()
+                .filter(|(slug, of, _)| *of == category && !vault.is_break(slug))
+                .map(|(.., time)| *time)
+                .sum();
+            if time.is_zero() {
+                continue;
+            }
+            let color = category_color(category);
+            let row = time_row(color, &category_name(category), time, total);
             rows.push((imp.categories_group.get(), row));
-            parts.push((parse(color), share(*time, total)));
+            parts.push((parse(color), share(time, total)));
         }
+        imp.categories_group.set_visible(!parts.is_empty());
         imp.category_bar.set_parts(parts);
-        imp.categories_group.set_visible(!categories.is_empty());
         for (group, row) in &rows {
             group.add(row);
         }
@@ -386,6 +385,41 @@ fn average_lightness(vault: &Vault) -> f32 {
     } else {
         lightnesses.iter().sum::<f32>() / lightnesses.len() as f32
     }
+}
+
+/// The fixed color of `category`, one of the accent colors of GNOME.
+fn category_color(category: BlockCategory) -> &'static str {
+    match category {
+        BlockCategory::Work => "#3584e4",
+        BlockCategory::Overhead => "#c88800",
+        BlockCategory::Filler => "#9141ac",
+    }
+}
+
+/// The shares of overhead and filler in the time `total` of the project
+/// `slug`, as in "15 % overhead · 5 % filler", empty if there are none.
+fn category_shares(
+    categories: &[(ProjectSlug, BlockCategory, TimeDelta)],
+    slug: &ProjectSlug,
+    total: TimeDelta,
+) -> String {
+    let shares: Vec<String> = BlockCategory::ALL
+        .into_iter()
+        .filter_map(|category| {
+            let (.., time) = categories
+                .iter()
+                .find(|(project, of, _)| project == slug && *of == category)?;
+            let text = match category {
+                BlockCategory::Work => return None,
+                // Translators: A share of a project's time, as in "15 % overhead".
+                BlockCategory::Overhead => gettext("{share} overhead"),
+                // Translators: A share of a project's time, as in "5 % filler".
+                BlockCategory::Filler => gettext("{share} filler"),
+            };
+            Some(text.replace("{share}", &format_share(*time, total)))
+        })
+        .collect();
+    shares.join(" · ")
 }
 
 /// A row with a dot in `color`, a name, and the time and its share of `total`.

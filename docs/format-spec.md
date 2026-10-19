@@ -97,7 +97,7 @@ location = "remote"
 note_template = "templates/note.md"
 
 [projects]
-order = ["project-a", "meetings", "filler"]
+order = ["project-a", "project-b", "pause"]
 ```
 
 Only `format` is required. Missing fields take these defaults:
@@ -144,7 +144,7 @@ tags: ["refactoring"]
 energy: 4
 blocks:
   - { id: "k7f3", start: "08:30", end: "10:00", project: "project-a" }
-  - { id: "m2q8", start: "10:00", end: "10:15", project: "meetings" }
+  - { id: "m2q8", start: "10:00", end: "10:15", project: "project-a", category: "overhead" }
   - { id: "p4w1", start: "10:15", end: "12:00", project: "project-b" }
   - { id: "b8n2", start: "12:00", end: "12:30", project: "pause" }
 ---
@@ -177,7 +177,8 @@ let token = refresh(&session).await?;
 - YAML front matter between two `---` lines at the start of the file, read as
   **YAML 1.2**.
 - Blocks are a list of flow mappings, **one block per line**, sorted by start
-  time.
+  time. Their keys are written in the order `id`, `start`, `end`, `project`,
+  `category`; `category` only when it is not `work`.
 - Times are strings `"HH:MM"`, the date is a string `"YYYY-MM-DD"`, both in the
   user's local time zone. BitLog validates both itself.
 - **Canonical form:** BitLog rewrites the front matter completely on every
@@ -203,6 +204,7 @@ let token = refresh(&session).await?;
 | `blocks[].id` | 4 characters `[a-z0-9]`, unique within the day | yes |
 | `blocks[].start`, `.end` | `"HH:MM"`, not equal | yes |
 | `blocks[].project` | project slug | yes |
+| `blocks[].category` | `work`, `overhead` or `filler` | no, defaults to `work` |
 
 ### Date heading
 
@@ -282,10 +284,14 @@ outline of the document belongs to BitLog:
 - Blocks do not have to be contiguous. The point is a rough assignment.
 - An `end` earlier than `start` means the next day. The block counts towards
   the day it starts on.
+- **Block categories** say what kind of work a block is: `work` is the actual
+  work on its project, `overhead` everything around it, such as meetings,
+  coordination and planning, `filler` loose time such as e-mails, chats or
+  research. All three count as working time. Blocks of breaks keep their
+  category, but it means nothing there.
 - **Breaks are blocks** of a project with the category `break`. Working time is
   the sum of all blocks except breaks; time without a block does not count.
-  Loose work such as e-mails or chats goes into blocks of `filler`. Blocks of
-  projects that do not exist count as work.
+  Blocks of projects that do not exist count as work.
 
 ### Rationale
 
@@ -351,16 +357,10 @@ renames its folder, sets the new slug in all its blocks, in `projects.order`,
 in the roles of contacts and in `.bitlog/device.toml`, and changes the targets of wiki links to its
 notes in all notes, day notes and block texts.
 
-**Default projects of a new vault:**
-
-| Slug | Category | Counts as working time |
-| --- | --- | --- |
-| `pause` | `break` | no |
-| `meetings` | `overhead` | yes |
-| `filler` | `overhead` | yes |
-
-`filler` stands for loose time: research, e-mails, longer chats, short
-digressions.
+**Default project of a new vault:** `pause`, named "Break", with the category
+`break`. Time that belongs to no other project, such as company meetings, goes
+into a project of its own; meetings or e-mails of a project go into its blocks,
+with the block categories `overhead` and `filler`.
 
 ## Tasks: `tasks.toml`
 
@@ -588,7 +588,8 @@ same name. Nothing reads them back.
 
 The CSV files follow RFC 4180 (UTF-8, comma, CRLF, a header line). The
 blocks have the columns `date`, `start`, `end`, `minutes`, `project`,
-`project_name`, `category`, `title` and `text`; an `end` before `start` is on
+`project_name`, `project_category`, `category` (of the block), `title` and
+`text`; an `end` before `start` is on
 the next day, as in the day files. The week report lists the time per project
 without breaks, then each day with its details, day note and blocks with
 their texts.

@@ -36,14 +36,15 @@ impl Day {
         for theirs in &other.blocks {
             if let Some(ours) = self.blocks.iter_mut().find(|b| b.id == theirs.id) {
                 let mut title = ours.title.clone();
-                let same_place = (ours.start, ours.end, &ours.project)
-                    == (theirs.start, theirs.end, &theirs.project);
+                let same_place = (ours.start, ours.end, &ours.project, ours.category)
+                    == (theirs.start, theirs.end, &theirs.project, theirs.category);
                 if same_place && take(&mut title, &theirs.title, &String::new()) {
                     ours.title = title;
                 } else if merger.contradiction(Contradiction::Block(ours.id.clone())) {
                     ours.start = theirs.start;
                     ours.end = theirs.end;
                     ours.project = theirs.project.clone();
+                    ours.category = theirs.category;
                     ours.title = theirs.title.clone();
                 }
                 let id = ours.id.clone();
@@ -73,7 +74,7 @@ mod tests {
     use chrono::{NaiveDate, NaiveTime};
 
     use super::*;
-    use crate::{Block, BlockId};
+    use crate::{Block, BlockCategory, BlockId};
 
     fn time(value: &str) -> NaiveTime {
         value.parse().unwrap()
@@ -85,6 +86,7 @@ mod tests {
             start: time(start),
             end: time(end),
             project: "infra".parse().unwrap(),
+            category: BlockCategory::Work,
             title: title.to_owned(),
             text: text.to_owned(),
         }
@@ -184,6 +186,18 @@ mod tests {
     }
 
     #[test]
+    fn different_categories_contradict() {
+        let mut ours = day(vec![block("aa11", "09:00", "10:00", "Weekly", "")]);
+        let mut theirs = ours.clone();
+        theirs.blocks[0].category = BlockCategory::Overhead;
+        assert_eq!(
+            merge(&mut ours, &theirs, &[]),
+            [Contradiction::Block(id("aa11"))]
+        );
+        assert_eq!(ours.blocks[0].category, BlockCategory::Work);
+    }
+
+    #[test]
     fn contradictions_decided_for_the_copy() {
         let mut ours = day(vec![
             block("aa11", "09:00", "10:00", "Deploy", "Ours"),
@@ -194,6 +208,7 @@ mod tests {
             block("aa11", "09:00", "09:30", "Deploy fix", "Theirs"),
             block("cc33", "10:30", "12:00", "Planning", ""),
         ]);
+        theirs.blocks[0].category = BlockCategory::Overhead;
         theirs.energy = Some(4);
         let chosen = [
             Contradiction::DayField("energy".to_owned()),
@@ -214,6 +229,7 @@ mod tests {
         // The text stays, it was not decided for the copy.
         assert_eq!(ours.blocks[0].title, "Deploy fix");
         assert_eq!(ours.blocks[0].end, time("09:30"));
+        assert_eq!(ours.blocks[0].category, BlockCategory::Overhead);
         assert_eq!(ours.blocks[0].text, "Ours");
         // The overlapped block bb22 gives way.
         let ids: Vec<&str> = ours.blocks.iter().map(|b| b.id.as_str()).collect();
