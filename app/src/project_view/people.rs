@@ -10,9 +10,9 @@ use gtk::{gio, glib};
 
 use super::ProjectView;
 use crate::alert::show_error;
-use crate::contact_dialog::ContactDialog;
 use crate::contact_image::avatar;
-use crate::note_dialogs::ask_name;
+use crate::dialogs::contact_dialog::ContactDialog;
+use crate::dialogs::note_dialogs::ask_name;
 
 impl ProjectView {
     /// Lists the contacts with a role in the project `project` by name.

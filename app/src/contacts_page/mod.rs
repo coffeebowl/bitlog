@@ -10,9 +10,9 @@ use glib::subclass::Signal;
 use gtk::{gdk, gio, glib};
 
 use crate::alert::show_error;
-use crate::contact_dialog::ContactDialog;
 use crate::contact_image::{Source, avatar};
 use crate::contact_view::ContactView;
+use crate::dialogs::contact_dialog::ContactDialog;
 use crate::format::plural;
 use crate::projects_page::shows;
 use crate::search_index::SearchIndex;

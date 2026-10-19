@@ -16,7 +16,7 @@ use gettextrs::{gettext, ngettext};
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
-use crate::commit_dialog::CommitDialog;
+use crate::dialogs::commit_dialog::CommitDialog;
 use crate::format::{format_duration, format_relative_day, format_time, plural};
 use crate::widgets::Choices;
 

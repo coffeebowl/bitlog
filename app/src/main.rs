@@ -1,39 +1,29 @@
 mod alert;
 mod calendar_view;
 mod colors;
-mod commit_dialog;
 mod config;
-mod conflict_dialog;
-mod contact_dialog;
 mod contact_image;
 mod contact_view;
 mod contacts_page;
 mod day_summary;
 mod day_view;
+mod dialogs;
 mod drawing;
 mod format;
 mod git_page;
-mod help_dialog;
 mod launch;
 mod markdown_view;
 mod note_actions;
-mod note_dialogs;
 mod note_view;
 mod notes_page;
-mod preferences_dialog;
-mod project_dialog;
 mod project_view;
 mod projects_page;
 mod reports_page;
-mod search_dialog;
 mod search_index;
-mod standup_dialog;
-mod sync_conflict_dialog;
 mod task_list_view;
 mod tasks_page;
 mod timeline;
 mod trash;
-mod vault_check_dialog;
 mod widgets;
 mod window;
 
@@ -41,7 +31,7 @@ use adw::prelude::*;
 use gettextrs::{bind_textdomain_codeset, bindtextdomain, gettext, textdomain};
 use gtk::{gio, glib};
 
-use crate::help_dialog::HelpDialog;
+use crate::dialogs::help_dialog::HelpDialog;
 use crate::window::Window;
 
 fn main() -> glib::ExitCode {

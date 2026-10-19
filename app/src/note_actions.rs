@@ -10,8 +10,8 @@ use bitlog_core::{NotePath, Vault};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
+use crate::dialogs::note_dialogs;
 use crate::launch;
-use crate::note_dialogs;
 use crate::note_view::NoteView;
 use crate::search_index::SearchIndex;
 use crate::trash;

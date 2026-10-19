@@ -15,10 +15,10 @@ use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use crate::alert::{show_error, toast_overlay};
+use crate::dialogs::standup_dialog::StandupDialog;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::launch;
 use crate::markdown_view::MarkdownView;
-use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
 use crate::trash::trash;

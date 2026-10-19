@@ -10,8 +10,8 @@ use gtk::gio;
 
 use super::ProjectView;
 use crate::alert::show_error;
+use crate::dialogs::note_dialogs::ask_name;
 use crate::launch;
-use crate::note_dialogs::ask_name;
 use crate::trash::trash;
 
 impl ProjectView {

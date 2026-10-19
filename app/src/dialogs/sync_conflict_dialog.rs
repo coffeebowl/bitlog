@@ -16,7 +16,7 @@ use glib::subclass::Signal;
 use gtk::glib;
 
 use crate::alert::show_error;
-use crate::conflict_dialog::ConflictDialog;
+use crate::dialogs::conflict_dialog::ConflictDialog;
 use crate::format::{
     format_full_date, format_time, format_weekday_date, kind_name, task_status_name,
 };

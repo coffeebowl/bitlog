@@ -11,7 +11,7 @@ use gettextrs::{gettext, ngettext};
 use gtk::glib;
 
 use crate::alert::show_error;
-use crate::conflict_dialog::ConflictDialog;
+use crate::dialogs::conflict_dialog::ConflictDialog;
 use crate::format::{format_full_date, plural, title_markup};
 use crate::markdown_view::MarkdownView;
 use crate::search_index::SearchIndex;

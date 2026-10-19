@@ -44,8 +44,8 @@ use self::images::Location;
 use self::links::Target;
 use self::styling::Styling;
 use crate::colors::with_alpha;
+use crate::dialogs::help_dialog::{self, HelpDialog};
 use crate::drawing::append_layout;
-use crate::help_dialog::{self, HelpDialog};
 
 /// How much Markdown syntax is dimmed, as the alpha of the text colour.
 const MARKUP_ALPHA: f32 = 0.45;

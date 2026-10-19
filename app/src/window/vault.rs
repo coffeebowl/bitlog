@@ -12,10 +12,10 @@ use gtk::{gio, glib};
 
 use super::{VAULT_ACTIONS, Window};
 use crate::alert::show_error;
+use crate::dialogs::sync_conflict_dialog::{SyncConflictDialog, file_title};
+use crate::dialogs::vault_check_dialog::count_severe;
 use crate::format::plural;
 use crate::search_index::SearchIndex;
-use crate::sync_conflict_dialog::{SyncConflictDialog, file_title};
-use crate::vault_check_dialog::count_severe;
 
 impl Window {
     /// Opens the vault of the last session, if there is one.

@@ -19,15 +19,15 @@ use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::contacts_page::ContactsPage;
 use crate::day_view::DayView;
+use crate::dialogs::preferences_dialog::PreferencesDialog;
+use crate::dialogs::search_dialog::SearchDialog;
+use crate::dialogs::vault_check_dialog::VaultCheckDialog;
 use crate::note_actions::NoteHost;
 use crate::notes_page::NotesPage;
-use crate::preferences_dialog::PreferencesDialog;
 use crate::projects_page::ProjectsPage;
 use crate::reports_page::ReportsPage;
-use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
 use crate::tasks_page::TasksPage;
-use crate::vault_check_dialog::VaultCheckDialog;
 use crate::widgets::param;
 use crate::widgets::style_switcher;
 

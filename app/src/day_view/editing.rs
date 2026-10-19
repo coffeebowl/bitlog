@@ -7,8 +7,8 @@ use bitlog_core::{Block, NotePath};
 use gtk::glib;
 
 use super::DayView;
+use crate::dialogs::note_dialogs;
 use crate::markdown_view::MarkdownView;
-use crate::note_dialogs;
 use crate::note_view::existing_notes;
 
 impl DayView {

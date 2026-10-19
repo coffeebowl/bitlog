@@ -13,11 +13,11 @@ use gtk::glib;
 
 use crate::alert::show_error;
 use crate::colors::color_dot;
+use crate::dialogs::note_dialogs::ask_note_name;
+use crate::dialogs::project_dialog::ProjectDialog;
 use crate::format::{PROJECT_STATUSES, format_duration, format_recent_date, project_status_name};
 use crate::note_actions::{self, NoteHost};
-use crate::note_dialogs::ask_note_name;
 use crate::note_view::NoteView;
-use crate::project_dialog::ProjectDialog;
 use crate::project_view::ProjectView;
 use crate::search_index::{ProjectsData, SearchIndex};
 use crate::widgets::{drag_handle, make_movable, param};

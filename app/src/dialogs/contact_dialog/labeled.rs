@@ -8,8 +8,8 @@ use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use super::ContactDialog;
+use crate::dialogs::note_dialogs::ask_name;
 use crate::format::contact_label;
-use crate::note_dialogs::ask_name;
 
 /// The kinds of fields that hold texts by their labels, any number each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

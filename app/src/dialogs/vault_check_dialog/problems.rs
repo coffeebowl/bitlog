@@ -12,8 +12,8 @@ use chrono::NaiveDate;
 use gettextrs::{gettext, ngettext};
 use gtk::glib::markup_escape_text as escape;
 
+use crate::dialogs::sync_conflict_dialog::file_title;
 use crate::format::{format_full_date, plural, title_markup};
-use crate::sync_conflict_dialog::file_title;
 
 /// The kinds of problems, in the order the dialog shows them: sync
 /// conflicts, which the sidebar shows, then the severe ones.
