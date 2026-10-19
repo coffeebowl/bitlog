@@ -15,9 +15,9 @@ use crate::format::{
     format_date, format_duration, format_full_date, format_month, format_month_year, format_range,
     format_short_date, kind_name,
 };
-use crate::share_bar::ShareBar;
-use crate::week_chart::{ChartDay, WeekChart};
-use crate::week_progress::WeekProgress;
+use crate::widgets::share_bar::ShareBar;
+use crate::widgets::week_chart::{ChartDay, WeekChart};
+use crate::widgets::week_progress::WeekProgress;
 
 /// How much of a day the month shows, by the room there is.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

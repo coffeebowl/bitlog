@@ -18,16 +18,16 @@ use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
 use gtk::{gdk, glib};
 
-use crate::cards::{asset_card, note_card, note_preview, show_preview};
 use crate::colors;
 use crate::format::{
     format_duration, format_full_date, format_range, format_share, format_weekday_date,
     title_markup,
 };
 use crate::git_page::GitPage;
-use crate::heatmap::Heatmap;
 use crate::markdown_view::MarkdownView;
 use crate::search_index::{ProjectData, SearchIndex};
+use crate::widgets::cards::{asset_card, note_card, note_preview, show_preview};
+use crate::widgets::heatmap::Heatmap;
 use crate::widgets::param;
 use crate::window::show_action;
 

@@ -1,6 +1,5 @@
 app/src/alert.rs
 app/src/calendar_view.rs
-app/src/cards.rs
 app/src/commit_dialog.rs
 app/src/conflict_dialog.rs
 app/src/contact_dialog/labeled.rs
@@ -12,7 +11,6 @@ app/src/day_view/block_panel.rs
 app/src/day_view/mod.rs
 app/src/format.rs
 app/src/git_page.rs
-app/src/heatmap.rs
 app/src/help_dialog/figures/contacts.rs
 app/src/help_dialog/figures/day.rs
 app/src/help_dialog/figures/markdown.rs
@@ -39,14 +37,16 @@ app/src/projects_page.rs
 app/src/reports_page.rs
 app/src/search_dialog.rs
 app/src/standup_dialog.rs
-app/src/style_switcher.rs
 app/src/sync_conflict_dialog.rs
 app/src/task_list_view.rs
 app/src/trash.rs
 app/src/vault_check_dialog/mod.rs
 app/src/vault_check_dialog/problems.rs
-app/src/week_chart.rs
-app/src/widgets.rs
+app/src/widgets/cards.rs
+app/src/widgets/heatmap.rs
+app/src/widgets/mod.rs
+app/src/widgets/style_switcher.rs
+app/src/widgets/week_chart.rs
 app/src/window/sidebar.rs
 app/src/window/vault.rs
 app/ui/calendar_view.blp

@@ -8,7 +8,7 @@ use gtk::prelude::*;
 use super::{append_layout, layout};
 use crate::colors::{parse, with_alpha};
 use crate::format::format_date;
-use crate::week_chart::append_column;
+use crate::widgets::week_chart::append_column;
 
 const PLOT_HEIGHT: f32 = 128.0;
 /// Room for the names of the days.

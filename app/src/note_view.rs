@@ -11,12 +11,12 @@ use gettextrs::{gettext, ngettext};
 use gtk::glib;
 
 use crate::alert::show_error;
-use crate::cards::note_menu;
 use crate::conflict_dialog::ConflictDialog;
 use crate::format::{format_full_date, plural, title_markup};
 use crate::markdown_view::MarkdownView;
 use crate::search_index::SearchIndex;
 use crate::widgets::SaveTimer;
+use crate::widgets::cards::note_menu;
 use crate::window::show_action;
 
 mod imp {

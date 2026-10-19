@@ -23,7 +23,7 @@ use super::decorations::Decorations;
 use super::drawings::{Drawing, Drawings, LineMark, State};
 use super::styling::Styling;
 use super::tags;
-use crate::asset_preview::Image;
+use crate::widgets::asset_preview::Image;
 
 /// The space above each image of a line, and below the last.
 const PADDING: i32 = 8;

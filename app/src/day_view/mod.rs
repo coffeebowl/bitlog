@@ -15,15 +15,15 @@ use gettextrs::gettext;
 use gtk::{gio, glib};
 
 use crate::alert::{show_error, toast_overlay};
-use crate::cross_fade::CrossFade;
 use crate::format::{DAY_KINDS, format_date, format_duration, format_full_date, kind_name};
 use crate::launch;
 use crate::markdown_view::MarkdownView;
-use crate::project_picker::project_popover;
 use crate::standup_dialog::StandupDialog;
 use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
 use crate::trash::trash;
+use crate::widgets::cross_fade::CrossFade;
+use crate::widgets::project_picker::project_popover;
 use crate::widgets::{SaveTimer, param};
 use block_panel::spin_time;
 

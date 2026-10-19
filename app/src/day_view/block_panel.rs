@@ -11,7 +11,7 @@ use gtk::{gio, glib};
 use super::DayView;
 use crate::config;
 use crate::format::format_time;
-use crate::project_picker::{project_markup, project_popover};
+use crate::widgets::project_picker::{project_markup, project_popover};
 
 impl DayView {
     /// Makes the block panel as wide as dragged at its edge, and remembers

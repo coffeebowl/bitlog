@@ -12,7 +12,7 @@ use gtk::{cairo, gdk, gdk_pixbuf, gio, glib};
 use sourceview5::prelude::*;
 
 use crate::markdown_view::{Highlighting, Themes, themes};
-use crate::miniature::Miniature;
+use crate::widgets::miniature::Miniature;
 
 /// The size of the icon on the page of an asset.
 const ICON_SIZE: i32 = 48;

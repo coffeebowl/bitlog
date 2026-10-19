@@ -26,10 +26,10 @@ use crate::projects_page::ProjectsPage;
 use crate::reports_page::ReportsPage;
 use crate::search_dialog::SearchDialog;
 use crate::search_index::SearchIndex;
-use crate::style_switcher;
 use crate::tasks_page::TasksPage;
 use crate::vault_check_dialog::VaultCheckDialog;
 use crate::widgets::param;
+use crate::widgets::style_switcher;
 
 pub use sidebar::pages;
 

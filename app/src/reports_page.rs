@@ -13,10 +13,10 @@ use gtk::{gdk, glib};
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{dot_markup, lightness, mix, parse, project_color, project_hex, sea_green};
 use crate::format::{format_duration, format_month, format_range, format_share, format_short_date};
-use crate::heatmap::Heatmap;
 use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
-use crate::share_bar::ShareBar;
+use crate::widgets::heatmap::Heatmap;
+use crate::widgets::share_bar::ShareBar;
 
 /// Colors for the categories, which have none of their own: the accent
 /// colors of GNOME, used in turn.

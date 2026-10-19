@@ -6,9 +6,9 @@ use bitlog_core::{Asset, AssetPath, NotePath, Vault, without_front_matter};
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
-use crate::asset_preview::asset_page;
 use crate::markdown_view::MarkdownView;
-use crate::miniature::Miniature;
+use crate::widgets::asset_preview::asset_page;
+use crate::widgets::miniature::Miniature;
 
 /// The lines of a note its miniature formats at most, more than fit.
 const PREVIEW_LINES: usize = 50;

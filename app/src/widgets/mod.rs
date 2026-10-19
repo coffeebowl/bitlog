@@ -1,4 +1,16 @@
-//! Small helpers for widgets and actions that several pages share.
+//! Small widgets that pages are built from, and helpers for widgets and
+//! actions that several pages share.
+
+pub mod asset_preview;
+pub mod cards;
+pub mod cross_fade;
+pub mod heatmap;
+pub mod miniature;
+pub mod project_picker;
+pub mod share_bar;
+pub mod style_switcher;
+pub mod week_chart;
+pub mod week_progress;
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;

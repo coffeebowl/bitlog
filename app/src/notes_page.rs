@@ -12,7 +12,6 @@ use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
-use crate::cards::{note_card, note_preview, show_preview};
 use crate::colors::color_dot;
 use crate::config;
 use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
@@ -22,6 +21,7 @@ use crate::note_view::NoteView;
 use crate::projects_page::shows;
 use crate::search_index::SearchIndex;
 use crate::widgets::Choices;
+use crate::widgets::cards::{note_card, note_preview, show_preview};
 
 /// A note in the list.
 #[derive(Debug)]

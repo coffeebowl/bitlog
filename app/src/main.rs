@@ -1,7 +1,5 @@
 mod alert;
-mod asset_preview;
 mod calendar_view;
-mod cards;
 mod colors;
 mod commit_dialog;
 mod config;
@@ -10,40 +8,32 @@ mod contact_dialog;
 mod contact_image;
 mod contact_view;
 mod contacts_page;
-mod cross_fade;
 mod day_summary;
 mod day_view;
 mod drawing;
 mod format;
 mod git_page;
-mod heatmap;
 mod help_dialog;
 mod launch;
 mod markdown_view;
-mod miniature;
 mod note_actions;
 mod note_dialogs;
 mod note_view;
 mod notes_page;
 mod preferences_dialog;
 mod project_dialog;
-mod project_picker;
 mod project_view;
 mod projects_page;
 mod reports_page;
 mod search_dialog;
 mod search_index;
-mod share_bar;
 mod standup_dialog;
-mod style_switcher;
 mod sync_conflict_dialog;
 mod task_list_view;
 mod tasks_page;
 mod timeline;
 mod trash;
 mod vault_check_dialog;
-mod week_chart;
-mod week_progress;
 mod widgets;
 mod window;
 
@@ -70,7 +60,7 @@ fn main() -> glib::ExitCode {
         .build();
     app.connect_startup(|app| {
         sourceview5::init();
-        style_switcher::follow_settings(app, &gio::Settings::new(config::app_id()));
+        widgets::style_switcher::follow_settings(app, &gio::Settings::new(config::app_id()));
     });
     app.connect_activate(|app| Window::new(app).present());
 
