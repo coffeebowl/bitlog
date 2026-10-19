@@ -98,6 +98,8 @@ mod imp {
         #[template_child]
         pub sidebar: TemplateChild<adw::Sidebar>,
         #[template_child]
+        pub time_section: TemplateChild<adw::SidebarSection>,
+        #[template_child]
         pub pages_section: TemplateChild<adw::SidebarSection>,
         #[template_child]
         pub projects_section: TemplateChild<adw::SidebarSection>,
@@ -132,6 +134,7 @@ mod imp {
                 sidebar_page: TemplateChild::default(),
                 conflict_banner: TemplateChild::default(),
                 sidebar: TemplateChild::default(),
+                time_section: TemplateChild::default(),
                 pages_section: TemplateChild::default(),
                 projects_section: TemplateChild::default(),
                 sidebar_projects: RefCell::default(),

@@ -10,6 +10,10 @@ use super::Window;
 use crate::colors;
 use crate::drawing;
 
+/// The number of pages about time at the start of [`pages`], which have a
+/// section of their own in the sidebar.
+const TIME_PAGES: usize = 3;
+
 /// The pages in the order of the sidebar, each with its title, its icon and
 /// the action that shows it. The search offers them as commands.
 pub fn pages() -> [(String, &'static str, &'static str); 7] {
@@ -20,12 +24,12 @@ pub fn pages() -> [(String, &'static str, &'static str); 7] {
             "x-office-calendar-symbolic",
             "win.show-calendar",
         ),
+        (gettext("Reports"), "view-grid-symbolic", "win.show-reports"),
         (
             gettext("Tasks"),
             "checkbox-checked-symbolic",
             "win.show-tasks",
         ),
-        (gettext("Reports"), "view-grid-symbolic", "win.show-reports"),
         (
             gettext("Notes"),
             "text-x-generic-symbolic",
@@ -44,12 +48,17 @@ impl Window {
     /// Lists the pages in the sidebar and shows what is activated there.
     pub(super) fn add_sidebar_pages(&self) {
         let imp = self.imp();
-        for (title, icon, _) in pages() {
+        for (index, (title, icon, _)) in pages().into_iter().enumerate() {
             let item = adw::SidebarItem::builder()
                 .title(title)
                 .icon_name(icon)
                 .build();
-            imp.pages_section.append(item);
+            let section = if index < TIME_PAGES {
+                &imp.time_section
+            } else {
+                &imp.pages_section
+            };
+            section.append(item);
         }
         imp.sidebar.connect_activated(glib::clone!(
             #[weak(rename_to = window)]
