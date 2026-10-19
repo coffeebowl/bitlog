@@ -526,7 +526,7 @@ mod tests {
         assert_eq!(
             messages(&vault),
             [
-                "daily/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md: \
+                "days/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md: \
                  a sync conflict copy; the day note differs",
                 "2026-09-22: the text of block t5u6 has a heading: ## Root cause",
                 "2026-09-23: the text of block cc33 has a heading: ## Old notes {#zz99}",

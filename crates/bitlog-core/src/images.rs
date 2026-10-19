@@ -276,7 +276,7 @@ mod tests {
     #[test]
     fn days_and_notes_reach_the_images_alike() {
         for file in [
-            "daily/2026/10/2026-10-06.md",
+            "days/2026/10/2026-10-06.md",
             "projects/infra/notes/deployment.md",
         ] {
             assert_eq!(
@@ -296,7 +296,7 @@ mod tests {
     #[test]
     fn spaces_may_be_encoded() {
         let image = Some(PathBuf::from("/vault/images/2026-10-06 12-34-56.png"));
-        let file = "daily/2026/10/2026-10-06.md";
+        let file = "days/2026/10/2026-10-06.md";
         assert_eq!(
             resolve(file, "../../../images/2026-10-06%2012-34-56.png"),
             image
@@ -307,14 +307,14 @@ mod tests {
         );
         assert_eq!(
             resolve(file, "100%.png"),
-            Some(PathBuf::from("/vault/daily/2026/10/100%.png"))
+            Some(PathBuf::from("/vault/days/2026/10/100%.png"))
         );
         assert_eq!(resolve(file, "%FF.png"), None);
     }
 
     #[test]
     fn only_paths_within_the_vault_lead_to_images() {
-        let file = "daily/2026/10/2026-10-06.md";
+        let file = "days/2026/10/2026-10-06.md";
         for destination in [
             "../../../../secret.png",
             "/home/anna/login.png",
@@ -331,7 +331,7 @@ mod tests {
 
     #[test]
     fn links_lead_to_their_images() {
-        let day = Path::new("/vault/daily/2026/10/2026-10-06.md");
+        let day = Path::new("/vault/days/2026/10/2026-10-06.md");
         let image = Path::new("/vault/images/login.png");
         assert_eq!(image_link(day, image), "![](../../../images/login.png)");
         let note = Path::new("/vault/projects/infra/notes/deployment.md");

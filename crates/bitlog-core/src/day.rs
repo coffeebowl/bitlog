@@ -1,4 +1,4 @@
-//! Day files, `daily/YYYY/MM/YYYY-MM-DD.md`.
+//! Day files, `days/YYYY/MM/YYYY-MM-DD.md`.
 
 mod edit;
 mod merge;
@@ -378,7 +378,7 @@ mod tests {
 
     fn sample_day(date: &str) -> (Day, Vec<DayWarning>) {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/sample-vault/daily/2026/09")
+            .join("../../fixtures/sample-vault/days/2026/09")
             .join(format!("{date}.md"));
         Day::read(&path, &fs::read_to_string(&path).unwrap()).unwrap()
     }

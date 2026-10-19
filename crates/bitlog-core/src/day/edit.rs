@@ -253,7 +253,7 @@ mod tests {
     }
 
     fn sample_day(date: &str) -> Day {
-        let path = sample_path().join(format!("daily/2026/09/{date}.md"));
+        let path = sample_path().join(format!("days/2026/09/{date}.md"));
         Day::read(&path, &std::fs::read_to_string(&path).unwrap())
             .unwrap()
             .0

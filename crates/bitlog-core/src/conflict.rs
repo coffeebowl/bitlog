@@ -361,7 +361,7 @@ mod tests {
     use super::*;
     use crate::file::sample_copy;
 
-    const COPY: &str = "daily/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md";
+    const COPY: &str = "days/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md";
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(year, month, day).unwrap()
@@ -493,7 +493,7 @@ mod tests {
         let original = vault.day_path(date(2026, 9, 22));
         let before = fs::read_to_string(
             Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../fixtures/sample-vault/daily/2026/09/2026-09-22.md"),
+                .join("../../fixtures/sample-vault/days/2026/09/2026-09-22.md"),
         )
         .unwrap();
         assert_eq!(fs::read_to_string(original).unwrap(), before);

@@ -448,7 +448,7 @@ mod tests {
         let dir = TempDir::new();
         let today = NaiveDate::from_ymd_opt(2026, 9, 26).unwrap();
         let vault = Vault::create(&dir.0, "Test", today).unwrap();
-        let broken = dir.0.join("daily/2026/09/2026-09-24.md");
+        let broken = dir.0.join("days/2026/09/2026-09-24.md");
         fs::create_dir_all(broken.parent().unwrap()).unwrap();
         fs::write(&broken, "---\nformat: [\n---\n").unwrap();
         let mut index = Index::open(&vault).unwrap();
@@ -489,7 +489,7 @@ mod tests {
         let modified: i64 = index
             .connection
             .query_row(
-                "SELECT modified FROM files WHERE path = 'daily/2026/09/2026-09-23.md'",
+                "SELECT modified FROM files WHERE path = 'days/2026/09/2026-09-23.md'",
                 [],
                 |row| row.get(0),
             )

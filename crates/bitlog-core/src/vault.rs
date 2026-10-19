@@ -523,7 +523,7 @@ impl Vault {
     /// All dates with a day file, oldest first.
     pub fn all_days(&self) -> Result<Vec<NaiveDate>, ReadError> {
         let mut dates = Vec::new();
-        for entry in read_folder(&self.root().join("daily"))? {
+        for entry in read_folder(&self.root().join("days"))? {
             let year = entry
                 .file_name()
                 .to_str()
@@ -542,7 +542,7 @@ impl Vault {
 
 /// Where the file of the day `date` lies, relative to the vault.
 pub(crate) fn day_file(date: NaiveDate) -> PathBuf {
-    Path::new("daily")
+    Path::new("days")
         .join(format!("{:04}", date.year()))
         .join(format!("{:02}", date.month()))
         .join(format!("{date}.md"))

@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn write_creates_folders_and_replaces_files() {
         let dir = TempDir::new();
-        let path = dir.0.join("daily/2026/10/2026-10-01.md");
+        let path = dir.0.join("days/2026/10/2026-10-01.md");
         write_atomic(&path, "first").unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "first");
         write_atomic(&path, "second").unwrap();
@@ -210,8 +210,8 @@ mod tests {
     fn failed_write_names_file() {
         let dir = TempDir::new();
         // A file where the folder should be.
-        write_atomic(&dir.0.join("daily"), "").unwrap();
-        let path = dir.0.join("daily/2026-10-01.md");
+        write_atomic(&dir.0.join("days"), "").unwrap();
+        let path = dir.0.join("days/2026-10-01.md");
         let err = write_atomic(&path, "text").unwrap_err().to_string();
         assert!(
             err.starts_with(&format!("cannot write {}", path.display())),

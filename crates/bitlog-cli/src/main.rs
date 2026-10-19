@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn find_vault_above() {
         let sample = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault");
-        let inside = sample.join("daily/2026/09");
+        let inside = sample.join("days/2026/09");
         assert_eq!(find_vault(&inside), Some(sample.as_path()));
         assert_eq!(find_vault(&sample), Some(sample.as_path()));
         assert_eq!(find_vault(Path::new("/")), None);

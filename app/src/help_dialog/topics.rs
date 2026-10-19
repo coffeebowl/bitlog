@@ -329,7 +329,7 @@ my-vault/
 ├─ bitlog.toml
 ├─ tasks.toml
 ├─ contacts/kim.toml
-├─ daily/2026/10/2026-10-06.md
+├─ days/2026/10/2026-10-06.md
 ├─ projects/webshop/
 │  ├─ project.toml
 │  ├─ notes/

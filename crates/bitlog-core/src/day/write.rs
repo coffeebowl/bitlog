@@ -113,7 +113,7 @@ mod tests {
 
     fn fixture(date: &str) -> String {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../fixtures/sample-vault/daily/2026/09")
+            .join("../../fixtures/sample-vault/days/2026/09")
             .join(format!("{date}.md"));
         fs::read_to_string(path).unwrap()
     }

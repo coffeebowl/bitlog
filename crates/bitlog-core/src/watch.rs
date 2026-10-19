@@ -273,7 +273,7 @@ impl VaultChange {
                     .ok()
                     .map(VaultChange::ContactImage),
             },
-            ["daily", _, _, name] => day_file_date(name)
+            ["days", _, _, name] => day_file_date(name)
                 .filter(|date| relative == day_file(*date))
                 .map(VaultChange::Day),
             _ => None,
@@ -325,7 +325,7 @@ mod tests {
             Some(VaultChange::Assets("infra".parse().unwrap()))
         );
         assert_eq!(
-            change("daily/2026/09/2026-09-21.md"),
+            change("days/2026/09/2026-09-21.md"),
             Some(VaultChange::Day(
                 NaiveDate::from_ymd_opt(2026, 9, 21).unwrap()
             ))
@@ -343,11 +343,11 @@ mod tests {
             "contacts/.kim.toml.0badf00d.tmp",
             "contacts/kim.png",
             "contacts/old/kim.toml",
-            "daily/2026/09/.2026-09-21.md.0badf00d.tmp",
-            "daily/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md",
+            "days/2026/09/.2026-09-21.md.0badf00d.tmp",
+            "days/2026/09/2026-09-22.sync-conflict-20260922-181530-KNOTBK7.md",
             "projects/infra/notes/deployment (conflicted copy 2026-09-22 181530).md",
-            "daily/2026/10/2026-09-21.md",
-            "daily/2026/09",
+            "days/2026/10/2026-09-21.md",
+            "days/2026/09",
             "projects/Not A Slug/project.toml",
             "projects/infra/notes/.deployment.md.0badf00d.tmp",
             "projects/infra/notes/deployment.txt",

@@ -14,7 +14,7 @@ at any time.
 | Term | Meaning | Stored in |
 | --- | --- | --- |
 | Vault | The folder holding all data | `bitlog.toml` at its root |
-| Day | One calendar day of work | `daily/YYYY/MM/YYYY-MM-DD.md` |
+| Day | One calendar day of work | `days/YYYY/MM/YYYY-MM-DD.md` |
 | Day note | Free text about the whole day | Day file, below the date heading |
 | Block | A time span of a day assigned to one project | Day file, front matter and one section |
 | Block text | Free text about one block | Day file, below the block heading |
@@ -53,7 +53,7 @@ my-vault/
   tasks-archive-2026.toml            # tasks finished in 2026, once archived
   contacts/kim.toml                  # one person
   contacts/kim.jpg                   # their picture
-  daily/2026/09/2026-09-23.md        # one day: front matter, day note, blocks with text
+  days/2026/09/2026-09-23.md         # one day: front matter, day note, blocks with text
   projects/project-a/project.toml
   projects/project-a/notes/auth-middleware.md
   projects/project-a/assets/scans/offer.pdf  # any files, in any subfolders
@@ -130,7 +130,7 @@ all structured data. It is followed by the date heading, the optional day note
 and one section per block. The outline is fixed: `#` is the day, `##` are the
 blocks, and below them there is only text without headings.
 
-Day files live in `daily/YYYY/MM/`, the folder of their year and month. Only
+Day files live in `days/YYYY/MM/`, the folder of their year and month. Only
 files named exactly `YYYY-MM-DD.md` there are day files. Everything else, such
 as sync conflict copies, is ignored when reading days.
 
