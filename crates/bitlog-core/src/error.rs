@@ -41,7 +41,9 @@ pub enum EditError {
     #[error("unknown project status {0:?}, expected active, paused or archived")]
     InvalidStatus(String),
     #[error("unknown block category {0:?}, expected work, overhead or filler")]
-    InvalidCategory(String),
+    InvalidBlockCategory(String),
+    #[error("unknown project category {0:?}, expected work, private, duty or break")]
+    InvalidProjectCategory(String),
     #[error("there is no task {0}")]
     UnknownTask(TaskId),
     #[error("a task needs a title of one line")]

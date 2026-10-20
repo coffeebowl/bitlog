@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 
 use bitlog_core::{
-    BlockCategory, BlockId, ContactSlug, LocationKey, ProjectSlug, ProjectStatus, TaskId,
+    BlockCategory, BlockId, ContactSlug, LocationKey, ProjectCategory, ProjectSlug, ProjectStatus,
+    TaskId,
 };
 use chrono::{NaiveDate, NaiveTime};
 use clap::{ArgGroup, Args, Parser, Subcommand};
@@ -343,10 +344,9 @@ pub struct ProjectArgs {
     /// As in 3584e4 or "#3584e4"
     #[arg(long, group = "change")]
     pub color: Option<String>,
-    /// Free text; blocks of `break` projects are breaks [default for new
-    /// projects: work]
+    /// work, private, duty or break [default for new projects: work]
     #[arg(long, group = "change")]
-    pub category: Option<String>,
+    pub category: Option<ProjectCategory>,
     /// The folder of the project's Git repository on this device
     #[arg(long, group = "change", value_name = "FOLDER")]
     pub repo: Option<PathBuf>,
@@ -428,6 +428,8 @@ mod tests {
         parse("bitlog project add docs --name Docs --color ff7800").unwrap();
         parse("bitlog project add docs").unwrap();
         parse("bitlog project edit docs --status paused").unwrap();
+        parse("bitlog project edit docs --category duty").unwrap();
+        assert!(parse("bitlog project edit docs --category overhead").is_err());
         assert!(parse("bitlog project edit docs").is_err());
         parse("bitlog project add docs --repo ../docs").unwrap();
         parse("bitlog project edit docs --no-repo").unwrap();

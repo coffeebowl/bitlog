@@ -90,7 +90,8 @@ pub fn append_icon(
 }
 
 /// The stripe in `color` at the left edge of a block in `area`: solid for
-/// work and breaks (`None`), lighter for overhead, lighter still for filler.
+/// work and blocks that are no work (`None`), lighter for overhead, lighter
+/// still for filler.
 pub fn append_stripe(
     snapshot: &gtk::Snapshot,
     area: &graphene::Rect,

@@ -3,6 +3,7 @@
 //! they take the colours of the theme, their words are translated and
 //! they do not age with the app.
 
+mod categories;
 mod contacts;
 mod day;
 mod markdown;
@@ -24,6 +25,7 @@ use crate::drawing::{self, append_layout, fill_rounded};
 pub enum Kind {
     #[default]
     Day,
+    Categories,
     Projects,
     Contacts,
     Tasks,
@@ -35,6 +37,7 @@ impl Kind {
     fn height(self) -> f32 {
         match self {
             Self::Day => day::HEIGHT,
+            Self::Categories => categories::HEIGHT,
             Self::Projects => projects::HEIGHT,
             Self::Contacts => contacts::HEIGHT,
             Self::Tasks => tasks::HEIGHT,
@@ -48,6 +51,9 @@ impl Kind {
         match self {
             Self::Day => gettext(
                 "A morning with blocks of work, overhead and filler, a gap without a block and a break; dots show text that doesn’t fit",
+            ),
+            Self::Categories => gettext(
+                "The four project categories by whether their time counts as working time and whether it is work, each with an example",
             ),
             Self::Projects => {
                 gettext("The activity of a project over 30 days, with two of its notes and a file")
@@ -102,6 +108,7 @@ mod imp {
             let widget = widget.upcast_ref();
             match self.kind.get() {
                 Kind::Day => day::snapshot(widget, snapshot),
+                Kind::Categories => categories::snapshot(widget, snapshot),
                 Kind::Projects => projects::snapshot(widget, snapshot),
                 Kind::Contacts => contacts::snapshot(widget, snapshot),
                 Kind::Tasks => tasks::snapshot(widget, snapshot),

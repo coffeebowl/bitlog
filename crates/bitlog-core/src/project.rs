@@ -15,10 +15,6 @@ use crate::toml_values::{local_date, set, set_date};
 use crate::{EditError, ProjectSlug};
 
 const DEFAULT_COLOR: &str = "#3584e4";
-const DEFAULT_CATEGORY: &str = "work";
-
-/// The category of projects whose blocks are breaks, not working time.
-const BREAK_CATEGORY: &str = "break";
 
 #[derive(Debug, Clone)]
 pub struct Project {
@@ -28,8 +24,10 @@ pub struct Project {
     /// `#rrggbb`.
     pub color: String,
     pub status: ProjectStatus,
-    /// Free text, only `break` has a meaning.
-    pub category: String,
+    category: ProjectCategory,
+    /// The category as the file has it if this version does not know it,
+    /// kept in the file until another one is set.
+    unknown_category: Option<String>,
     pub created: Option<NaiveDate>,
     /// The file as read, so that writing keeps comments, formatting and
     /// fields this version does not know.
@@ -67,6 +65,55 @@ impl FromStr for ProjectStatus {
     }
 }
 
+/// Whether the time of a project counts as working time and whether it is
+/// work, one value for each of the four combinations.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ProjectCategory {
+    /// Work that counts as working time.
+    #[default]
+    Work,
+    /// Work that does not count, such as a side project.
+    Private,
+    /// Counts as working time without being work, such as a business trip.
+    Duty,
+    /// Neither, time off.
+    Break,
+}
+
+impl ProjectCategory {
+    pub const ALL: [Self; 4] = [Self::Work, Self::Private, Self::Duty, Self::Break];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Work => "work",
+            Self::Private => "private",
+            Self::Duty => "duty",
+            Self::Break => "break",
+        }
+    }
+
+    pub fn counts_as_working_time(self) -> bool {
+        matches!(self, Self::Work | Self::Duty)
+    }
+
+    /// Whether blocks of such projects are work, which block categories
+    /// divide further.
+    pub fn is_work(self) -> bool {
+        matches!(self, Self::Work | Self::Private)
+    }
+}
+
+impl FromStr for ProjectCategory {
+    type Err = EditError;
+
+    fn from_str(text: &str) -> Result<Self, EditError> {
+        Self::ALL
+            .into_iter()
+            .find(|category| category.as_str() == text)
+            .ok_or_else(|| EditError::InvalidProjectCategory(text.to_owned()))
+    }
+}
+
 #[derive(Deserialize)]
 struct ProjectFile {
     format: u32,
@@ -97,21 +144,42 @@ impl Project {
             name: name.to_owned(),
             color: DEFAULT_COLOR.to_owned(),
             status: ProjectStatus::Active,
-            category: DEFAULT_CATEGORY.to_owned(),
+            category: ProjectCategory::default(),
+            unknown_category: None,
             created: Some(created),
             document: DocumentMut::new(),
             hash: None,
         }
     }
 
-    /// The projects every new vault starts with.
+    /// The projects every new vault starts with, one of each category.
     pub fn defaults(created: NaiveDate) -> Vec<Self> {
-        let slug = "pause".parse().expect("the default slug is valid");
-        vec![Self {
-            color: "#9a9996".to_owned(),
-            category: BREAK_CATEGORY.to_owned(),
-            ..Self::new(slug, "Break", created)
-        }]
+        [
+            ("company", "Your Company", "#3584e4", ProjectCategory::Work),
+            (
+                "side-project",
+                "Your Side Project",
+                "#33d17a",
+                ProjectCategory::Private,
+            ),
+            (
+                "business-trips",
+                "Business Trips",
+                "#2190a4",
+                ProjectCategory::Duty,
+            ),
+            ("pause", "Break", "#9a9996", ProjectCategory::Break),
+        ]
+        .into_iter()
+        .map(|(slug, name, color, category)| {
+            let slug = slug.parse().expect("default slugs are valid");
+            Self {
+                color: color.to_owned(),
+                category,
+                ..Self::new(slug, name, created)
+            }
+        })
+        .collect()
     }
 
     /// Sets the color, `#` and six hex digits.
@@ -123,18 +191,29 @@ impl Project {
         Ok(())
     }
 
-    /// Whether blocks of this project are breaks.
-    pub fn is_break(&self) -> bool {
-        self.category == BREAK_CATEGORY
+    /// Its category, `work` if the file has one this version does not know.
+    pub fn category(&self) -> ProjectCategory {
+        self.category
     }
 
-    /// Whether blocks of the project `slug` are breaks, looked up in
-    /// `projects`. Blocks of projects missing there are work, as hand-edited
-    /// days or removed projects leave them.
-    pub(crate) fn is_break_in(projects: &[Project], slug: &ProjectSlug) -> bool {
+    /// The category as the file has it, if this version does not know it.
+    pub fn unknown_category(&self) -> Option<&str> {
+        self.unknown_category.as_deref()
+    }
+
+    pub fn set_category(&mut self, category: ProjectCategory) {
+        self.category = category;
+        self.unknown_category = None;
+    }
+
+    /// The category of the project `slug`, looked up in `projects`. Blocks
+    /// of projects missing there are work, as hand-edited days or removed
+    /// projects leave them.
+    pub(crate) fn category_in(projects: &[Project], slug: &ProjectSlug) -> ProjectCategory {
         projects
             .iter()
-            .any(|project| project.slug == *slug && project.is_break())
+            .find(|project| project.slug == *slug)
+            .map_or_else(ProjectCategory::default, Project::category)
     }
 
     /// Where the file of the project `slug` lives in `vault`.
@@ -187,13 +266,23 @@ impl Project {
         if !is_color(&color) {
             return Err(format!("color must look like \"#3584e4\", found {color:?}"));
         }
+        // An unknown category counts as work, so that a typo or a value of a
+        // newer version does not keep the vault from opening.
+        let (category, unknown_category) = match file.category {
+            None => (ProjectCategory::default(), None),
+            Some(text) => match text.parse() {
+                Ok(category) => (category, None),
+                Err(_) => (ProjectCategory::default(), Some(text)),
+            },
+        };
 
         Ok(Self {
             name: file.name.unwrap_or_else(|| slug.to_string()),
             slug,
             color,
             status: file.status.unwrap_or(ProjectStatus::Active),
-            category: file.category.unwrap_or_else(|| DEFAULT_CATEGORY.to_owned()),
+            category,
+            unknown_category,
             created: file.created,
             document,
             hash: Some(hash),
@@ -210,7 +299,9 @@ impl Project {
         set(table, "name", self.name.as_str().into());
         set(table, "color", self.color.as_str().into());
         set(table, "status", self.status.as_str().into());
-        set(table, "category", self.category.as_str().into());
+        if self.unknown_category.is_none() {
+            set(table, "category", self.category.as_str().into());
+        }
         set_date(table, "created", self.created);
         document.to_string()
     }
@@ -244,12 +335,12 @@ mod tests {
         assert_eq!(infra.name, "Infrastructure");
         assert_eq!(infra.color, "#2ec27e");
         assert_eq!(infra.status, ProjectStatus::Active);
-        assert_eq!(infra.category, "work");
+        assert_eq!(infra.category(), ProjectCategory::Work);
         assert_eq!(infra.created, Some(date(2026, 4, 15)));
 
         let breaks: Vec<&str> = projects
             .iter()
-            .filter(|p| p.is_break())
+            .filter(|p| p.category() == ProjectCategory::Break)
             .map(|p| p.slug.as_str())
             .collect();
         assert_eq!(breaks, ["pause"]);
@@ -271,10 +362,10 @@ mod tests {
         )
         .unwrap();
         project.name = "Infrastructure".to_owned();
-        project.category = "ops".to_owned();
+        project.set_category(ProjectCategory::Private);
         assert_eq!(
             project.to_toml(),
-            "format = 1\nname = \"Infrastructure\" # short\n# Billed separately.\ncategory = \"ops\"\nhomepage = \"x\"\ncolor = \"#3584e4\"\nstatus = \"active\"\n"
+            "format = 1\nname = \"Infrastructure\" # short\n# Billed separately.\ncategory = \"private\"\nhomepage = \"x\"\ncolor = \"#3584e4\"\nstatus = \"active\"\n"
         );
     }
 
@@ -292,11 +383,13 @@ mod tests {
     }
 
     #[test]
-    fn default_projects_match_sample_vault() {
-        for default in Project::defaults(date(2026, 3, 1)) {
-            let sample = Project::load(&sample_vault(), default.slug.clone()).unwrap();
-            assert_eq!(default.to_toml(), sample.to_toml(), "{}", default.slug);
-        }
+    fn default_projects_have_one_of_each_category() {
+        let defaults = Project::defaults(date(2026, 3, 1));
+        let categories: Vec<_> = defaults.iter().map(Project::category).collect();
+        assert_eq!(categories, ProjectCategory::ALL);
+        let pause = defaults.last().unwrap();
+        let sample = Project::load(&sample_vault(), pause.slug.clone()).unwrap();
+        assert_eq!(pause.to_toml(), sample.to_toml());
     }
 
     #[test]
@@ -309,12 +402,53 @@ mod tests {
     }
 
     #[test]
+    fn categories_from_text() {
+        for category in ProjectCategory::ALL {
+            assert_eq!(category.as_str().parse(), Ok(category));
+        }
+        assert_eq!(
+            "overhead".parse::<ProjectCategory>(),
+            Err(EditError::InvalidProjectCategory("overhead".to_owned()))
+        );
+    }
+
+    #[test]
+    fn unknown_categories_count_as_work_and_are_kept() {
+        let text = "format = 1\ncategory = \"overhead\" # old\n";
+        let mut project = Project::parse(slug("misc"), text).unwrap();
+        assert_eq!(project.category(), ProjectCategory::Work);
+        assert_eq!(project.unknown_category(), Some("overhead"));
+        assert!(
+            project
+                .to_toml()
+                .contains("category = \"overhead\" # old\n"),
+            "{}",
+            project.to_toml()
+        );
+        project.set_category(ProjectCategory::Work);
+        assert_eq!(project.unknown_category(), None);
+        assert!(project.to_toml().contains("category = \"work\" # old\n"));
+    }
+
+    #[test]
+    fn categories_answer_both_questions() {
+        let answers: Vec<_> = ProjectCategory::ALL
+            .into_iter()
+            .map(|category| (category.counts_as_working_time(), category.is_work()))
+            .collect();
+        assert_eq!(
+            answers,
+            [(true, true), (false, true), (true, false), (false, false)]
+        );
+    }
+
+    #[test]
     fn defaults() {
         let project = Project::parse(slug("misc"), "format = 1").unwrap();
         assert_eq!(project.name, "misc");
         assert_eq!(project.color, DEFAULT_COLOR);
         assert_eq!(project.status, ProjectStatus::Active);
-        assert_eq!(project.category, "work");
+        assert_eq!(project.category(), ProjectCategory::Work);
         assert_eq!(project.created, None);
         assert!(!project.to_toml().contains("created"));
     }

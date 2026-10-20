@@ -250,9 +250,9 @@ impl DayView {
             .set_icon_name(Some(block_category_icon(block.category)));
         imp.block_category_label
             .set_label(&block_category_name(block.category));
-        // Breaks are no work of any kind.
+        // Only work is divided into categories.
         imp.block_category_button
-            .set_visible(!vault.is_break(&block.project));
+            .set_visible(vault.project_category(&block.project).is_work());
         self.set_menu_state("block-category", block.category.as_str());
         let id = block.id.clone();
         imp.block_project_button.set_popover(Some(&project_popover(

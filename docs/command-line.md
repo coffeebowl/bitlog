@@ -31,6 +31,7 @@ bitlog set --kind vacation --date 2026-09-25
 bitlog project list
 bitlog project add client-portal --name "Client portal" --color ff7800
 bitlog project edit client-portal --status archived
+bitlog project edit side-project --category private   # work, private, duty or break
 bitlog project edit client-portal --repo ~/code/client-portal   # only on this device
 bitlog project rename client-portal portal   # also in all days and notes
 bitlog log client-portal --limit 5   # latest commits of that repository

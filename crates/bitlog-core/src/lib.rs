@@ -58,7 +58,7 @@ pub use markdown::{
 pub use mentions::{Mention, mentions, typed_mention};
 pub use notes::{NoteFile, SavedNote, WikiLink, link_target, wiki_links};
 pub use period::{Period, week_number, week_start};
-pub use project::{Project, ProjectStatus};
+pub use project::{Project, ProjectCategory, ProjectStatus};
 pub use tasks::{Task, TaskList, TaskStatus};
 pub use vault::{DayFile, Vault};
 pub use watch::{RepoWatcher, VaultChange, VaultWatcher, WatchError, watch_repo};

@@ -99,7 +99,7 @@ mod imp {
         pub span: (u32, u32),
         /// `None` for a project the vault does not know.
         pub color: Option<gdk::RGBA>,
-        /// `None` for a break.
+        /// `None` for a block that is no work, such as a break.
         pub category: Option<BlockCategory>,
         pub child: gtk::Widget,
         /// The lines of text in `child`, shown as far as they fit.
@@ -531,8 +531,11 @@ impl Timeline {
             .iter()
             .map(|block| {
                 let project = vault.project(&block.project);
-                // Breaks are no work of any kind.
-                let category = (!vault.is_break(&block.project)).then_some(block.category);
+                // Only work is divided into categories.
+                let category = vault
+                    .project_category(&block.project)
+                    .is_work()
+                    .then_some(block.category);
                 let (child, lines) =
                     block_content(block, vault.project_name(&block.project), category);
                 child.set_parent(self);

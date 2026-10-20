@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use bitlog_core::{
-    Commit, EditError, Project, ProjectSlug, ProjectStatus, Vault, check_repo_path, git_log,
+    Commit, EditError, Project, ProjectCategory, ProjectSlug, ProjectStatus, Vault,
+    check_repo_path, git_log,
 };
 use chrono::NaiveDate;
 
@@ -21,7 +22,7 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
             [
                 project.slug.to_string(),
                 project.name.clone(),
-                project.category.clone(),
+                project.category().as_str().to_owned(),
                 project.status.as_str().to_owned(),
                 project.color.clone(),
                 repos
@@ -82,7 +83,7 @@ fn format_log(commits: &[Commit]) -> String {
 pub struct ProjectChanges {
     pub name: Option<String>,
     pub color: Option<String>,
-    pub category: Option<String>,
+    pub category: Option<ProjectCategory>,
     pub status: Option<ProjectStatus>,
     /// `Some(None)` removes the repository.
     pub repo: Option<Option<PathBuf>>,
@@ -148,7 +149,7 @@ fn apply(project: &mut Project, changes: ProjectChanges) -> Result<(), EditError
         project.set_color(&color)?;
     }
     if let Some(category) = changes.category {
-        project.category = category;
+        project.set_category(category);
     }
     if let Some(status) = changes.status {
         project.status = status;
@@ -191,11 +192,11 @@ mod tests {
                 &vault,
                 &BTreeMap::from([("infra".parse().unwrap(), "/code/infra".into())])
             ),
-            "webshop   Webshop         work      active  #3584e4\n\
-             infra     Infrastructure  work      active  #2ec27e  /code/infra\n\
-             meetings  Meetings        overhead  active  #f6d32d\n\
-             filler    Filler          overhead  active  #c061cb\n\
-             pause     Break           break     active  #9a9996\n"
+            "webshop   Webshop         work   active  #3584e4\n\
+             infra     Infrastructure  work   active  #2ec27e  /code/infra\n\
+             meetings  Meetings        work   active  #f6d32d\n\
+             filler    Filler          work   active  #c061cb\n\
+             pause     Break           break  active  #9a9996\n"
         );
     }
 }

@@ -19,3 +19,6 @@ hybrid = "Hybrid"                # partly remote, partly in the office
 [defaults]
 location = "remote"
 note_template = "templates/note.md"
+
+[projects]
+order = ["company", "side-project", "business-trips", "pause"]

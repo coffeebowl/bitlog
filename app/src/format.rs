@@ -1,6 +1,6 @@
 //! Dates, times, durations and counts as the app shows them.
 
-use bitlog_core::{BlockCategory, ProjectStatus, TaskStatus, capitalize, percent};
+use bitlog_core::{BlockCategory, ProjectCategory, ProjectStatus, TaskStatus, capitalize, percent};
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeDelta};
 use gettextrs::gettext;
 use gtk::glib;
@@ -206,6 +206,15 @@ pub fn project_status_name(status: ProjectStatus) -> String {
         ProjectStatus::Active => gettext("Active"),
         ProjectStatus::Paused => gettext("Paused"),
         ProjectStatus::Archived => gettext("Archived"),
+    }
+}
+
+pub fn project_category_name(category: ProjectCategory) -> String {
+    match category {
+        ProjectCategory::Work => gettext("Work"),
+        ProjectCategory::Private => gettext("Private"),
+        ProjectCategory::Duty => gettext("Duty"),
+        ProjectCategory::Break => gettext("Break"),
     }
 }
 

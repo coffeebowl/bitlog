@@ -10,11 +10,11 @@ use crate::{Block, Day, ProjectSlug, TaskList, TaskStatus, Vault};
 
 impl Vault {
     /// A standup summary for the day `today` in Markdown, to paste into a
-    /// chat. "Yesterday" is the last day before `today` with blocks other
-    /// than breaks, with the tasks done on it; "Today" holds the blocks of
-    /// `today` and the open tasks due by then. Blocks are listed by project
-    /// with their titles, breaks left out, and with the user's commits of
-    /// that day in the project's repository on this device.
+    /// chat. "Yesterday" is the last day before `today` with working time,
+    /// with the tasks done on it; "Today" holds the blocks of `today` and the
+    /// open tasks due by then. Blocks are listed by project with their
+    /// titles, and with the user's commits of that day in the project's
+    /// repository on this device. Breaks and private projects are left out.
     ///
     /// It reads the repositories, so programs with a user interface call
     /// it outside the main thread.
@@ -51,14 +51,14 @@ impl Vault {
         Ok(format!("{yesterday}\n{today}"))
     }
 
-    /// The last day before `today` with blocks other than breaks.
+    /// The last day before `today` with working time.
     fn last_work_day(&self, today: NaiveDate) -> Result<Option<Day>, ReadError> {
         for date in self.all_days()?.into_iter().rev() {
             if date >= today {
                 continue;
             }
             if let Some(file) = self.load_day(date)?
-                && file.day.blocks.iter().any(|b| !self.is_break(&b.project))
+                && file.day.blocks.iter().any(|b| self.counts(&b.project))
             {
                 return Ok(Some(file.day));
             }
@@ -68,12 +68,13 @@ impl Vault {
 
     /// One line per project of `blocks`, in the order they first appear,
     /// with the different titles of its blocks: "Webshop: Code review,
-    /// Payment provider switch". Breaks are left out. The commits made on
-    /// `date` follow in a nested line, also for projects without blocks.
+    /// Payment provider switch". Projects that do not count as working time
+    /// are left out. The commits made on `date` follow in a nested line, also
+    /// for projects without blocks.
     fn project_lines(&self, blocks: &[Block], date: NaiveDate) -> Result<Vec<String>, ReadError> {
         let mut commits = self.commits_on(date)?;
         let mut projects: Vec<(&ProjectSlug, Vec<&str>)> = Vec::new();
-        for block in blocks.iter().filter(|b| !self.is_break(&b.project)) {
+        for block in blocks.iter().filter(|b| self.counts(&b.project)) {
             let found = projects
                 .iter()
                 .position(|(slug, _)| **slug == block.project);
@@ -105,17 +106,23 @@ impl Vault {
     }
 
     /// The user's commits made on `date` in the repository of each project
-    /// that has one on this device and commits that day. Repositories that
-    /// cannot be read, as when moved away, are left out.
+    /// that counts as working time, has one on this device and commits that
+    /// day. Repositories that cannot be read, as when moved away, are left
+    /// out.
     fn commits_on(&self, date: NaiveDate) -> Result<BTreeMap<ProjectSlug, Vec<String>>, ReadError> {
         Ok(self
             .repo_paths()?
             .into_iter()
+            .filter(|(slug, _)| self.counts(slug))
             .filter_map(|(slug, repo)| {
                 let commits = own_commits_on(&repo, date).ok()?;
                 (!commits.is_empty()).then_some((slug, commits))
             })
             .collect())
+    }
+
+    fn counts(&self, slug: &ProjectSlug) -> bool {
+        self.project_category(slug).counts_as_working_time()
     }
 
     /// The titles of the tasks done on `date`, also those archived since.
@@ -164,6 +171,7 @@ mod tests {
     use std::path::Path;
 
     use super::*;
+    use crate::ProjectCategory;
     use crate::file::{TempDir, sample_copy};
 
     fn sample_vault() -> Vault {
@@ -236,6 +244,22 @@ mod tests {
             .unwrap();
         repository.set_head("refs/heads/main").unwrap();
         dir
+    }
+
+    #[test]
+    fn private_projects_are_left_out() {
+        let (_dir, mut vault) = sample_copy();
+        let filler: ProjectSlug = "filler".parse().unwrap();
+        vault
+            .update_project(&filler, |project| {
+                project.set_category(ProjectCategory::Private);
+                Ok(())
+            })
+            .unwrap();
+        let repo = repository(&[("Ada", 22, 16, "Answer mails faster", &[])], 0);
+        vault.set_repo_path(&filler, Some(&repo.0)).unwrap();
+        let standup = vault.standup(date(2026, 9, 23)).unwrap();
+        assert!(!standup.contains("Filler"), "{standup}");
     }
 
     #[test]

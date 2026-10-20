@@ -4,14 +4,14 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{EditError, Project, ProjectSlug, check_repo_path};
+use bitlog_core::{EditError, Project, ProjectCategory, ProjectSlug, check_repo_path};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::colors;
-use crate::format::{PROJECT_STATUSES, project_status_name};
+use crate::format::{PROJECT_STATUSES, project_category_name, project_status_name};
 use crate::widgets::{changed, set_class};
 
 mod imp {
@@ -31,6 +31,8 @@ mod imp {
         /// The IDs and names of the projects there are, which a new
         /// project cannot take.
         pub taken: RefCell<Vec<(ProjectSlug, String)>>,
+        /// One for each category, in the order of `ProjectCategory::ALL`.
+        pub category_buttons: RefCell<Vec<gtk::CheckButton>>,
         #[template_child]
         pub cancel_button: TemplateChild<gtk::Button>,
         #[template_child]
@@ -46,7 +48,7 @@ mod imp {
         #[template_child]
         pub color_button: TemplateChild<gtk::ColorDialogButton>,
         #[template_child]
-        pub category_row: TemplateChild<adw::EntryRow>,
+        pub category_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
         pub status_row: TemplateChild<adw::ComboRow>,
         #[template_child]
@@ -90,6 +92,7 @@ mod imp {
             let names: Vec<&str> = names.iter().map(String::as_str).collect();
             self.status_row
                 .set_model(Some(&gtk::StringList::new(&names)));
+            dialog.add_category_rows();
             self.cancel_button.connect_clicked(glib::clone!(
                 #[weak]
                 dialog,
@@ -150,7 +153,7 @@ impl ProjectDialog {
         let shown = project.unwrap_or(&new);
         imp.name_row.set_text(&shown.name);
         imp.color_button.set_rgba(&colors::parse(&shown.color));
-        imp.category_row.set_text(&shown.category);
+        dialog.show_category(shown);
         let status = PROJECT_STATUSES
             .iter()
             .position(|status| *status == shown.status)
@@ -212,11 +215,61 @@ impl ProjectDialog {
         if !color.eq_ignore_ascii_case(&shown.color) {
             project.set_color(&color)?;
         }
-        let category = imp.category_row.text().trim().to_owned();
-        changed(&mut project.category, &shown.category, category);
+        // None is chosen while the file has a category this version does not
+        // know, which stays then.
+        let chosen = imp
+            .category_buttons
+            .borrow()
+            .iter()
+            .position(gtk::CheckButton::is_active)
+            .map(|index| ProjectCategory::ALL[index]);
+        if let Some(category) = chosen
+            && (category != shown.category() || shown.unknown_category().is_some())
+        {
+            project.set_category(category);
+        }
         let status = PROJECT_STATUSES[imp.status_row.selected() as usize];
         changed(&mut project.status, &shown.status, status);
         Ok(())
+    }
+
+    /// Adds a row with a check button for each category, which explains it.
+    fn add_category_rows(&self) {
+        let imp = self.imp();
+        let mut buttons: Vec<gtk::CheckButton> = Vec::new();
+        for category in ProjectCategory::ALL {
+            let button = gtk::CheckButton::builder()
+                .valign(gtk::Align::Center)
+                .build();
+            button.set_group(buttons.first());
+            let row = adw::ActionRow::builder()
+                .title(project_category_name(category))
+                .subtitle(category_description(category))
+                .activatable_widget(&button)
+                .build();
+            row.add_prefix(&button);
+            imp.category_group.add(&row);
+            buttons.push(button);
+        }
+        imp.category_buttons.replace(buttons);
+    }
+
+    /// Chooses the category of `project`, or none if this version does not
+    /// know it, and says so.
+    fn show_category(&self, project: &Project) {
+        let imp = self.imp();
+        if let Some(unknown) = project.unknown_category() {
+            imp.category_group.set_description(Some(
+                &gettext("The file has the unknown category “{category}”, which counts as work.")
+                    .replace("{category}", unknown),
+            ));
+            return;
+        }
+        let index = ProjectCategory::ALL
+            .iter()
+            .position(|category| *category == project.category())
+            .expect("every category is listed");
+        imp.category_buttons.borrow()[index].set_active(true);
     }
 
     /// Shows the repository `repo` of the project on this device, or why
@@ -310,5 +363,19 @@ impl ProjectDialog {
         set_class(&*imp.slug_hint, "warning", owner.is_none());
         imp.save_button
             .set_sensitive(!self.name().is_empty() && slug_valid);
+    }
+}
+
+/// What projects of `category` hold, in terms of the two questions behind it.
+fn category_description(category: ProjectCategory) -> String {
+    match category {
+        ProjectCategory::Work => gettext("Work that counts as working time"),
+        ProjectCategory::Private => {
+            gettext("Work that doesn’t count as working time, such as a side project")
+        }
+        ProjectCategory::Duty => {
+            gettext("Counts as working time, but isn’t work, such as a business trip")
+        }
+        ProjectCategory::Break => gettext("Time off that doesn’t count"),
     }
 }

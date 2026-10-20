@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
 use bitlog_core::{
-    BlockId, ContactSlug, Day, ImageProblem, NotePath, Problem, ReadError, SaveError, Vault,
-    VaultChange,
+    BlockId, ContactSlug, Day, ImageProblem, NotePath, Problem, ProjectSlug, ReadError, SaveError,
+    Vault, VaultChange,
 };
 use chrono::NaiveDate;
 use gettextrs::{gettext, ngettext};
@@ -25,6 +25,7 @@ pub enum Kind {
     EscapedHeading,
     Overlap,
     UnknownProject,
+    UnknownProjectCategory,
     Heading,
     ShortLink,
     BrokenLink,
@@ -36,13 +37,14 @@ pub enum Kind {
 }
 
 impl Kind {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::Conflict,
         Self::Unreadable,
         Self::GitMarkers,
         Self::EscapedHeading,
         Self::Overlap,
         Self::UnknownProject,
+        Self::UnknownProjectCategory,
         Self::Heading,
         Self::ShortLink,
         Self::BrokenLink,
@@ -60,6 +62,7 @@ impl Kind {
             Problem::EscapedHeading { .. } => Self::EscapedHeading,
             Problem::Overlap { .. } => Self::Overlap,
             Problem::UnknownProject { .. } => Self::UnknownProject,
+            Problem::UnknownProjectCategory { .. } => Self::UnknownProjectCategory,
             Problem::Conflict { .. } => Self::Conflict,
             Problem::Heading { .. } => Self::Heading,
             Problem::ShortLink { .. } => Self::ShortLink,
@@ -83,6 +86,7 @@ impl Kind {
                 | Self::EscapedHeading
                 | Self::Overlap
                 | Self::UnknownProject
+                | Self::UnknownProjectCategory
         )
     }
 
@@ -93,6 +97,7 @@ impl Kind {
             Self::EscapedHeading => gettext("Escaped Block Headings"),
             Self::Overlap => gettext("Overlapping Blocks"),
             Self::UnknownProject => gettext("Unknown Projects"),
+            Self::UnknownProjectCategory => gettext("Unknown Project Categories"),
             Self::Conflict => gettext("Sync Conflicts"),
             Self::Heading => gettext("Headings in Texts"),
             Self::ShortLink => gettext("Links Without Project"),
@@ -122,6 +127,9 @@ impl Kind {
             }
             Self::UnknownProject => gettext(
                 "These blocks belong to a project the vault doesn’t have, perhaps because its folder was removed or renamed. Add the project again, or choose another one for the block.",
+            ),
+            Self::UnknownProjectCategory => gettext(
+                "These projects have a category BitLog doesn’t know, perhaps because of a typo or a newer version of BitLog. Their time counts as work until you choose a category under Edit Project.",
             ),
             Self::Conflict => gettext(
                 "These files were changed on two devices at once, and the versions contradict each other. Open one to choose what to keep. Conflicts without contradictions are merged automatically. The sidebar shows them, too.",
@@ -190,6 +198,7 @@ pub enum Place {
     Day(NaiveDate),
     Block(NaiveDate, BlockId),
     Note(NotePath),
+    Project(ProjectSlug),
     Contact(ContactSlug),
     /// A sync conflict copy, relative to the vault, resolved in its dialog.
     Conflict(PathBuf),
@@ -324,6 +333,12 @@ impl Days<'_> {
                     fix: None,
                 }
             }
+            Problem::UnknownProjectCategory { project, category } => Entry {
+                title: escape(vault.project_name(&project)).into(),
+                subtitle: gettext("Category: {category}").replace("{category}", &escape(&category)),
+                place: Place::Project(project),
+                fix: None,
+            },
             Problem::Conflict {
                 copy,
                 contradictions,

@@ -9,9 +9,7 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{
-    Asset, AssetPath, NotePath, Period, Project, ProjectSlug, Vault, capitalize, format_span,
-};
+use bitlog_core::{Asset, AssetPath, NotePath, Period, Project, ProjectSlug, Vault, format_span};
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
@@ -21,7 +19,7 @@ use gtk::{gdk, glib};
 use crate::colors;
 use crate::format::{
     format_duration, format_full_date, format_range, format_share, format_weekday_date,
-    title_markup,
+    project_category_name, title_markup,
 };
 use crate::git_page::GitPage;
 use crate::markdown_view::MarkdownView;
@@ -320,7 +318,7 @@ impl ProjectView {
         self.set_title(&project.name);
         imp.window_title.set_title(&project.name);
         imp.window_title
-            .set_subtitle(&capitalize(&project.category));
+            .set_subtitle(&project_category_name(project.category()));
         let target = project.slug.to_string().to_variant();
         imp.new_note_button.set_action_target_value(Some(&target));
         imp.edit_button.set_action_target_value(Some(&target));
@@ -461,12 +459,16 @@ impl ProjectView {
         let (week_first, week_last) = Period::Week.range(today, first_day);
         let (month_first, month_last) = Period::Month.range(today, first_day);
         let month = sum_between(month_first, month_last);
-        let work: TimeDelta = data
-            .month_times
-            .iter()
-            .filter(|(slug, _)| !vault.is_break(slug))
-            .map(|(_, time)| *time)
-            .sum();
+        // A share of the working time only for projects that count towards it.
+        let work: TimeDelta = if project.category().counts_as_working_time() {
+            data.month_times
+                .iter()
+                .filter(|(slug, _)| vault.project_category(slug).counts_as_working_time())
+                .map(|(_, time)| *time)
+                .sum()
+        } else {
+            TimeDelta::zero()
+        };
         let days = i32::try_from(activity.len()).unwrap_or(i32::MAX);
         let none = || "–".to_owned();
 
@@ -489,8 +491,8 @@ impl ProjectView {
             // Translators: As in "3 h this week · 12 h this month".
             gettext("{week} this week · {month} this month")
         } else {
-            // Translators: As in "3 h this week · 12 h this month (35 % of all work)".
-            gettext("{week} this week · {month} this month ({share} of all work)")
+            // Translators: As in "3 h this week · 12 h this month (35 % of all working time)".
+            gettext("{week} this week · {month} this month ({share} of all working time)")
                 .replace("{share}", &format_share(month, work))
         };
         imp.recent_row.set_subtitle(

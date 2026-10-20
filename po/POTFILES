@@ -9,6 +9,7 @@ app/src/dialogs/commit_dialog.rs
 app/src/dialogs/compare_dialog.rs
 app/src/dialogs/contact_dialog/labeled.rs
 app/src/dialogs/contact_dialog/mod.rs
+app/src/dialogs/help_dialog/figures/categories.rs
 app/src/dialogs/help_dialog/figures/contacts.rs
 app/src/dialogs/help_dialog/figures/day.rs
 app/src/dialogs/help_dialog/figures/markdown.rs

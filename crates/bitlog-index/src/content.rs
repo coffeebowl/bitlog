@@ -26,7 +26,7 @@ pub(crate) fn sync_projects(tx: &Transaction, vault: &Vault) -> rusqlite::Result
             project.slug.as_str(),
             project.name,
             project.color,
-            project.category,
+            project.category().as_str(),
             project.status.as_str(),
             project.created,
         ])?;

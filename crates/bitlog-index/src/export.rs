@@ -47,7 +47,9 @@ impl Index {
                 block.duration().num_minutes().to_string(),
                 slug.to_string(),
                 vault.project_name(&slug).to_owned(),
-                project.map_or(String::new(), |project| project.category.clone()),
+                project
+                    .map_or("", |project| project.category().as_str())
+                    .to_owned(),
                 block.category.as_str().to_owned(),
                 block.title,
                 block.text,

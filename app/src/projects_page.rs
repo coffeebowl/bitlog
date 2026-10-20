@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault, capitalize};
+use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use glib::subclass::Signal;
@@ -15,7 +15,10 @@ use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::dialogs::note_dialogs::ask_note_name;
 use crate::dialogs::project_dialog::ProjectDialog;
-use crate::format::{PROJECT_STATUSES, format_duration, format_recent_date, project_status_name};
+use crate::format::{
+    PROJECT_STATUSES, format_duration, format_recent_date, project_category_name,
+    project_status_name,
+};
 use crate::note_actions::{self, NoteHost};
 use crate::note_view::NoteView;
 use crate::project_view::ProjectView;
@@ -621,7 +624,7 @@ fn project_row(
     last_day: Option<NaiveDate>,
     today: NaiveDate,
 ) -> adw::ActionRow {
-    let mut subtitle = vec![capitalize(&project.category)];
+    let mut subtitle = vec![project_category_name(project.category())];
     match last_day {
         Some(date) if date == today => subtitle.push(gettext("last worked today")),
         Some(date) if today.pred_opt() == Some(date) => {
@@ -632,7 +635,6 @@ fn project_row(
         ),
         None => {}
     }
-    subtitle.retain(|part| !part.is_empty());
     let row = adw::ActionRow::builder()
         .title(&project.name)
         .subtitle(subtitle.join(" · "))

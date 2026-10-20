@@ -82,15 +82,20 @@ fn days() -> Topic {
             Block::Text(gettext(
                 "Your day is made of blocks. Each block records which project you worked on and when, for example from 9:00 to 10:30. You don’t need to log as you go: filling in the day afterwards works fine, and quarter hours are precise enough. You can change the grid in the preferences.",
             )),
-            Block::Heading(gettext("Categories and Breaks")),
+            Block::Heading(gettext("What Counts")),
+            Block::Figure(Kind::Categories),
             Block::Text(gettext(
-                "Each block also says what kind of work it was. <b>Work</b> is the actual work on a project. <b>Overhead</b> is everything around it: meetings, coordination, planning. <b>Filler</b> is loose time such as e-mails, chats or research. All three count as working time. In the timeline, a small symbol at the right shows the category, and the stripe of overhead and filler is lighter. The reports show how much of each project went into them.",
+                "The category of a project answers two questions about its time: does it count as working time, and is it work? <b>Work</b> is both, such as your company or a customer project. <b>Private</b> is work that doesn’t count, such as a side project. <b>Duty</b> counts without being work, such as a business trip. <b>Break</b> is time off and doesn’t count, just like time without a block. What counts is up to you; set it when you edit a project.",
             )),
             Block::Text(gettext(
-                "A <b>break</b> is time off and doesn’t count, just like time without a block. Unlike a gap, though, a break is a block of the project Break, so it can have a title and notes: “Lunch”, “Shopping”, “Talk with John”.",
+                "A new vault comes with one project of each category; rename them to fit. Time that belongs to no customer project, such as company meetings or internal tasks, goes into the company project. Unlike a gap, a break is a block, so it can have a title and notes: “Lunch”, “Shopping”, “Talk with John”.",
+            )),
+            Block::Heading(gettext("Kinds of Work")),
+            Block::Text(gettext(
+                "Blocks of work and private projects also say what kind of work they were. <b>Work</b> is the actual work on a project. <b>Overhead</b> is everything around it: meetings, coordination, planning. <b>Filler</b> is loose time such as e-mails, chats or research. In the timeline, a small symbol at the right shows the kind, and the stripe of overhead and filler is lighter. The reports show how much of each project went into them.",
             )),
             Block::Text(gettext(
-                "Time that belongs to no customer project, such as company meetings or internal tasks, is best logged in a project of its own. Simply name it after your employer.",
+                "The standup and the week report leave out private projects, so you can share them as they are.",
             )),
             Block::Heading(gettext("Logging Blocks")),
             Block::Text(gettext(

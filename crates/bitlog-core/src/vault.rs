@@ -13,7 +13,8 @@ use crate::notes::relink_day;
 use crate::project::project_folder;
 use crate::watch::{OwnWrites, VaultChange, VaultWatcher, WatchError, watch};
 use crate::{
-    Contact, Day, DayWarning, EditError, NotePath, Project, ProjectSlug, TaskList, VaultConfig,
+    Contact, Day, DayWarning, EditError, NotePath, Project, ProjectCategory, ProjectSlug, TaskList,
+    VaultConfig,
 };
 
 /// The folder exports go to, relative to the vault.
@@ -182,10 +183,10 @@ impl Vault {
             .map_or(slug.as_str(), |project| &project.name)
     }
 
-    /// Whether blocks of the project `slug` are breaks. Blocks of projects
-    /// the vault lacks are work.
-    pub fn is_break(&self, slug: &ProjectSlug) -> bool {
-        Project::is_break_in(&self.projects, slug)
+    /// The category of the project `slug`. Blocks of projects the vault
+    /// lacks are work.
+    pub fn project_category(&self, slug: &ProjectSlug) -> ProjectCategory {
+        Project::category_in(&self.projects, slug)
     }
 
     /// Where the file of the day `date` lives.
@@ -790,7 +791,7 @@ mod tests {
         let path = Project::path(vault.root(), &slug);
         let external = fs::read_to_string(&path)
             .unwrap()
-            .replace("category = \"work\"", "category = \"ops\"");
+            .replace("category = \"work\"", "category = \"private\"");
         fs::write(&path, &external).unwrap();
 
         let project = vault
@@ -800,7 +801,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(project.name, "Infra");
-        assert_eq!(project.category, "ops");
+        assert_eq!(project.category(), ProjectCategory::Private);
         let written = fs::read_to_string(&path).unwrap();
         assert_eq!(written, external.replace("\"Infrastructure\"", "\"Infra\""));
         assert_eq!(vault.project(&slug).unwrap().name, "Infra");

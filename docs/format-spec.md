@@ -287,11 +287,11 @@ outline of the document belongs to BitLog:
 - **Block categories** say what kind of work a block is: `work` is the actual
   work on its project, `overhead` everything around it, such as meetings,
   coordination and planning, `filler` loose time such as e-mails, chats or
-  research. All three count as working time. Blocks of breaks keep their
-  category, but it means nothing there.
-- **Breaks are blocks** of a project with the category `break`. Working time is
-  the sum of all blocks except breaks; time without a block does not count.
-  Blocks of projects that do not exist count as work.
+  research. Only blocks of `work` and `private` projects have one; others
+  keep theirs, but it means nothing there.
+- **Working time** is the sum of the blocks of `work` and `duty` projects, see
+  the project categories below; time without a block does not count. Blocks of
+  projects that do not exist count as work.
 
 ### Rationale
 
@@ -316,7 +316,7 @@ format = 1
 name = "Project A"
 color = "#3584e4"
 status = "active"                # active | paused | archived
-category = "work"                # free text; `break` is the only special category
+category = "work"                # work | private | duty | break
 created = 2026-03-01
 ```
 
@@ -331,12 +331,27 @@ Only `format` is required. Missing fields take these defaults:
 | `name` | the slug | |
 | `color` | `"#3584e4"` | `#` and six hex digits |
 | `status` | `"active"` | `active`, `paused` or `archived` |
-| `category` | `"work"` | free text; blocks of `break` projects are breaks |
+| `category` | `"work"` | `work`, `private`, `duty` or `break` |
 | `created` | none | TOML local date |
 
 BitLog writes all fields except a missing `created`. Comments, formatting,
 unchanged values and unknown fields are kept as they are. The order of
 projects is set in `bitlog.toml`.
+
+The **category** answers two questions about the time of a project: does it
+count as working time, and is it work?
+
+| | Counts as working time | Does not count |
+| --- | --- | --- |
+| **Is work** | `work`, such as a customer project | `private`, such as a side project |
+| **Is no work** | `duty`, such as a business trip | `break`, time off |
+
+Only work is divided further by the categories of its blocks. What counts is
+the user's choice per project; BitLog has no rules of its own about it. An
+unknown category counts as `work` and stays in the file until another one is
+set; `bitlog doctor` reports it. The
+standup and the week report leave out `private` projects, the block exports
+keep them.
 
 The path to a project's local Git repository differs on every machine, so it
 is stored per device in `.bitlog/device.toml`:
@@ -357,10 +372,18 @@ renames its folder, sets the new slug in all its blocks, in `projects.order`,
 in the roles of contacts and in `.bitlog/device.toml`, and changes the targets of wiki links to its
 notes in all notes, day notes and block texts.
 
-**Default project of a new vault:** `pause`, named "Break", with the category
-`break`. Time that belongs to no other project, such as company meetings, goes
-into a project of its own; meetings or e-mails of a project go into its blocks,
-with the block categories `overhead` and `filler`.
+**Default projects of a new vault**, one of each category, in this order:
+
+| Slug | Name | Category |
+| --- | --- | --- |
+| `company` | Your Company | `work` |
+| `side-project` | Your Side Project | `private` |
+| `business-trips` | Business Trips | `duty` |
+| `pause` | Break | `break` |
+
+`company` takes time that belongs to no customer project, such as company
+meetings; meetings or e-mails of a project go into its blocks, with the block
+categories `overhead` and `filler`.
 
 ## Tasks: `tasks.toml`
 
@@ -590,8 +613,9 @@ The CSV files follow RFC 4180 (UTF-8, comma, CRLF, a header line). The
 blocks have the columns `date`, `start`, `end`, `minutes`, `project`,
 `project_name`, `project_category`, `category` (of the block), `title` and
 `text`; an `end` before `start` is on the next day, as in the day files. The
-week report lists the time per project without breaks, then each day with its
-details, day note and blocks with their texts.
+week report lists the time per project that counts as working time, then each
+day with its details, day note and blocks with their texts, without those of
+`private` projects.
 
 ## Writing rules
 

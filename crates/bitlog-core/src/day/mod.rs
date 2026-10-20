@@ -90,7 +90,7 @@ impl FromStr for BlockCategory {
         Self::ALL
             .into_iter()
             .find(|category| category.as_str() == text)
-            .ok_or_else(|| EditError::InvalidCategory(text.to_owned()))
+            .ok_or_else(|| EditError::InvalidBlockCategory(text.to_owned()))
     }
 }
 
@@ -154,10 +154,10 @@ impl Block {
         )
     }
 
-    /// Whether the block belongs to a `break` project. Blocks of projects
-    /// missing from `projects` are work.
-    pub(crate) fn is_break(&self, projects: &[Project]) -> bool {
-        Project::is_break_in(projects, &self.project)
+    /// Whether the time of the block counts as working time, by the category
+    /// of its project in `projects`.
+    fn counts_as_working_time(&self, projects: &[Project]) -> bool {
+        Project::category_in(projects, &self.project).counts_as_working_time()
     }
 }
 
@@ -321,20 +321,24 @@ impl Day {
         Ok((day, warnings))
     }
 
-    /// The time worked on this day. Blocks of `break` projects are breaks;
-    /// blocks of projects missing from `projects` count as work.
+    /// The working time of this day, the blocks of `work` and `duty`
+    /// projects. Blocks of projects missing from `projects` count as work.
     pub fn working_time(&self, projects: &[Project]) -> TimeDelta {
         self.blocks
             .iter()
-            .filter(|block| !block.is_break(projects))
+            .filter(|block| block.counts_as_working_time(projects))
             .map(Block::duration)
             .sum()
     }
 
-    /// The time of the blocks of each project, breaks left out.
+    /// The time of the blocks of each project that counts as working time.
     pub fn time_per_project(&self, projects: &[Project]) -> BTreeMap<ProjectSlug, TimeDelta> {
         let mut times = BTreeMap::new();
-        for block in self.blocks.iter().filter(|block| !block.is_break(projects)) {
+        for block in self
+            .blocks
+            .iter()
+            .filter(|block| block.counts_as_working_time(projects))
+        {
             *times.entry(block.project.clone()).or_default() += block.duration();
         }
         times
@@ -571,6 +575,25 @@ mod tests {
     }
 
     #[test]
+    fn working_time_by_project_category() {
+        let projects = Project::defaults(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
+        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+                    - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"company\" }\n  \
+                    - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"side-project\" }\n  \
+                    - { id: \"cccc\", start: \"11:00\", end: \"12:00\", project: \"business-trips\" }\n  \
+                    - { id: \"dddd\", start: \"12:00\", end: \"13:00\", project: \"pause\" }\n\
+                    ---\n";
+        let day = Day::parse(text).unwrap().0;
+        assert_eq!(day.working_time(&projects), TimeDelta::hours(2));
+        let counted: Vec<String> = day
+            .time_per_project(&projects)
+            .into_keys()
+            .map(|slug| slug.to_string())
+            .collect();
+        assert_eq!(counted, ["business-trips", "company"]);
+    }
+
+    #[test]
     fn block_without_heading() {
         let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"a\" }\n\
@@ -695,7 +718,7 @@ mod tests {
         assert_eq!("overhead".parse(), Ok(BlockCategory::Overhead));
         assert_eq!(
             "meeting".parse::<BlockCategory>(),
-            Err(EditError::InvalidCategory("meeting".to_owned()))
+            Err(EditError::InvalidBlockCategory("meeting".to_owned()))
         );
         for category in BlockCategory::ALL {
             assert_eq!(category.as_str().parse(), Ok(category));

@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{BlockCategory, Period, ProjectSlug, Vault};
+use bitlog_core::{BlockCategory, Period, ProjectCategory, ProjectSlug, Vault};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
@@ -14,7 +14,7 @@ use crate::alert::{show_error, toast_overlay};
 use crate::colors::{dot_markup, lightness, mix, parse, project_color, project_hex, sea_green};
 use crate::format::{
     block_category_name, format_duration, format_month, format_range, format_share,
-    format_short_date,
+    format_short_date, project_category_name,
 };
 use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
@@ -279,12 +279,20 @@ impl ReportsPage {
         for (group, row) in imp.rows.take() {
             group.remove(&row);
         }
-        let (breaks, work): (Vec<_>, Vec<_>) = data
+        let category = |slug: &ProjectSlug| vault.project_category(slug);
+        let time_of = |of: ProjectCategory| -> TimeDelta {
+            data.times
+                .iter()
+                .filter(|(slug, _)| category(slug) == of)
+                .map(|(_, time)| *time)
+                .sum()
+        };
+        let work: Vec<_> = data
             .times
             .iter()
-            .partition(|(slug, _)| vault.is_break(slug));
+            .filter(|(slug, _)| category(slug).counts_as_working_time())
+            .collect();
         let total: TimeDelta = work.iter().map(|(_, time)| *time).sum();
-        let breaks: TimeDelta = breaks.iter().map(|(_, time)| *time).sum();
         let mut rows = Vec::new();
 
         let most = work.first().map_or(TimeDelta::zero(), |(_, time)| *time);
@@ -296,7 +304,7 @@ impl ReportsPage {
                 total,
             );
             let shares = category_shares(&data.categories, slug, *time);
-            if !shares.is_empty() {
+            if category(slug).is_work() && !shares.is_empty() {
                 row.set_subtitle(&shares);
             }
             let bar = ShareBar::new(vec![(project_color(vault, slug), share(*time, most))], 10);
@@ -312,11 +320,18 @@ impl ReportsPage {
             row.add_css_class("dim-label");
             rows.push((imp.projects_group.get(), row));
         }
-        if !breaks.is_zero() {
-            let row = adw::ActionRow::builder().title(gettext("Breaks")).build();
-            row.add_suffix(&duration_label(breaks));
-            row.add_css_class("dim-label");
-            rows.push((imp.projects_group.get(), row));
+        // Time that does not count, as a sum.
+        for (name, of) in [
+            (gettext("Private"), ProjectCategory::Private),
+            (gettext("Breaks"), ProjectCategory::Break),
+        ] {
+            let time = time_of(of);
+            if !time.is_zero() {
+                let row = adw::ActionRow::builder().title(name).build();
+                row.add_suffix(&duration_label(time));
+                row.add_css_class("dim-label");
+                rows.push((imp.projects_group.get(), row));
+            }
         }
         imp.total_label.set_label(&if total.is_zero() {
             String::new()
@@ -324,19 +339,29 @@ impl ReportsPage {
             format_duration(total)
         });
 
-        let mut parts = Vec::new();
-        for category in BlockCategory::ALL {
-            let time: TimeDelta = data
-                .categories
+        // The working time by block category, as only work has them, and
+        // the time of duty projects beside it.
+        let block_time = |of: BlockCategory| -> TimeDelta {
+            data.categories
                 .iter()
-                .filter(|(slug, of, _)| *of == category && !vault.is_break(slug))
+                .filter(|(slug, block, _)| *block == of && category(slug) == ProjectCategory::Work)
                 .map(|(.., time)| *time)
-                .sum();
+                .sum()
+        };
+        let kinds = BlockCategory::ALL
+            .into_iter()
+            .map(|of| (category_color(of), block_category_name(of), block_time(of)))
+            .chain([(
+                DUTY_COLOR,
+                project_category_name(ProjectCategory::Duty),
+                time_of(ProjectCategory::Duty),
+            )]);
+        let mut parts = Vec::new();
+        for (color, name, time) in kinds {
             if time.is_zero() {
                 continue;
             }
-            let color = category_color(category);
-            let row = time_row(color, &block_category_name(category), time, total);
+            let row = time_row(color, &name, time, total);
             rows.push((imp.categories_group.get(), row));
             parts.push((parse(color), share(time, total)));
         }
@@ -346,14 +371,22 @@ impl ReportsPage {
             group.add(row);
         }
         imp.rows.replace(rows);
+        self.show_activity(vault, &data.days, period);
+    }
 
-        // Each day in the colors of its projects, mixed by the time spent on
-        // them, all as light as the projects are on average, so that only
-        // the time makes a day stand out.
+    /// Each day of `period` in the colors of its projects, mixed by the time
+    /// spent on them, all as light as the projects are on average, so that
+    /// only the time makes a day stand out.
+    fn show_activity(
+        &self,
+        vault: &Vault,
+        times: &[(NaiveDate, ProjectSlug, TimeDelta)],
+        period: (NaiveDate, NaiveDate),
+    ) {
         let lightness = average_lightness(vault);
         let mut days = BTreeMap::<NaiveDate, Vec<(gdk::RGBA, TimeDelta)>>::new();
-        for (date, slug, time) in &data.days {
-            if !vault.is_break(slug) {
+        for (date, slug, time) in times {
+            if vault.project_category(slug).counts_as_working_time() {
                 days.entry(*date)
                     .or_default()
                     .push((project_color(vault, slug), *time));
@@ -367,18 +400,19 @@ impl ReportsPage {
                 .collect();
             (date, time, mix(&parts, lightness))
         });
-        imp.heatmap
+        self.imp()
+            .heatmap
             .show(days, period, vault.config().week.first_day);
     }
 }
 
-/// How light the colors of the projects of `vault` are on average, breaks
-/// left out.
+/// How light the colors of the projects of `vault` that count as working
+/// time are on average.
 fn average_lightness(vault: &Vault) -> f32 {
     let lightnesses: Vec<f32> = vault
         .projects()
         .iter()
-        .filter(|project| !project.is_break())
+        .filter(|project| project.category().counts_as_working_time())
         .map(|project| lightness(&project_color(vault, &project.slug)))
         .collect();
     if lightnesses.is_empty() {
@@ -387,6 +421,10 @@ fn average_lightness(vault: &Vault) -> f32 {
         lightnesses.iter().sum::<f32>() / lightnesses.len() as f32
     }
 }
+
+/// The fixed color of duty in "Time per Category", beside those of the block
+/// categories.
+const DUTY_COLOR: &str = "#2190a4";
 
 /// The fixed color of `category`, one of the accent colors of GNOME.
 fn category_color(category: BlockCategory) -> &'static str {

@@ -9,12 +9,13 @@ use chrono::{Days, NaiveDate, TimeDelta};
 
 use crate::error::ReadError;
 use crate::format::{capitalize, format_short_duration};
-use crate::{Day, Vault};
+use crate::{Day, ProjectCategory, Vault};
 
 impl Vault {
     /// A report of the week starting on `first` in Markdown: the time per
-    /// project, breaks left out, then each day with its details, day note and
-    /// blocks with their texts. Times are written as hours and minutes, `7:45`.
+    /// project that counts as working time, then each day with its details,
+    /// day note and blocks with their texts. Blocks of private projects are
+    /// left out. Times are written as hours and minutes, `7:45`.
     pub fn week_report(&self, first: NaiveDate) -> Result<String, ReadError> {
         let last = first + Days::new(6);
         let mut days = Vec::new();
@@ -53,10 +54,15 @@ impl Vault {
             if !day.note.is_empty() {
                 let _ = write!(report, "\n{}\n", day.note);
             }
-            if !day.blocks.is_empty() {
+            let blocks: Vec<_> = day
+                .blocks
+                .iter()
+                .filter(|block| self.project_category(&block.project) != ProjectCategory::Private)
+                .collect();
+            if !blocks.is_empty() {
                 report.push('\n');
             }
-            for block in &day.blocks {
+            for block in blocks {
                 let mut line = format!("- **{}** {}", block.times(), name(&block.project));
                 if !block.title.is_empty() {
                     let _ = write!(line, ": {}", block.title);
@@ -136,5 +142,19 @@ mod tests {
         assert!(empty.ends_with("Nothing logged.\n"), "{empty}");
         assert!(!report.contains("\n\n\n"), "{report}");
         assert!(report.ends_with('\n') && !report.ends_with("\n\n"));
+    }
+
+    #[test]
+    fn private_projects_are_left_out() {
+        let (_dir, mut vault) = sample_copy();
+        vault
+            .update_project(&"filler".parse().unwrap(), |project| {
+                project.set_category(ProjectCategory::Private);
+                Ok(())
+            })
+            .unwrap();
+        let report = vault.week_report(date(21)).unwrap();
+        assert!(!report.contains("Filler"), "{report}");
+        assert!(report.contains("- **12:30–13:15** Break"), "{report}");
     }
 }

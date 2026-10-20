@@ -2,7 +2,7 @@
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{ProjectStatus, Vault};
+use bitlog_core::{ProjectCategory, ProjectStatus, Vault};
 use gettextrs::gettext;
 use gtk::{gdk, glib, graphene};
 
@@ -63,7 +63,10 @@ impl Window {
         let projects = vault
             .projects()
             .iter()
-            .filter(|project| project.status == ProjectStatus::Active && !project.is_break())
+            .filter(|project| {
+                project.status == ProjectStatus::Active
+                    && project.category() != ProjectCategory::Break
+            })
             .map(|project| {
                 let item = adw::SidebarItem::builder()
                     .title(project.name.as_str())

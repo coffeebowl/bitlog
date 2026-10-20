@@ -28,6 +28,11 @@ pub enum Problem {
         block: BlockId,
         project: ProjectSlug,
     },
+    /// A project category this version does not know, which counts as work.
+    UnknownProjectCategory {
+        project: ProjectSlug,
+        category: String,
+    },
     Overlap {
         date: NaiveDate,
         first: BlockId,
@@ -128,6 +133,10 @@ impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unreadable(err) => err.fmt(f),
+            Self::UnknownProjectCategory { project, category } => write!(
+                f,
+                "projects/{project}/project.toml: the unknown category {category:?} counts as work"
+            ),
             Self::UnknownProject {
                 date,
                 block,
@@ -235,8 +244,9 @@ impl fmt::Display for Problem {
 }
 
 impl Vault {
-    /// Checks for sync conflict copies, then all day files, oldest first,
-    /// then the notes of all projects, then the images, then the contacts.
+    /// Checks for sync conflict copies, then the projects, then all day
+    /// files, oldest first, then the notes of all projects, then the images,
+    /// then the contacts.
     pub fn check(&self) -> Result<Vec<Problem>, ReadError> {
         let mut problems = Vec::new();
         // The images the texts show, and whether all texts could be read.
@@ -251,6 +261,12 @@ impl Vault {
                 Err(err) => problems.push(Problem::Unreadable(err)),
             }
         }
+        problems.extend(self.projects().iter().filter_map(|project| {
+            Some(Problem::UnknownProjectCategory {
+                project: project.slug.clone(),
+                category: project.unknown_category()?.to_owned(),
+            })
+        }));
         for date in self.all_days()? {
             match self.load_day(date) {
                 Ok(Some(file)) => problems.extend(self.check_day(&file, &mut shown)),
@@ -531,6 +547,21 @@ mod tests {
                 "2026-09-22: the text of block t5u6 has a heading: ## Root cause",
                 "2026-09-23: the text of block cc33 has a heading: ## Old notes {#zz99}",
             ]
+        );
+    }
+
+    #[test]
+    fn unknown_project_categories() {
+        let (_dir, vault) = sample_copy();
+        let path = crate::Project::path(vault.root(), &"infra".parse().unwrap());
+        let text = fs::read_to_string(&path)
+            .unwrap()
+            .replace("category = \"work\"", "category = \"overhead\"");
+        fs::write(&path, text).unwrap();
+        let vault = Vault::open(vault.root()).unwrap();
+        assert_eq!(
+            messages(&vault)[1],
+            "projects/infra/project.toml: the unknown category \"overhead\" counts as work"
         );
     }
 

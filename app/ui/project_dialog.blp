@@ -65,14 +65,13 @@ template $BitLogProjectDialog: Adw.Dialog {
           }
         }
 
-        Adw.EntryRow category_row {
-          title: _("Category");
-          activates-default: true;
-        }
-
         Adw.ComboRow status_row {
           title: _("Status");
         }
+      }
+
+      Adw.PreferencesGroup category_group {
+        title: _("Category");
       }
 
       Adw.PreferencesGroup {
