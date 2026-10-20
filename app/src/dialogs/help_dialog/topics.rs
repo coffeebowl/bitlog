@@ -131,7 +131,7 @@ fn projects() -> Topic {
             )),
             Block::Heading(gettext("Git")),
             Block::Text(gettext(
-                "If a project has a Git repository on this computer, add its folder under <b>Edit Project</b>. The project then shows its commits, and the standup includes yours. The folder is stored per computer, since it’s usually different on each one.",
+                "If a project has Git repositories on this computer, add their folders under <b>Edit Project</b>, as many as it has. The project then shows their commits, and the standup includes yours. The folders are stored per computer, since they’re usually different on each one.",
             )),
         ],
     }

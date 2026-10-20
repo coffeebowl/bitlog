@@ -167,21 +167,23 @@ fn stats(vault: &Vault, (first, last): (NaiveDate, NaiveDate)) -> Result<()> {
 }
 
 fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Result<()> {
-    let changes = |values: ProjectArgs, status, no_repo: bool| -> Result<ProjectChanges> {
-        let repo = match values.repo {
-            Some(repo) => {
-                Some(Some(path::absolute(&repo).with_context(|| {
-                    format!("cannot find the folder {}", repo.display())
-                })?))
-            }
-            None => no_repo.then_some(None),
-        };
+    let absolute = |folders: Vec<PathBuf>| -> Result<Vec<PathBuf>> {
+        folders
+            .iter()
+            .map(|folder| {
+                path::absolute(folder)
+                    .with_context(|| format!("cannot find the folder {}", folder.display()))
+            })
+            .collect()
+    };
+    let changes = |values: ProjectArgs, status, no_repo| -> Result<ProjectChanges> {
         Ok(ProjectChanges {
             name: values.name,
             color: values.color,
             category: values.category,
             status,
-            repo,
+            repos: absolute(values.repo)?,
+            no_repos: absolute(no_repo)?,
         })
     };
     match command {
@@ -194,7 +196,7 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
             Ok(())
         }
         ProjectCommand::Add { slug, values } => {
-            let changes = changes(values, None, false)?;
+            let changes = changes(values, None, Vec::new())?;
             project::add_project(&mut vault, slug, changes, today)
         }
         ProjectCommand::Edit {

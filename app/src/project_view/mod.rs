@@ -293,16 +293,16 @@ impl ProjectView {
     /// spent on it, its blocks and its commits in the background.
     pub fn show(&self, vault: &Rc<Vault>, project: &Project) {
         let imp = self.imp();
-        let repo = vault
+        let repos = vault
             .repo_paths()
-            .map(|mut repos| repos.remove(&project.slug))
+            .map(|mut repos| repos.remove(&project.slug).unwrap_or_default())
             .unwrap_or_else(|err| {
                 glib::g_warning!("bitlog", "{err}");
-                None
+                Vec::new()
             });
         let git = imp.view_stack.visible_child_name().as_deref() == Some("git");
         let other = imp.slug.borrow().as_ref() != Some(&project.slug);
-        if other || (git && repo.is_none()) {
+        if other || (git && repos.is_empty()) {
             self.show_project_tab();
         }
         if other {
@@ -310,11 +310,11 @@ impl ProjectView {
         }
         // Projects without code have no repository, and then no Git page
         // to switch to.
-        imp.git_tab.set_visible(repo.is_some());
-        imp.switcher.set_visible(repo.is_some());
+        imp.git_tab.set_visible(!repos.is_empty());
+        imp.switcher.set_visible(!repos.is_empty());
         imp.slug.replace(Some(project.slug.clone()));
         imp.vault.replace(Some(vault.clone()));
-        self.look_up(vault, project, repo);
+        self.look_up(vault, project, repos);
         self.set_title(&project.name);
         imp.window_title.set_title(&project.name);
         imp.window_title
@@ -409,8 +409,8 @@ impl ProjectView {
 
 impl ProjectView {
     /// Looks up the time spent on `project` and its newest blocks, then
-    /// shows them, and the log of `repo` with the days worked on marked.
-    fn look_up(&self, vault: &Rc<Vault>, project: &Project, repo: Option<PathBuf>) {
+    /// shows them, and the log of `repos` with the days worked on marked.
+    fn look_up(&self, vault: &Rc<Vault>, project: &Project, repos: Vec<PathBuf>) {
         let imp = self.imp();
         let lookup = imp.lookups.get() + 1;
         imp.lookups.set(lookup);
@@ -439,7 +439,7 @@ impl ProjectView {
                         BTreeMap::new()
                     }
                 };
-                view.imp().git_page.show(repo, activity);
+                view.imp().git_page.show(repos, activity);
             }
         ));
     }

@@ -6,7 +6,7 @@ use chrono::{Datelike, NaiveDate};
 
 use crate::error::ReadError;
 use crate::git_log::own_commits_on;
-use crate::{Block, Day, ProjectSlug, TaskList, TaskStatus, Vault};
+use crate::{Block, Day, ProjectSlug, TaskList, TaskStatus, Vault, repo_name};
 
 impl Vault {
     /// A standup summary for the day `today` in Markdown, to paste into a
@@ -14,7 +14,7 @@ impl Vault {
     /// with the tasks done on it; "Today" holds the blocks of `today` and the
     /// open tasks due by then. Blocks are listed by project with their
     /// titles, and with the user's commits of that day in the project's
-    /// repository on this device. Breaks and private projects are left out.
+    /// repositories on this device. Breaks and private projects are left out.
     ///
     /// It reads the repositories, so programs with a user interface call
     /// it outside the main thread.
@@ -105,18 +105,28 @@ impl Vault {
         Ok(lines)
     }
 
-    /// The user's commits made on `date` in the repository of each project
-    /// that counts as working time, has one on this device and commits that
-    /// day. Repositories that cannot be read, as when moved away, are left
-    /// out.
+    /// The lines with the user's commits made on `date` in the repositories
+    /// of each project that counts as working time, one per repository with
+    /// commits that day, named if the project has several. Repositories that
+    /// cannot be read, as when moved away, are left out.
     fn commits_on(&self, date: NaiveDate) -> Result<BTreeMap<ProjectSlug, Vec<String>>, ReadError> {
         Ok(self
             .repo_paths()?
             .into_iter()
             .filter(|(slug, _)| self.counts(slug))
-            .filter_map(|(slug, repo)| {
-                let commits = own_commits_on(&repo, date).ok()?;
-                (!commits.is_empty()).then_some((slug, commits))
+            .filter_map(|(slug, repos)| {
+                let lines: Vec<String> = repos
+                    .iter()
+                    .filter_map(|repo| {
+                        let commits = own_commits_on(repo, date).ok()?;
+                        let label = match repos.len() {
+                            1 => "Commits".to_owned(),
+                            _ => format!("Commits in {}", repo_name(repo)),
+                        };
+                        (!commits.is_empty()).then(|| format!("{label}: {}", commits.join(", ")))
+                    })
+                    .collect();
+                (!lines.is_empty()).then_some((slug, lines))
             })
             .collect())
     }
@@ -139,12 +149,13 @@ impl Vault {
     }
 }
 
-/// The nested line under a project with `commits`, if any.
+/// The nested lines under a project with its `commits`, if any.
 fn commits_line(commits: Option<Vec<String>>) -> String {
-    match commits {
-        Some(commits) => format!("\n  - Commits: {}", commits.join(", ")),
-        None => String::new(),
-    }
+    commits
+        .unwrap_or_default()
+        .iter()
+        .map(|line| format!("\n  - {line}"))
+        .collect()
 }
 
 /// A bold heading with the date, if any, and a list of `lines`, or `empty`
@@ -167,8 +178,8 @@ fn section(heading: &str, date: Option<NaiveDate>, lines: &[String], empty: &str
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
     use std::path::Path;
+    use std::{fs, slice};
 
     use super::*;
     use crate::ProjectCategory;
@@ -257,7 +268,9 @@ mod tests {
             })
             .unwrap();
         let repo = repository(&[("Ada", 22, 16, "Answer mails faster", &[])], 0);
-        vault.set_repo_path(&filler, Some(&repo.0)).unwrap();
+        vault
+            .set_repo_paths(&filler, slice::from_ref(&repo.0))
+            .unwrap();
         let standup = vault.standup(date(2026, 9, 23)).unwrap();
         assert!(!standup.contains("Filler"), "{standup}");
     }
@@ -278,29 +291,38 @@ mod tests {
             4,
         );
         let filler = repository(&[("Ada", 22, 16, "Answer mails faster", &[])], 0);
+        let tools = repository(&[("Ada", 22, 17, "Add a mail filter", &[])], 0);
+        let quiet = repository(&[("Ada", 21, 17, "Older", &[])], 0);
         vault
-            .set_repo_path(&"webshop".parse().unwrap(), Some(&webshop.0))
+            .set_repo_paths(&"webshop".parse().unwrap(), slice::from_ref(&webshop.0))
             .unwrap();
         vault
-            .set_repo_path(&"filler".parse().unwrap(), Some(&filler.0))
+            .set_repo_paths(
+                &"filler".parse().unwrap(),
+                &[filler.0.clone(), quiet.0.clone(), tools.0.clone()],
+            )
             .unwrap();
         // Moved away since.
         let moved = repository(&[("Ada", 22, 9, "Lost", &[])], 0);
         vault
-            .set_repo_path(&"infra".parse().unwrap(), Some(&moved.0))
+            .set_repo_paths(&"infra".parse().unwrap(), slice::from_ref(&moved.0))
             .unwrap();
         drop(moved);
+        let name = |dir: &TempDir| repo_name(&dir.0);
         let standup = vault.standup(date(2026, 9, 23)).unwrap();
         assert!(
-            standup.contains(
+            standup.contains(&format!(
                 "- Webshop: Code review, Payment provider switch\n\
                  \x20 - Commits: Fix cart total, Add checkout tests\n\
                  - Meetings: Daily\n\
                  - Infrastructure: Monitoring alerts\n\
                  - Filler\n\
-                 \x20 - Commits: Answer mails faster\n\
-                 - Done: Take the keyboard to the office\n"
-            ),
+                 \x20 - Commits in {}: Answer mails faster\n\
+                 \x20 - Commits in {}: Add a mail filter\n\
+                 - Done: Take the keyboard to the office\n",
+                name(&filler),
+                name(&tools)
+            )),
             "{standup}"
         );
         assert!(

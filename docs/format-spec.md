@@ -353,19 +353,21 @@ the user's choice per project; BitLog has no rules of its own about it. The
 standup and the week report leave out `private` projects, the block exports
 keep them.
 
-The path to a project's local Git repository differs on every machine, so it
-is stored per device in `.bitlog/device.toml`:
+The paths to a project's local Git repositories differ on every machine, so
+they are stored per device in `.bitlog/device.toml`:
 
 ```toml
 [repos]
-project-a = "/home/me/code/project-a"
+project-a = ["/home/me/code/project-a", "/home/me/code/project-a-prototype"]
 ```
 
-Each entry maps a project slug to the absolute path of a folder with a Git
-repository. A missing file or table means no repositories. Entries of
-unknown projects are ignored and, like comments and other tables, kept when
-BitLog writes the file. BitLog only sets paths of folders that hold
-`.git`.
+Each entry maps a project slug to a list of absolute paths of folders with a
+Git repository, in the order BitLog shows them; a repository is named by its
+folder. A missing file or table, or an empty list, means no repositories.
+Entries of unknown projects are ignored and, like comments and other tables,
+kept when BitLog writes the file. BitLog only adds paths of folders that hold
+`.git`; paths added before stay when their folder has moved away since.
+`bitlog doctor` reports them.
 
 **Renaming** a project changes its slug, which must not be taken. BitLog
 renames its folder, sets the new slug in all its blocks, in `projects.order`,

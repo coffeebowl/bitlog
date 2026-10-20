@@ -10,6 +10,7 @@ use gtk::{gio, glib};
 use super::ContactDialog;
 use crate::dialogs::note_dialogs::ask_name;
 use crate::format::contact_label;
+use crate::widgets::remove_button;
 
 /// The kinds of fields that hold texts by their labels, any number each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -239,16 +240,4 @@ impl ContactDialog {
         all.append_section(None, &menu(others));
         imp.add_field_button.set_menu_model(Some(&all));
     }
-}
-
-/// A button at the end of a row that runs `remove`.
-pub(super) fn remove_button(remove: impl Fn() + 'static) -> gtk::Button {
-    let button = gtk::Button::builder()
-        .icon_name("list-remove-symbolic")
-        .tooltip_text(gettext("Remove"))
-        .valign(gtk::Align::Center)
-        .css_classes(["flat"])
-        .build();
-    button.connect_clicked(move |_| remove());
-    button
 }

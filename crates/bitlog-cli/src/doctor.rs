@@ -75,6 +75,15 @@ pub fn doctor(vault: &Vault, fix: bool) -> Result<()> {
              belong to their block."
         );
     }
+    if problems
+        .iter()
+        .any(|p| matches!(p, Problem::MissingRepo { .. }))
+    {
+        println!(
+            "\nSet moved repositories again with \
+             `bitlog project edit PROJECT --no-repo OLD --repo NEW`."
+        );
+    }
     process::exit(1);
 }
 

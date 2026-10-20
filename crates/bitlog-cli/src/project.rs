@@ -6,15 +6,15 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use bitlog_core::{
     Commit, EditError, Project, ProjectCategory, ProjectSlug, ProjectStatus, Vault,
-    check_repo_path, git_log,
+    check_repo_path, git_log, repo_name,
 };
 use chrono::NaiveDate;
 
 use crate::table::{plural, table};
 
 /// A table of all projects in their order: slug, name, category, status,
-/// color and the path of their repository on this device.
-pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) -> String {
+/// color and the paths of their repositories on this device.
+pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, Vec<PathBuf>>) -> String {
     let rows: Vec<[String; 6]> = vault
         .projects()
         .iter()
@@ -27,7 +27,13 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
                 project.color.clone(),
                 repos
                     .get(&project.slug)
-                    .map(|repo| repo.display().to_string())
+                    .map(|repos| {
+                        let paths: Vec<String> = repos
+                            .iter()
+                            .map(|repo| repo.display().to_string())
+                            .collect();
+                        paths.join(", ")
+                    })
                     .unwrap_or_default(),
             ]
         })
@@ -35,18 +41,31 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
     table(&rows, &[])
 }
 
-/// The latest `limit` commits of the repository of the project `slug`.
+/// The latest `limit` commits of each repository of the project `slug`,
+/// below the name of the repository if there are several. A repository
+/// that cannot be read, as when moved away, shows why instead.
 pub fn log(vault: &Vault, slug: &ProjectSlug, limit: usize) -> Result<String> {
     if vault.project(slug).is_none() {
         return Err(EditError::UnknownProject(slug.clone()).into());
     }
-    let repo = vault.repo_paths()?.remove(slug).with_context(|| {
+    let repos = vault.repo_paths()?.remove(slug).with_context(|| {
         format!(
             "the project {slug} has no repository on this device, \
              set one with `bitlog project edit {slug} --repo FOLDER`"
         )
     })?;
-    Ok(format_log(&git_log(&repo, None, 0, limit)?))
+    if let [repo] = repos.as_slice() {
+        return Ok(format_log(&git_log(repo, None, 0, limit)?));
+    }
+    let mut logs = Vec::new();
+    for repo in &repos {
+        let log = match git_log(repo, None, 0, limit) {
+            Ok(commits) => format_log(&commits),
+            Err(err) => format!("error: {err}\n"),
+        };
+        logs.push(format!("{}\n{log}", repo_name(repo)));
+    }
+    Ok(logs.join("\n"))
 }
 
 /// One line per commit: short hash, time, author, tags as `git log
@@ -85,8 +104,10 @@ pub struct ProjectChanges {
     pub color: Option<String>,
     pub category: Option<ProjectCategory>,
     pub status: Option<ProjectStatus>,
-    /// `Some(None)` removes the repository.
-    pub repo: Option<Option<PathBuf>>,
+    /// Repository folders to add.
+    pub repos: Vec<PathBuf>,
+    /// Repository folders to remove.
+    pub no_repos: Vec<PathBuf>,
 }
 
 pub fn add_project(
@@ -96,22 +117,22 @@ pub fn add_project(
     today: NaiveDate,
 ) -> Result<()> {
     let name = changes.name.clone().unwrap_or_else(|| slug.to_string());
-    let repo = checked_repo(&changes)?;
+    let repos = changed_repos(vault, &slug, &changes)?;
     let mut project = Project::new(slug, &name, today);
     apply(&mut project, changes)?;
     let slug = vault.add_project(project)?.slug.clone();
-    if let Some(repo) = repo {
-        vault.set_repo_path(&slug, repo.as_deref())?;
+    if let Some(repos) = repos {
+        vault.set_repo_paths(&slug, &repos)?;
     }
     println!("Added project {slug}");
     Ok(())
 }
 
 pub fn edit_project(vault: &mut Vault, slug: &ProjectSlug, changes: ProjectChanges) -> Result<()> {
-    let repo = checked_repo(&changes)?;
+    let repos = changed_repos(vault, slug, &changes)?;
     vault.update_project(slug, |project| apply(project, changes))?;
-    if let Some(repo) = repo {
-        vault.set_repo_path(slug, repo.as_deref())?;
+    if let Some(repos) = repos {
+        vault.set_repo_paths(slug, &repos)?;
     }
     Ok(())
 }
@@ -126,13 +147,26 @@ pub fn rename_project(vault: &mut Vault, slug: &ProjectSlug, new_slug: &ProjectS
     Ok(())
 }
 
-/// The repository change of `changes`, checked before anything is saved,
-/// so that an invalid path changes nothing.
-fn checked_repo(changes: &ProjectChanges) -> Result<Option<Option<PathBuf>>, EditError> {
-    if let Some(Some(repo)) = &changes.repo {
-        check_repo_path(repo)?;
+/// The repositories of the project `slug` with the changes of `changes`, if
+/// any, checked before anything is saved, so that an invalid path changes
+/// nothing. Removing a repository the project lacks is fine.
+fn changed_repos(
+    vault: &Vault,
+    slug: &ProjectSlug,
+    changes: &ProjectChanges,
+) -> Result<Option<Vec<PathBuf>>> {
+    if changes.repos.is_empty() && changes.no_repos.is_empty() {
+        return Ok(None);
     }
-    Ok(changes.repo.clone())
+    let mut repos = vault.repo_paths()?.remove(slug).unwrap_or_default();
+    for repo in &changes.repos {
+        check_repo_path(repo)?;
+        if !repos.contains(repo) {
+            repos.push(repo.clone());
+        }
+    }
+    repos.retain(|repo| !changes.no_repos.contains(repo));
+    Ok(Some(repos))
 }
 
 fn apply(project: &mut Project, changes: ProjectChanges) -> Result<(), EditError> {
@@ -190,10 +224,13 @@ mod tests {
         assert_eq!(
             format_projects(
                 &vault,
-                &BTreeMap::from([("infra".parse().unwrap(), "/code/infra".into())])
+                &BTreeMap::from([(
+                    "infra".parse().unwrap(),
+                    vec!["/code/infra".into(), "/code/proto".into()]
+                )])
             ),
             "webshop   Webshop         work   active  #3584e4\n\
-             infra     Infrastructure  work   active  #2ec27e  /code/infra\n\
+             infra     Infrastructure  work   active  #2ec27e  /code/infra, /code/proto\n\
              meetings  Meetings        work   active  #f6d32d\n\
              filler    Filler          work   active  #c061cb\n\
              pause     Break           break  active  #9a9996\n"

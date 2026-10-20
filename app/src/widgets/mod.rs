@@ -183,6 +183,18 @@ impl SaveTimer {
     }
 }
 
+/// A button at the end of a row that runs `remove`.
+pub fn remove_button(remove: impl Fn() + 'static) -> gtk::Button {
+    let button = gtk::Button::builder()
+        .icon_name("list-remove-symbolic")
+        .tooltip_text(gettext("Remove"))
+        .valign(gtk::Align::Center)
+        .css_classes(["flat"])
+        .build();
+    button.connect_clicked(move |_| remove());
+    button
+}
+
 /// A handle that shows a row can be dragged, for `make_movable`.
 pub fn drag_handle() -> gtk::Image {
     let handle = gtk::Image::builder()

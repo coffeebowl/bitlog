@@ -1,11 +1,11 @@
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    EditError, Project, ProjectCategory, ProjectSlug, ProjectStatus, check_repo_path,
+    EditError, Project, ProjectCategory, ProjectSlug, ProjectStatus, check_repo_path, repo_name,
 };
 use gettextrs::gettext;
 use glib::subclass::Signal;
@@ -14,7 +14,7 @@ use gtk::{gio, glib};
 use crate::alert::show_error;
 use crate::colors;
 use crate::format::{project_category_name, project_status_name};
-use crate::widgets::{changed, set_class};
+use crate::widgets::{changed, remove_button, set_class};
 
 mod imp {
     use super::*;
@@ -28,8 +28,10 @@ mod imp {
         /// The project as the dialog showed it at first, to save only what
         /// the user changed.
         pub shown: RefCell<Option<Project>>,
-        /// The repository folder as chosen, shown in `repo_row`.
-        pub repo: RefCell<Option<PathBuf>>,
+        /// The repository folders as chosen.
+        pub repos: RefCell<Vec<PathBuf>>,
+        /// The rows in `repo_group` that show `repos`, in the same order.
+        pub repo_rows: RefCell<Vec<adw::ActionRow>>,
         /// The IDs and names of the projects there are, which a new
         /// project cannot take.
         pub taken: RefCell<Vec<(ProjectSlug, String)>>,
@@ -54,11 +56,9 @@ mod imp {
         #[template_child]
         pub status_row: TemplateChild<adw::ComboRow>,
         #[template_child]
-        pub repo_row: TemplateChild<adw::ActionRow>,
+        pub repo_group: TemplateChild<adw::PreferencesGroup>,
         #[template_child]
-        pub clear_repo_button: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub choose_repo_button: TemplateChild<gtk::Button>,
+        pub add_repo_button: TemplateChild<gtk::Button>,
     }
 
     #[glib::object_subclass]
@@ -110,17 +110,12 @@ mod imp {
                 dialog,
                 move |_| dialog.update_save_button()
             ));
-            self.choose_repo_button.connect_clicked(glib::clone!(
+            self.add_repo_button.connect_clicked(glib::clone!(
                 #[weak]
                 dialog,
                 move |_| {
-                    glib::spawn_future_local(async move { dialog.choose_repo().await });
+                    glib::spawn_future_local(async move { dialog.choose_repo(None).await });
                 }
-            ));
-            self.clear_repo_button.connect_clicked(glib::clone!(
-                #[weak]
-                dialog,
-                move |_| dialog.set_repo(None)
             ));
         }
     }
@@ -297,41 +292,90 @@ impl ProjectDialog {
         imp.category_buttons.borrow()[index].set_active(true);
     }
 
-    /// Shows the repository `repo` of the project on this device, or why
-    /// it cannot be read.
-    pub fn show_repo(&self, repo: Result<Option<PathBuf>, String>) {
+    /// Shows the repositories `repos` of the project on this device, or why
+    /// they cannot be read.
+    pub fn show_repos(&self, repos: Result<Vec<PathBuf>, String>) {
         let imp = self.imp();
-        match repo {
-            Ok(repo) => self.set_repo(repo),
+        match repos {
+            Ok(repos) => repos.into_iter().for_each(|repo| self.add_repo(repo)),
             Err(err) => {
-                imp.repo_row.set_subtitle(&err);
-                imp.repo_row.set_sensitive(false);
+                imp.repo_group.set_description(Some(&err));
+                imp.add_repo_button.set_sensitive(false);
             }
         }
     }
 
-    /// The repository folder as chosen.
-    pub fn repo(&self) -> Option<PathBuf> {
-        self.imp().repo.borrow().clone()
+    /// The repository folders as chosen.
+    pub fn repos(&self) -> Vec<PathBuf> {
+        self.imp().repos.borrow().clone()
     }
 
-    fn set_repo(&self, repo: Option<PathBuf>) {
+    /// Adds `repo` to the list with a row that shows it, and with buttons
+    /// to choose another folder and to remove it.
+    fn add_repo(&self, repo: PathBuf) {
         let imp = self.imp();
-        let shown = repo
-            .as_deref()
-            .map_or_else(|| gettext("None"), |repo| repo.display().to_string());
-        imp.repo_row.set_subtitle(&shown);
-        imp.clear_repo_button.set_visible(repo.is_some());
-        imp.repo.replace(repo);
+        let row = adw::ActionRow::builder().subtitle_selectable(true).build();
+        show_repo(&row, &repo);
+        let choose_button = gtk::Button::builder()
+            .icon_name("folder-open-symbolic")
+            .tooltip_text(gettext("Choose Folder"))
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        choose_button.connect_clicked(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            #[weak]
+            row,
+            move |_| {
+                glib::spawn_future_local(async move { dialog.choose_repo(Some(row)).await });
+            }
+        ));
+        row.add_suffix(&choose_button);
+        row.add_suffix(&remove_button(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            #[weak]
+            row,
+            move || dialog.remove_repo(&row)
+        )));
+        imp.repo_group.add(&row);
+        imp.repos.borrow_mut().push(repo);
+        imp.repo_rows.borrow_mut().push(row);
     }
 
-    async fn choose_repo(&self) {
+    fn remove_repo(&self, row: &adw::ActionRow) {
+        let imp = self.imp();
+        let mut rows = imp.repo_rows.borrow_mut();
+        let index = rows
+            .iter()
+            .position(|other| other == row)
+            .expect("the row shows a repository");
+        rows.remove(index);
+        imp.repos.borrow_mut().remove(index);
+        imp.repo_group.remove(row);
+    }
+
+    /// Asks for a repository folder to put in place of the one `row` shows,
+    /// or to add if there is no row.
+    async fn choose_repo(&self, row: Option<adw::ActionRow>) {
+        let imp = self.imp();
+        let index = row.and_then(|row| imp.repo_rows.borrow().iter().position(|r| *r == row));
         let dialog = gtk::FileDialog::builder()
             .title(gettext("Choose Repository"))
             .modal(true)
             .build();
-        if let Some(repo) = self.repo() {
-            dialog.set_initial_folder(Some(&gio::File::for_path(repo)));
+        // Repositories of a project often lie next to each other. A folder
+        // moved away starts at what is left of its path.
+        let near = match index {
+            Some(index) => imp.repos.borrow().get(index).cloned(),
+            None => imp.repos.borrow().last().cloned(),
+        };
+        if let Some(folder) = near
+            .as_deref()
+            .and_then(|near| near.ancestors().skip(1).find(|folder| folder.is_dir()))
+        {
+            dialog.set_initial_folder(Some(&gio::File::for_path(folder)));
         }
         let root = self.root().and_downcast::<gtk::Window>();
         // Dismissing the dialog is reported as an error, too.
@@ -347,7 +391,14 @@ impl ProjectDialog {
                     .map_err(|err| err.to_string())
             });
         match checked {
-            Ok(path) => self.set_repo(Some(path)),
+            Ok(path) if imp.repos.borrow().contains(&path) => {}
+            Ok(path) => match index {
+                Some(index) => {
+                    show_repo(&imp.repo_rows.borrow()[index], &path);
+                    imp.repos.borrow_mut()[index] = path;
+                }
+                None => self.add_repo(path),
+            },
             Err(message) => show_error(self, &gettext("Cannot Use Folder"), &message),
         }
     }
@@ -389,6 +440,20 @@ impl ProjectDialog {
         imp.save_button
             .set_sensitive(!self.name().is_empty() && slug_valid);
     }
+}
+
+/// Shows `repo` in `row`, with a warning if its folder holds no repository
+/// anymore, as after moving it.
+fn show_repo(row: &adw::ActionRow, repo: &Path) {
+    row.set_title(&glib::markup_escape_text(&repo_name(repo)));
+    let path = repo.display().to_string();
+    let missing = check_repo_path(repo).is_err();
+    let subtitle = match missing {
+        true => gettext("No Git repository at {path}").replace("{path}", &path),
+        false => path,
+    };
+    row.set_subtitle(&glib::markup_escape_text(&subtitle));
+    set_class(row, "warning", missing);
 }
 
 /// What projects of `category` hold, in terms of the two questions behind it.

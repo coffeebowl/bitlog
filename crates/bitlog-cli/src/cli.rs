@@ -93,8 +93,8 @@ pub enum Command {
         #[arg(long, default_value_t = 20)]
         limit: u32,
     },
-    /// Show the latest commits of the current branch in a project's Git
-    /// repository on this device.
+    /// Show the latest commits of the current branch in each of a project's
+    /// Git repositories on this device.
     Log {
         /// The slug of the project
         project: ProjectSlug,
@@ -189,9 +189,10 @@ pub enum ProjectCommand {
         /// active, paused or archived
         #[arg(long, group = "change")]
         status: Option<ProjectStatus>,
-        /// Forget the project's repository on this device
-        #[arg(long, group = "change", conflicts_with = "repo")]
-        no_repo: bool,
+        /// Forget a repository folder of the project on this device; can be
+        /// given more than once
+        #[arg(long, group = "change", value_name = "FOLDER")]
+        no_repo: Vec<PathBuf>,
     },
     /// Change a project's slug, in all days and notes that refer to it.
     Rename {
@@ -348,9 +349,10 @@ pub struct ProjectArgs {
     /// work, private, duty or break [default for new projects: work]
     #[arg(long, group = "change")]
     pub category: Option<ProjectCategory>,
-    /// The folder of the project's Git repository on this device
+    /// The folder of a Git repository of the project on this device; can be
+    /// given more than once
     #[arg(long, group = "change", value_name = "FOLDER")]
-    pub repo: Option<PathBuf>,
+    pub repo: Vec<PathBuf>,
 }
 
 #[derive(Args)]
@@ -433,8 +435,10 @@ mod tests {
         assert!(parse("bitlog project edit docs --category overhead").is_err());
         assert!(parse("bitlog project edit docs").is_err());
         parse("bitlog project add docs --repo ../docs").unwrap();
-        parse("bitlog project edit docs --no-repo").unwrap();
-        assert!(parse("bitlog project edit docs --repo ../docs --no-repo").is_err());
+        parse("bitlog project add docs --repo ../docs --repo ../proto").unwrap();
+        parse("bitlog project edit docs --repo ../docs --no-repo ../old --no-repo ../proto")
+            .unwrap();
+        assert!(parse("bitlog project edit docs --no-repo").is_err());
         parse("bitlog project rename docs documentation").unwrap();
         assert!(parse("bitlog project rename docs").is_err());
         assert!(parse("bitlog project rename docs Docs").is_err());

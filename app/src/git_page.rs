@@ -1,5 +1,5 @@
-//! The Git page of a project: the log of its repository on this device,
-//! with branches and where the branch stands.
+//! The Git page of a project: the log of one of its repositories on this
+//! device, with branches and where the branch stands.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -9,7 +9,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
     Branch, Branches, Commit, GitLogError, RepoWatcher, Uncommitted, Upstream, git_branches,
-    git_commit, git_log, git_uncommitted, git_upstream, watch_repo,
+    git_commit, git_log, git_uncommitted, git_upstream, repo_name, watch_repo,
 };
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
@@ -31,6 +31,8 @@ mod imp {
     pub struct GitPage {
         /// The repository shown, if any.
         pub repo: RefCell<Option<PathBuf>>,
+        /// The repositories of the project in the dropdown.
+        pub repo_choices: Choices<PathBuf>,
         /// Watches the repository, so that the log shows new commits.
         pub repo_watcher: RefCell<Option<RepoWatcher>>,
         /// The branch the log shows, `None` for the one checked out.
@@ -52,6 +54,8 @@ mod imp {
         pub activation: RefCell<Option<(gtk::Window, glib::SignalHandlerId)>>,
         /// The last day shown in the log, which commits loaded later join.
         pub last_day: RefCell<Option<(NaiveDate, adw::PreferencesGroup)>>,
+        #[template_child]
+        pub repo_dropdown: TemplateChild<gtk::DropDown>,
         #[template_child]
         pub branch_dropdown: TemplateChild<gtk::DropDown>,
         #[template_child]
@@ -93,6 +97,11 @@ mod imp {
                 self.obj(),
                 move |_| page.show_more_commits()
             ));
+            self.repo_dropdown.connect_selected_notify(glib::clone!(
+                #[weak(rename_to = page)]
+                self.obj(),
+                move |_| page.choose_repo()
+            ));
             self.branch_dropdown.connect_selected_notify(glib::clone!(
                 #[weak(rename_to = page)]
                 self.obj(),
@@ -128,24 +137,29 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// The log of a project's repository, with branches and where the
-    /// branch stands.
+    /// The log of one of a project's repositories, with branches and where
+    /// the branch stands.
     pub struct GitPage(ObjectSubclass<imp::GitPage>)
         @extends adw::Bin, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
 }
 
 impl GitPage {
-    /// Shows the log of `repo`, with the days in `activity`, the time
-    /// spent on the project on each day, marked. Another repository starts
-    /// at the branch checked out.
-    pub fn show(&self, repo: Option<PathBuf>, activity: BTreeMap<NaiveDate, TimeDelta>) {
+    /// Shows the log of one of `repos`, the one shown before if it is among
+    /// them, with the days in `activity`, the time spent on the project on
+    /// each day, marked. Several repositories can be chosen from.
+    pub fn show(&self, repos: Vec<PathBuf>, activity: BTreeMap<NaiveDate, TimeDelta>) {
         let imp = self.imp();
-        if *imp.repo.borrow() != repo {
-            imp.branch.replace(None);
-            self.watch_repo(repo.as_deref());
-            imp.repo.replace(repo);
+        let shown = imp.repo.borrow().clone();
+        let repo = shown
+            .filter(|repo| repos.contains(repo))
+            .or_else(|| repos.first().cloned());
+        imp.repo_dropdown.set_visible(repos.len() > 1);
+        if let Some(repo) = &repo {
+            imp.repo_choices
+                .fill(&*imp.repo_dropdown, repos, repo, |repo| repo_name(repo));
         }
+        self.set_repo(repo);
         imp.activity.replace(activity);
         self.clear_commits();
         self.show_more_commits();
@@ -158,6 +172,28 @@ impl GitPage {
 }
 
 impl GitPage {
+    /// Shows `repo` from now on. Another repository starts at the branch
+    /// checked out.
+    fn set_repo(&self, repo: Option<PathBuf>) {
+        let imp = self.imp();
+        if *imp.repo.borrow() != repo {
+            imp.branch.replace(None);
+            self.watch_repo(repo.as_deref());
+            imp.repo.replace(repo);
+        }
+    }
+
+    /// Shows the log of the repository chosen in the dropdown.
+    fn choose_repo(&self) {
+        let imp = self.imp();
+        let Some(repo) = imp.repo_choices.chosen(&*imp.repo_dropdown) else {
+            return;
+        };
+        self.set_repo(Some(repo));
+        self.clear_commits();
+        self.read_log(0, COMMITS_AT_ONCE);
+    }
+
     fn clear_commits(&self) {
         let imp = self.imp();
         while let Some(child) = imp.commits_box.first_child() {

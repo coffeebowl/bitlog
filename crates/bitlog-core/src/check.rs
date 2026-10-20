@@ -14,7 +14,7 @@ use crate::markdown::{MarkdownMode, escape_headings, heading_lines};
 use crate::notes::{qualified, wiki_links};
 use crate::{
     BlockId, ConflictCopy, Contact, ContactSlug, Contradiction, Day, DayFile, DayWarning, NotePath,
-    ProjectSlug, Vault,
+    ProjectSlug, Vault, check_repo_path,
 };
 
 /// Something in a vault that needs a look. `bitlog doctor` and the app's
@@ -115,6 +115,9 @@ pub enum Problem {
     /// A picture in `contacts/` whose contact has no file, as a path
     /// relative to the vault.
     LoneContactImage(String),
+    /// A repository of a project on this device whose folder holds no Git
+    /// repository anymore, as after moving it.
+    MissingRepo { project: ProjectSlug, repo: PathBuf },
 }
 
 impl Problem {
@@ -248,14 +251,19 @@ impl fmt::Display for Problem {
                 "contacts/{contact}.toml: a role in the unknown project {project}"
             ),
             Self::LoneContactImage(image) => write!(f, "{image}: the picture of no contact"),
+            Self::MissingRepo { project, repo } => write!(
+                f,
+                ".bitlog/device.toml: no Git repository at {}, set for {project}",
+                repo.display()
+            ),
         }
     }
 }
 
 impl Vault {
-    /// Checks for sync conflict copies, then the projects, then all day
-    /// files, oldest first, then the notes of all projects, then the images,
-    /// then the contacts.
+    /// Checks for sync conflict copies, then the projects and their
+    /// repositories on this device, then all day files, oldest first, then
+    /// the notes of all projects, then the images, then the contacts.
     pub fn check(&self) -> Result<Vec<Problem>, ReadError> {
         let mut problems = Vec::new();
         // The images the texts show, and whether all texts could be read.
@@ -283,6 +291,18 @@ impl Vault {
                     category: category.to_owned(),
                 });
             }
+        }
+        match self.repo_paths() {
+            Ok(repos) => problems.extend(repos.into_iter().flat_map(|(project, repos)| {
+                repos
+                    .into_iter()
+                    .filter(|repo| check_repo_path(repo).is_err())
+                    .map(move |repo| Problem::MissingRepo {
+                        project: project.clone(),
+                        repo,
+                    })
+            })),
+            Err(err) => problems.push(Problem::Unreadable(err)),
         }
         for date in self.all_days()? {
             match self.load_day(date) {
@@ -565,6 +585,30 @@ mod tests {
                 "2026-09-23: the text of block cc33 has a heading: ## Old notes {#zz99}",
             ]
         );
+    }
+
+    #[test]
+    fn repositories_of_this_device() {
+        let (dir, vault) = sample_copy();
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        let (api, proto) = (dir.0.join("api"), dir.0.join("proto"));
+        for repo in [&api, &proto] {
+            fs::create_dir_all(repo.join(".git")).unwrap();
+        }
+        vault.set_repo_paths(&infra, &[api, proto.clone()]).unwrap();
+        fs::remove_dir_all(&proto).unwrap();
+        assert!(messages(&vault).contains(&format!(
+            ".bitlog/device.toml: no Git repository at {}, set for infra",
+            proto.display()
+        )));
+
+        fs::write(vault.device_path(), "[repos]\ninfra = \"/code/infra\"\n").unwrap();
+        let unreadable = format!(
+            "invalid {}: the repositories of infra must be a list of absolute paths, \
+             as in [\"/home/me/code/project\"]",
+            vault.device_path().display()
+        );
+        assert!(messages(&vault).contains(&unreadable));
     }
 
     #[test]

@@ -34,10 +34,11 @@ pub enum Kind {
     DuplicateImages,
     UnknownRole,
     LoneContactImage,
+    MissingRepo,
 }
 
 impl Kind {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::Conflict,
         Self::Unreadable,
         Self::GitMarkers,
@@ -53,6 +54,7 @@ impl Kind {
         Self::DuplicateImages,
         Self::UnknownRole,
         Self::LoneContactImage,
+        Self::MissingRepo,
     ];
 
     fn of(problem: &Problem) -> Self {
@@ -74,6 +76,7 @@ impl Kind {
             Problem::DuplicateImages(_) => Self::DuplicateImages,
             Problem::UnknownRole { .. } => Self::UnknownRole,
             Problem::LoneContactImage(_) => Self::LoneContactImage,
+            Problem::MissingRepo { .. } => Self::MissingRepo,
         }
     }
 
@@ -109,6 +112,7 @@ impl Kind {
             Self::DuplicateImages => gettext("Duplicate Images"),
             Self::UnknownRole => gettext("Roles in Unknown Projects"),
             Self::LoneContactImage => gettext("Pictures Without Contact"),
+            Self::MissingRepo => gettext("Missing Repositories"),
         }
     }
 
@@ -159,6 +163,9 @@ impl Kind {
             ),
             Self::LoneContactImage => gettext(
                 "These pictures in the contacts folder belong to no contact, perhaps because its file was removed or renamed. Delete them in the file manager, or rename them after their contact.",
+            ),
+            Self::MissingRepo => gettext(
+                "These folders on this device hold no Git repository anymore, perhaps because the repositories were moved or deleted. Choose their new folders under Edit Project, or remove them there.",
             ),
         }
     }
@@ -407,6 +414,12 @@ impl Days<'_> {
                 }
             }
             Problem::LoneContactImage(image) => file_entry(vault, &image, String::new()),
+            Problem::MissingRepo { project, repo } => Entry {
+                title: escape(vault.project_name(&project)).into(),
+                subtitle: escape(&repo.display().to_string()).into(),
+                place: Place::Project(project),
+                fix: None,
+            },
         }
     }
 

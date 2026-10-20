@@ -32,9 +32,10 @@ bitlog project list
 bitlog project add client-portal --name "Client portal" --color ff7800
 bitlog project edit client-portal --status archived
 bitlog project edit side-project --category private   # work, private, duty or break
-bitlog project edit client-portal --repo ~/code/client-portal   # only on this device
+bitlog project edit client-portal --repo ~/code/client-portal --repo ~/code/api   # only on this device
+bitlog project edit client-portal --no-repo ~/code/api
 bitlog project rename client-portal portal   # also in all days and notes
-bitlog log client-portal --limit 5   # latest commits of that repository
+bitlog log client-portal --limit 5   # latest commits of each of its repositories
 
 bitlog contact list --all # contacts with their projects, archived ones too
 bitlog contact show kim   # all fields, the roles in projects and where @kim is mentioned

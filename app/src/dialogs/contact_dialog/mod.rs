@@ -11,11 +11,11 @@ use glib::subclass::Signal;
 use gtk::glib;
 
 use crate::format::{format_full_date, format_month};
-use crate::widgets::{Choices, changed, param, set_class};
+use crate::widgets::{Choices, changed, param, remove_button, set_class};
 
 mod labeled;
 
-use labeled::{Kind, Labeled, remove_button};
+use labeled::{Kind, Labeled};
 
 /// The zones of the system's time zone table, which GLib knows.
 const ZONE_TABLE: &str = "/usr/share/zoneinfo/zone.tab";

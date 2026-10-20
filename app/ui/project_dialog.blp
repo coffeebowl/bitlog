@@ -74,38 +74,19 @@ template $BitLogProjectDialog: Adw.Dialog {
         title: _("Category");
       }
 
-      Adw.PreferencesGroup {
-        title: _("Git Repository");
+      Adw.PreferencesGroup repo_group {
+        title: _("Git Repositories");
         description: _("Only kept on this device");
 
-        Adw.ActionRow repo_row {
-          title: _("Folder");
-          subtitle-selectable: true;
-          activatable-widget: choose_repo_button;
+        header-suffix: Button add_repo_button {
+          icon-name: "list-add-symbolic";
+          tooltip-text: _("Add Repository");
+          valign: center;
 
-          [suffix]
-          Button clear_repo_button {
-            icon-name: "edit-clear-symbolic";
-            tooltip-text: _("Remove Repository");
-            valign: center;
-            visible: false;
-
-            styles [
-              "flat",
-            ]
-          }
-
-          [suffix]
-          Button choose_repo_button {
-            icon-name: "folder-open-symbolic";
-            tooltip-text: _("Choose Folder");
-            valign: center;
-
-            styles [
-              "flat",
-            ]
-          }
-        }
+          styles [
+            "flat",
+          ]
+        };
       }
     };
   };

@@ -501,35 +501,39 @@ impl ProjectsPage {
         let project = slug.as_ref().and_then(|slug| vault.project(slug));
         let dialog = ProjectDialog::new(project, vault.projects());
         // Read when the dialog opens, so that saving only writes a change.
-        let repo = vault
+        let repos = vault
             .repo_paths()
-            .map(|mut repos| slug.as_ref().and_then(|slug| repos.remove(slug)))
+            .map(|mut repos| {
+                slug.as_ref()
+                    .and_then(|slug| repos.remove(slug))
+                    .unwrap_or_default()
+            })
             .map_err(|err| err.to_string());
-        dialog.show_repo(repo.clone());
+        dialog.show_repos(repos.clone());
         dialog.connect_save(glib::clone!(
             #[weak(rename_to = page)]
             self,
-            move |dialog| page.save(dialog, slug.as_ref(), &repo)
+            move |dialog| page.save(dialog, slug.as_ref(), &repos)
         ));
         dialog.present(Some(self));
     }
 
     /// Saves what `dialog` holds for the project `slug`, or as a new
-    /// project, and closes it. On failure it stays open. `repo` is the
-    /// repository shown when the dialog opened.
+    /// project, and closes it. On failure it stays open. `repos` are the
+    /// repositories shown when the dialog opened.
     fn save(
         &self,
         dialog: &ProjectDialog,
         slug: Option<&ProjectSlug>,
-        repo: &Result<Option<PathBuf>, String>,
+        repos: &Result<Vec<PathBuf>, String>,
     ) {
         // A copy shares the record of own writes, so watching the vault
         // goes on as before.
         let mut vault = Vault::clone(&self.vault());
         let saved: Result<(), SaveError> = match slug {
-            Some(slug) => match repo {
-                Ok(repo) if *repo != dialog.repo() => {
-                    vault.set_repo_path(slug, dialog.repo().as_deref())
+            Some(slug) => match repos {
+                Ok(repos) if *repos != dialog.repos() => {
+                    vault.set_repo_paths(slug, &dialog.repos())
                 }
                 _ => Ok(()),
             }
@@ -550,21 +554,21 @@ impl ProjectsPage {
             show_error(dialog, &gettext("Cannot Save Project"), &err.to_string());
             return;
         }
-        // The repository of a new project can only be set once the project
-        // exists. Should that fail, the project is still added, so the
-        // dialog closes anyway.
-        let repo_saved = match (slug, dialog.repo()) {
-            (None, Some(repo)) => {
+        // The repositories of a new project can only be set once the
+        // project exists. Should that fail, the project is still added, so
+        // the dialog closes anyway.
+        let repos_saved = match slug {
+            None if !dialog.repos().is_empty() => {
                 let slug = dialog.slug().expect("the project was added");
-                vault.set_repo_path(&slug, Some(&repo))
+                vault.set_repo_paths(&slug, &dialog.repos())
             }
             _ => Ok(()),
         };
         dialog.close();
         self.set_vault(Rc::new(vault));
         self.emit_by_name::<()>("vault-changed", &[]);
-        if let Err(err) = repo_saved {
-            show_error(self, &gettext("Cannot Save Repository"), &err.to_string());
+        if let Err(err) = repos_saved {
+            show_error(self, &gettext("Cannot Save Repositories"), &err.to_string());
         }
     }
 }

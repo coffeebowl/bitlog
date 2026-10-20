@@ -296,7 +296,7 @@ impl Vault {
 
     /// Changes the slug of the project `from` to `to`: points the blocks of
     /// all days, wiki links in days and notes, the order of the projects,
-    /// the roles of contacts and the repository of this device to `to`,
+    /// the roles of contacts and the repositories on this device to `to`,
     /// then moves the project's folder. Returns the number of days and notes changed.
     ///
     /// Nothing is changed while a day cannot be read. The folder is moved
@@ -343,7 +343,7 @@ impl Vault {
             })?;
         }
         self.rename_roles(from, to)?;
-        self.rename_repo_path(from, to)?;
+        self.rename_repo_paths(from, to)?;
         fs::rename(&old, &new).map_err(|source| SaveError::Write {
             path: new.clone(),
             source,
@@ -579,7 +579,7 @@ fn day_files(folder: &Path) -> Result<Vec<NaiveDate>, ReadError> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
-    use std::fs;
+    use std::{fs, slice};
 
     use chrono::TimeDelta;
 
@@ -1102,7 +1102,9 @@ mod tests {
         let platform: ProjectSlug = "platform".parse().unwrap();
         let repo = vault.root().join("code");
         fs::create_dir_all(repo.join(".git")).unwrap();
-        vault.set_repo_path(&infra, Some(&repo)).unwrap();
+        vault
+            .set_repo_paths(&infra, slice::from_ref(&repo))
+            .unwrap();
 
         // Days 21 to 23 have infra blocks, only checkout-flow links to an
         // infra note.
@@ -1135,7 +1137,7 @@ mod tests {
         }
         assert_eq!(
             vault.repo_paths().unwrap(),
-            BTreeMap::from([(platform.clone(), repo)])
+            BTreeMap::from([(platform.clone(), vec![repo])])
         );
         let alex = vault.contact(&"alex".parse().unwrap()).unwrap();
         assert_eq!(alex.role(&platform), Some("Account manager"));

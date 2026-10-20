@@ -35,7 +35,7 @@ pub use day::{
     Block, BlockCategory, Day, DayWarning, RemovedText, minute_of_day, reordered_spans,
     time_at_minute, trim_blank_lines, without_front_matter,
 };
-pub use device::check_repo_path;
+pub use device::{check_repo_path, repo_name};
 pub use error::{EditError, ReadError, SaveError};
 pub use file::content_hash;
 pub use format::{capitalize, format_short_duration, format_span, percent};
