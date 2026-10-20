@@ -69,9 +69,10 @@ pub enum Command {
     },
     /// Check for sync conflict copies, all days for unknown projects,
     /// overlapping blocks, headings in texts and wiki links without their
-    /// project in block texts, all notes for broken wiki links and Git
-    /// conflict markers, the images, and the contacts for roles in unknown
-    /// projects. Exits with 1 if something is left.
+    /// project in block texts, all projects for unknown statuses and
+    /// categories, all notes for broken wiki links and Git conflict markers,
+    /// the images, and the contacts for roles in unknown projects. Exits with
+    /// 1 if something is left.
     Doctor {
         /// Merge conflict copies into their originals where nothing
         /// contradicts, then escape headings in block texts and day notes,

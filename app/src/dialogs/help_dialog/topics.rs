@@ -237,6 +237,9 @@ fn markdown() -> Topic {
                     .example(gettext("`code`"))
                     .keys("<Control>e"),
                 row(gettext("Strikethrough")).example(gettext("~~struck~~")),
+                row(gettext("Plain Text"))
+                    .about(gettext("A backslash keeps the character after it as text"))
+                    .example(gettext("2\\. floor")),
             ]),
             Block::Heading(gettext("Lists")),
             Block::Rows(vec![

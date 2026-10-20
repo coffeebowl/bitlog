@@ -60,6 +60,7 @@ bitlog export remote                                     # remote work days per 
 
 bitlog doctor             # sync conflict copies, unknown projects, overlaps, headings in
                           # texts, wiki links without their project in block texts,
+                          # unknown project statuses and categories,
                           # broken wiki links and Git conflict markers in notes,
                           # links to missing images or out of the vault,
                           # unused and duplicate images, unreadable contacts,
