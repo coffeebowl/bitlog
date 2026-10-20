@@ -11,7 +11,7 @@ use gettextrs::gettext;
 use gtk::{gdk, glib};
 
 use crate::alert::{show_error, toast_overlay};
-use crate::colors::{dot_markup, lightness, mix, parse, project_color, project_hex, sea_green};
+use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
 use crate::format::{
     block_category_name, format_duration, format_month, format_range, format_share,
     format_short_date, project_category_name,
@@ -464,8 +464,15 @@ fn category_shares(
 /// A row with a dot in `color`, a name, and the time and its share of `total`.
 fn time_row(color: &str, name: &str, time: TimeDelta, total: TimeDelta) -> adw::ActionRow {
     let row = adw::ActionRow::builder()
-        .title(dot_markup(color, name))
+        .title(name)
+        .use_markup(false)
         .build();
+    // Beside the title rather than in it, so that a long name wraps under itself.
+    let dot = gtk::Label::builder()
+        .label(color_dot(color))
+        .use_markup(true)
+        .build();
+    row.add_prefix(&dot);
     row.add_suffix(&duration_label(time));
     let share = gtk::Label::builder()
         .label(format_share(time, total))
