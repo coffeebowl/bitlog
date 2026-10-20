@@ -13,7 +13,8 @@ use gtk::{gdk, glib};
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{dot_markup, lightness, mix, parse, project_color, project_hex, sea_green};
 use crate::format::{
-    category_name, format_duration, format_month, format_range, format_share, format_short_date,
+    block_category_name, format_duration, format_month, format_range, format_share,
+    format_short_date,
 };
 use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
@@ -335,7 +336,7 @@ impl ReportsPage {
                 continue;
             }
             let color = category_color(category);
-            let row = time_row(color, &category_name(category), time, total);
+            let row = time_row(color, &block_category_name(category), time, total);
             rows.push((imp.categories_group.get(), row));
             parts.push((parse(color), share(time, total)));
         }
@@ -406,9 +407,6 @@ fn category_shares(
     let shares: Vec<String> = BlockCategory::ALL
         .into_iter()
         .filter_map(|category| {
-            let (.., time) = categories
-                .iter()
-                .find(|(project, of, _)| project == slug && *of == category)?;
             let text = match category {
                 BlockCategory::Work => return None,
                 // Translators: A share of a project's time, as in "15 % overhead".
@@ -416,6 +414,9 @@ fn category_shares(
                 // Translators: A share of a project's time, as in "5 % filler".
                 BlockCategory::Filler => gettext("{share} filler"),
             };
+            let (.., time) = categories
+                .iter()
+                .find(|(project, of, _)| project == slug && *of == category)?;
             Some(text.replace("{share}", &format_share(*time, total)))
         })
         .collect();

@@ -589,10 +589,9 @@ same name. Nothing reads them back.
 The CSV files follow RFC 4180 (UTF-8, comma, CRLF, a header line). The
 blocks have the columns `date`, `start`, `end`, `minutes`, `project`,
 `project_name`, `project_category`, `category` (of the block), `title` and
-`text`; an `end` before `start` is on
-the next day, as in the day files. The week report lists the time per project
-without breaks, then each day with its details, day note and blocks with
-their texts.
+`text`; an `end` before `start` is on the next day, as in the day files. The
+week report lists the time per project without breaks, then each day with its
+details, day note and blocks with their texts.
 
 ## Writing rules
 

@@ -343,22 +343,14 @@ impl DayView {
         let vault = self.vault();
         imp.kind_label.set_label(&kind_name(&day.kind));
         imp.kind_button.set_menu_model(Some(&kind_menu(&day.kind)));
-        imp.actions
-            .lookup_action("kind")
-            .and_downcast::<gio::SimpleAction>()
-            .expect("the kind action is set up with the view")
-            .set_state(&day.kind.to_variant());
+        self.set_menu_state("kind", &day.kind);
         let location = day
             .location
             .as_ref()
             .map(|key| vault.config().location_name(key));
         imp.location_label.set_label(location.unwrap_or("–"));
         let location_key = day.location.as_ref().map_or("", LocationKey::as_str);
-        imp.actions
-            .lookup_action("location")
-            .and_downcast::<gio::SimpleAction>()
-            .expect("the location action is set up with the view")
-            .set_state(&location_key.to_variant());
+        self.set_menu_state("location", location_key);
         imp.working_time_label
             .set_label(&format_duration(day.working_time(vault.projects())));
         // Keeps what is being typed.
@@ -647,6 +639,17 @@ impl DayView {
         imp.actions.add_action(&kind);
         imp.actions.add_action(&location);
         self.insert_action_group("day", Some(&imp.actions));
+    }
+
+    /// Sets the state of the menu action `day.{name}` to the value shown,
+    /// without changing it in the file.
+    fn set_menu_state(&self, name: &str, value: &str) {
+        self.imp()
+            .actions
+            .lookup_action(name)
+            .and_downcast::<gio::SimpleAction>()
+            .expect("the menu actions are set up with the view")
+            .set_state(&value.to_variant());
     }
 }
 

@@ -14,7 +14,7 @@ use crate::colors::{self, sea_green, with_alpha};
 use crate::drawing::{
     ICON_SIZE, append_dot, append_icon, append_layout, append_stripe, fill_rounded,
 };
-use crate::format::{category_icon, category_name};
+use crate::format::{block_category_icon, block_category_name};
 use crate::widgets::redraw_animation;
 
 /// Height of one minute. A 15 minute block is just high enough for one line.
@@ -251,8 +251,7 @@ mod imp {
                 snapshot.push_rounded_clip(&rounded);
                 let fill = if is_current || is_selected { 0.4 } else { 0.18 };
                 snapshot.append_color(&with_alpha(&color, fill), &area);
-                let category = entry.category.unwrap_or_default();
-                append_stripe(snapshot, &area, category, &color);
+                append_stripe(snapshot, &area, entry.category, &color);
                 let hidden_words: usize = entry
                     .lines
                     .iter()
@@ -272,7 +271,7 @@ mod imp {
                     widget.snapshot_child(&entry.child, snapshot);
                 }
                 snapshot.pop();
-                self.snapshot_dots(snapshot, entry, &area, dots(hidden_words), &color);
+                self.snapshot_marks(snapshot, entry, &area, dots(hidden_words), &color);
 
                 let outline = if entry.child.has_focus() && focus_visible {
                     Some(with_alpha(&foreground, 0.6))
@@ -443,8 +442,9 @@ mod imp {
             snapshot.pop();
         }
 
-        /// `count` dots right of the heading of `entry`, for the text it hides.
-        fn snapshot_dots(
+        /// The icon of the category of `entry` right of its heading, and `count`
+        /// dots for the text it hides.
+        fn snapshot_marks(
             &self,
             snapshot: &gtk::Snapshot,
             entry: &Entry,
@@ -460,11 +460,10 @@ mod imp {
                 return;
             };
             let y = heading.y() + heading.height() / 2.0;
-            let right = area.x() + area.width() - 6.0;
             append_marks(
                 &*self.obj(),
                 snapshot,
-                (right, y),
+                (area.x() + area.width(), y),
                 count,
                 entry.category,
                 color,
@@ -716,9 +715,9 @@ fn block_content(
         },
     )]);
     if let Some(category) = category {
-        content.update_property(&[gtk::accessible::Property::Description(&category_name(
-            category,
-        ))]);
+        content.update_property(&[gtk::accessible::Property::Description(
+            &block_category_name(category),
+        )]);
     }
     content.append(&heading);
     let lines: Vec<_> = block
@@ -755,10 +754,9 @@ fn append_now(snapshot: &gtk::Snapshot, y: f32, width: f32, color: &gdk::RGBA) {
     snapshot.append_fill(&arrow.to_path(), gsk::FillRule::Winding, color);
 }
 
-/// `count` dots in a row ending at `right`, in a lighter `color`, for the
-/// text a block hides.
-/// The icon of `category` unless it is `None`, with its right edge at
-/// `right`, and left of it `count` dots for hidden text, all centered on `y`.
+/// The icon of `category` unless it is `None`, near the right edge `right`
+/// of a block, and left of it `count` dots for hidden text, all centered on
+/// `y`.
 pub(crate) fn append_marks(
     widget: &impl IsA<gtk::Widget>,
     snapshot: &gtk::Snapshot,
@@ -768,15 +766,22 @@ pub(crate) fn append_marks(
     color: &gdk::RGBA,
 ) {
     let color = with_alpha(color, 0.65);
-    let mut dots_right = right;
+    let mut right = right - 6.0;
     if let Some(category) = category {
         let x = right - ICON_SIZE / 2.0;
-        append_icon(widget, snapshot, category_icon(category), (x, y), &color);
-        dots_right -= ICON_SIZE + 6.0;
+        append_icon(
+            widget,
+            snapshot,
+            block_category_icon(category),
+            (x, y),
+            &color,
+        );
+        right -= ICON_SIZE + 6.0;
     }
-    append_dots(snapshot, dots_right, y, count, &color);
+    append_dots(snapshot, right, y, count, &color);
 }
 
+/// `count` dots in a row ending at `right`, for the text a block hides.
 fn append_dots(snapshot: &gtk::Snapshot, right: f32, y: f32, count: usize, color: &gdk::RGBA) {
     for index in 0..count {
         let x = right - DOT_RADIUS - index as f32 * DOT_STEP;

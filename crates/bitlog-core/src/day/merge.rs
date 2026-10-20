@@ -36,9 +36,9 @@ impl Day {
         for theirs in &other.blocks {
             if let Some(ours) = self.blocks.iter_mut().find(|b| b.id == theirs.id) {
                 let mut title = ours.title.clone();
-                let same_place = (ours.start, ours.end, &ours.project, ours.category)
+                let same_but_title = (ours.start, ours.end, &ours.project, ours.category)
                     == (theirs.start, theirs.end, &theirs.project, theirs.category);
-                if same_place && take(&mut title, &theirs.title, &String::new()) {
+                if same_but_title && take(&mut title, &theirs.title, &String::new()) {
                     ours.title = title;
                 } else if merger.contradiction(Contradiction::Block(ours.id.clone())) {
                     ours.start = theirs.start;

@@ -90,17 +90,17 @@ pub fn append_icon(
 }
 
 /// The stripe in `color` at the left edge of a block in `area`: solid for
-/// work, lighter for overhead, lighter still for filler.
+/// work and breaks (`None`), lighter for overhead, lighter still for filler.
 pub fn append_stripe(
     snapshot: &gtk::Snapshot,
     area: &graphene::Rect,
-    category: BlockCategory,
+    category: Option<BlockCategory>,
     color: &gdk::RGBA,
 ) {
     let alpha = match category {
-        BlockCategory::Work => 1.0,
-        BlockCategory::Overhead => 0.8,
-        BlockCategory::Filler => 0.6,
+        None | Some(BlockCategory::Work) => 1.0,
+        Some(BlockCategory::Overhead) => 0.8,
+        Some(BlockCategory::Filler) => 0.6,
     };
     let stripe = graphene::Rect::new(area.x(), area.y(), 4.0, area.height());
     snapshot.append_color(&with_alpha(color, alpha), &stripe);

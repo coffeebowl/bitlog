@@ -12,7 +12,7 @@ use gtk::{gio, glib};
 
 use super::{DayView, variant_string};
 use crate::config;
-use crate::format::{category_icon, category_name, format_time};
+use crate::format::{block_category_icon, block_category_name, format_time};
 use crate::widgets::project_picker::{project_markup, project_popover};
 
 impl DayView {
@@ -207,7 +207,7 @@ impl DayView {
         imp.actions.add_action(&action);
         let menu = gio::Menu::new();
         for category in BlockCategory::ALL {
-            let item = gio::MenuItem::new(Some(&category_name(category)), None);
+            let item = gio::MenuItem::new(Some(&block_category_name(category)), None);
             item.set_action_and_target_value(
                 Some("day.block-category"),
                 Some(&category.as_str().to_variant()),
@@ -247,17 +247,13 @@ impl DayView {
             project_markup,
         ));
         imp.block_category_icon
-            .set_icon_name(Some(category_icon(block.category)));
+            .set_icon_name(Some(block_category_icon(block.category)));
         imp.block_category_label
-            .set_label(&category_name(block.category));
+            .set_label(&block_category_name(block.category));
         // Breaks are no work of any kind.
         imp.block_category_button
             .set_visible(!vault.is_break(&block.project));
-        imp.actions
-            .lookup_action("block-category")
-            .and_downcast::<gio::SimpleAction>()
-            .expect("the category action is set up with the view")
-            .set_state(&block.category.as_str().to_variant());
+        self.set_menu_state("block-category", block.category.as_str());
         let id = block.id.clone();
         imp.block_project_button.set_popover(Some(&project_popover(
             &vault,

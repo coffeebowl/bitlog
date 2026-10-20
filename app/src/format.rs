@@ -167,7 +167,7 @@ pub fn kind_name(kind: &str) -> String {
 }
 
 /// The symbolic icon of `category`, shown in blocks and the block panel.
-pub fn category_icon(category: BlockCategory) -> &'static str {
+pub fn block_category_icon(category: BlockCategory) -> &'static str {
     match category {
         BlockCategory::Work => "hammer-symbolic",
         BlockCategory::Overhead => "calendar-symbolic",
@@ -175,7 +175,7 @@ pub fn category_icon(category: BlockCategory) -> &'static str {
     }
 }
 
-pub fn category_name(category: BlockCategory) -> String {
+pub fn block_category_name(category: BlockCategory) -> String {
     match category {
         BlockCategory::Work => gettext("Work"),
         BlockCategory::Overhead => gettext("Overhead"),

@@ -96,12 +96,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
         let text_color = if let Some(color) = &color {
             snapshot.push_rounded_clip(&gsk::RoundedRect::from_rect(area, 6.0));
             snapshot.append_color(&with_alpha(color, 0.18), &area);
-            append_stripe(
-                snapshot,
-                &area,
-                category.unwrap_or(BlockCategory::Work),
-                color,
-            );
+            append_stripe(snapshot, &area, category, color);
             snapshot.pop();
             let knot = graphene::Rect::new(
                 LINE_X - KNOT_RADIUS,
@@ -110,7 +105,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
                 2.0 * KNOT_RADIUS,
             );
             fill_rounded(snapshot, knot, KNOT_RADIUS, &foreground);
-            let right = area.x() + area.width() - 6.0;
+            let right = area.x() + area.width();
             append_marks(widget, snapshot, (right, y), dots, category, color);
             foreground
         } else {
