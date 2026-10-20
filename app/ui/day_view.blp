@@ -124,6 +124,7 @@ template $BitLogDayView: Adw.NavigationPage {
                 hscrollbar-policy: never;
 
                 child: Adw.Clamp {
+                  maximum-size: 720;
                   margin-top: 24;
                   margin-bottom: 24;
                   margin-start: 12;
@@ -266,7 +267,10 @@ template $BitLogDayView: Adw.NavigationPage {
                     ]
                   }
 
-                  $BitLogTaskListView empty_tasks {}
+                  Adw.Clamp {
+                    maximum-size: 720;
+                    child: $BitLogTaskListView empty_tasks {};
+                  }
                 };
               };
             }
