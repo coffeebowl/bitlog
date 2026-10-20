@@ -4,14 +4,16 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{EditError, Project, ProjectCategory, ProjectSlug, check_repo_path};
+use bitlog_core::{
+    EditError, Project, ProjectCategory, ProjectSlug, ProjectStatus, check_repo_path,
+};
 use gettextrs::gettext;
 use glib::subclass::Signal;
 use gtk::{gio, glib};
 
 use crate::alert::show_error;
 use crate::colors;
-use crate::format::{PROJECT_STATUSES, project_category_name, project_status_name};
+use crate::format::{project_category_name, project_status_name};
 use crate::widgets::{changed, set_class};
 
 mod imp {
@@ -85,13 +87,6 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let dialog = self.obj();
-            let names: Vec<String> = PROJECT_STATUSES
-                .into_iter()
-                .map(project_status_name)
-                .collect();
-            let names: Vec<&str> = names.iter().map(String::as_str).collect();
-            self.status_row
-                .set_model(Some(&gtk::StringList::new(&names)));
             dialog.add_category_rows();
             self.cancel_button.connect_clicked(glib::clone!(
                 #[weak]
@@ -154,12 +149,7 @@ impl ProjectDialog {
         imp.name_row.set_text(&shown.name);
         imp.color_button.set_rgba(&colors::parse(&shown.color));
         dialog.show_category(shown);
-        let status = PROJECT_STATUSES
-            .iter()
-            .position(|status| *status == shown.status)
-            .expect("every status is listed");
-        imp.status_row
-            .set_selected(u32::try_from(status).expect("few statuses"));
+        dialog.show_status(shown);
         if project.is_some() {
             dialog.set_title(&gettext("Edit Project"));
             imp.save_button.set_label(&gettext("_Save"));
@@ -228,8 +218,14 @@ impl ProjectDialog {
         {
             project.set_category(category);
         }
-        let status = PROJECT_STATUSES[imp.status_row.selected() as usize];
-        changed(&mut project.status, &shown.status, status);
+        // The status of the file this version does not know, listed last,
+        // stays unless another one is chosen.
+        let chosen = ProjectStatus::ALL.get(imp.status_row.selected() as usize);
+        if let Some(&status) = chosen
+            && (status != shown.status() || shown.unknown_status().is_some())
+        {
+            project.set_status(status);
+        }
         Ok(())
     }
 
@@ -252,6 +248,35 @@ impl ProjectDialog {
             buttons.push(button);
         }
         imp.category_buttons.replace(buttons);
+    }
+
+    /// Lists the statuses with that of `project` chosen, and after them a
+    /// status of the file this version does not know, which it explains.
+    fn show_status(&self, project: &Project) {
+        let imp = self.imp();
+        let mut names: Vec<String> = ProjectStatus::ALL
+            .into_iter()
+            .map(project_status_name)
+            .collect();
+        let chosen = match project.unknown_status() {
+            Some(unknown) => {
+                imp.status_row.set_subtitle(
+                    &gettext("The file has the unknown status “{status}”, which counts as active.")
+                        .replace("{status}", unknown),
+                );
+                names.push(unknown.to_owned());
+                names.len() - 1
+            }
+            None => ProjectStatus::ALL
+                .iter()
+                .position(|status| *status == project.status())
+                .expect("every status is listed"),
+        };
+        let names: Vec<&str> = names.iter().map(String::as_str).collect();
+        imp.status_row
+            .set_model(Some(&gtk::StringList::new(&names)));
+        imp.status_row
+            .set_selected(u32::try_from(chosen).expect("few statuses"));
     }
 
     /// Chooses the category of `project`, or none if this version does not

@@ -194,13 +194,6 @@ pub fn contact_label(label: &str) -> String {
     }
 }
 
-/// The project statuses in the order the app lists them.
-pub const PROJECT_STATUSES: [ProjectStatus; 3] = [
-    ProjectStatus::Active,
-    ProjectStatus::Paused,
-    ProjectStatus::Archived,
-];
-
 pub fn project_status_name(status: ProjectStatus) -> String {
     match status {
         ProjectStatus::Active => gettext("Active"),

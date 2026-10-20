@@ -335,7 +335,9 @@ Only `format` is required. Missing fields take these defaults:
 | `created` | none | TOML local date |
 
 BitLog writes all fields except a missing `created`. Comments, formatting,
-unchanged values and unknown fields are kept as they are. The order of
+unchanged values and unknown fields are kept as they are. An unknown `status`
+or `category` counts as the default and stays in the file until another one is
+set; `bitlog doctor` reports it. The order of
 projects is set in `bitlog.toml`.
 
 The **category** answers two questions about the time of a project: does it
@@ -347,9 +349,7 @@ count as working time, and is it work?
 | **Is no work** | `duty`, such as a business trip | `break`, time off |
 
 Only work is divided further by the categories of its blocks. What counts is
-the user's choice per project; BitLog has no rules of its own about it. An
-unknown category counts as `work` and stays in the file until another one is
-set; `bitlog doctor` reports it. The
+the user's choice per project; BitLog has no rules of its own about it. The
 standup and the week report leave out `private` projects, the block exports
 keep them.
 

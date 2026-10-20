@@ -25,7 +25,7 @@ pub enum Kind {
     EscapedHeading,
     Overlap,
     UnknownProject,
-    UnknownProjectCategory,
+    UnknownProjectValue,
     Heading,
     ShortLink,
     BrokenLink,
@@ -44,7 +44,7 @@ impl Kind {
         Self::EscapedHeading,
         Self::Overlap,
         Self::UnknownProject,
-        Self::UnknownProjectCategory,
+        Self::UnknownProjectValue,
         Self::Heading,
         Self::ShortLink,
         Self::BrokenLink,
@@ -62,7 +62,9 @@ impl Kind {
             Problem::EscapedHeading { .. } => Self::EscapedHeading,
             Problem::Overlap { .. } => Self::Overlap,
             Problem::UnknownProject { .. } => Self::UnknownProject,
-            Problem::UnknownProjectCategory { .. } => Self::UnknownProjectCategory,
+            Problem::UnknownProjectStatus { .. } | Problem::UnknownProjectCategory { .. } => {
+                Self::UnknownProjectValue
+            }
             Problem::Conflict { .. } => Self::Conflict,
             Problem::Heading { .. } => Self::Heading,
             Problem::ShortLink { .. } => Self::ShortLink,
@@ -86,7 +88,7 @@ impl Kind {
                 | Self::EscapedHeading
                 | Self::Overlap
                 | Self::UnknownProject
-                | Self::UnknownProjectCategory
+                | Self::UnknownProjectValue
         )
     }
 
@@ -97,7 +99,7 @@ impl Kind {
             Self::EscapedHeading => gettext("Escaped Block Headings"),
             Self::Overlap => gettext("Overlapping Blocks"),
             Self::UnknownProject => gettext("Unknown Projects"),
-            Self::UnknownProjectCategory => gettext("Unknown Project Categories"),
+            Self::UnknownProjectValue => gettext("Unknown Statuses and Categories"),
             Self::Conflict => gettext("Sync Conflicts"),
             Self::Heading => gettext("Headings in Texts"),
             Self::ShortLink => gettext("Links Without Project"),
@@ -128,8 +130,8 @@ impl Kind {
             Self::UnknownProject => gettext(
                 "These blocks belong to a project the vault doesn’t have, perhaps because its folder was removed or renamed. Add the project again, or choose another one for the block.",
             ),
-            Self::UnknownProjectCategory => gettext(
-                "These projects have a category BitLog doesn’t know, perhaps because of a typo or a newer version of BitLog. Their time counts as work until you choose a category under Edit Project.",
+            Self::UnknownProjectValue => gettext(
+                "These projects have a status or category BitLog doesn’t know, perhaps because of a typo or a newer version of BitLog. Until you choose one under Edit Project, an unknown status counts as active and an unknown category as work.",
             ),
             Self::Conflict => gettext(
                 "These files were changed on two devices at once, and the versions contradict each other. Open one to choose what to keep. Conflicts without contradictions are merged automatically. The sidebar shows them, too.",
@@ -333,12 +335,16 @@ impl Days<'_> {
                     fix: None,
                 }
             }
-            Problem::UnknownProjectCategory { project, category } => Entry {
-                title: escape(vault.project_name(&project)).into(),
-                subtitle: gettext("Category: {category}").replace("{category}", &escape(&category)),
-                place: Place::Project(project),
-                fix: None,
-            },
+            Problem::UnknownProjectStatus { project, status } => project_entry(
+                vault,
+                project,
+                gettext("Status: {status}").replace("{status}", &escape(&status)),
+            ),
+            Problem::UnknownProjectCategory { project, category } => project_entry(
+                vault,
+                project,
+                gettext("Category: {category}").replace("{category}", &escape(&category)),
+            ),
             Problem::Conflict {
                 copy,
                 contradictions,
@@ -446,6 +452,15 @@ impl Days<'_> {
             Some(block) => title_markup(&block.title, vault.project_name(&block.project)),
             None => escape(id.as_str()).into(),
         }
+    }
+}
+
+fn project_entry(vault: &Vault, project: ProjectSlug, subtitle: String) -> Entry {
+    Entry {
+        title: escape(vault.project_name(&project)).into(),
+        subtitle,
+        place: Place::Project(project),
+        fix: None,
     }
 }
 

@@ -23,7 +23,10 @@ pub struct Project {
     pub name: String,
     /// `#rrggbb`.
     pub color: String,
-    pub status: ProjectStatus,
+    status: ProjectStatus,
+    /// The status as the file has it if this version does not know it, kept
+    /// in the file until another one is set.
+    unknown_status: Option<String>,
     category: ProjectCategory,
     /// The category as the file has it if this version does not know it,
     /// kept in the file until another one is set.
@@ -36,15 +39,17 @@ pub struct Project {
     hash: Option<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ProjectStatus {
+    #[default]
     Active,
     Paused,
     Archived,
 }
 
 impl ProjectStatus {
+    pub const ALL: [Self; 3] = [Self::Active, Self::Paused, Self::Archived];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
@@ -58,7 +63,7 @@ impl FromStr for ProjectStatus {
     type Err = EditError;
 
     fn from_str(text: &str) -> Result<Self, EditError> {
-        [Self::Active, Self::Paused, Self::Archived]
+        Self::ALL
             .into_iter()
             .find(|status| status.as_str() == text)
             .ok_or_else(|| EditError::InvalidStatus(text.to_owned()))
@@ -119,10 +124,23 @@ struct ProjectFile {
     format: u32,
     name: Option<String>,
     color: Option<String>,
-    status: Option<ProjectStatus>,
+    status: Option<String>,
     category: Option<String>,
     #[serde(default, deserialize_with = "local_date")]
     created: Option<NaiveDate>,
+}
+
+/// The value `text` names, or the default and `text` itself if this version
+/// does not know it, so that a typo or a value of a newer version does not
+/// keep the vault from opening.
+fn known_or_default<T: FromStr + Default>(text: Option<String>) -> (T, Option<String>) {
+    match text {
+        None => (T::default(), None),
+        Some(text) => match text.parse() {
+            Ok(value) => (value, None),
+            Err(_) => (T::default(), Some(text)),
+        },
+    }
 }
 
 /// The folder of the project `slug` in `vault`.
@@ -143,7 +161,8 @@ impl Project {
             slug,
             name: name.to_owned(),
             color: DEFAULT_COLOR.to_owned(),
-            status: ProjectStatus::Active,
+            status: ProjectStatus::default(),
+            unknown_status: None,
             category: ProjectCategory::default(),
             unknown_category: None,
             created: Some(created),
@@ -189,6 +208,21 @@ impl Project {
         }
         self.color = color.to_owned();
         Ok(())
+    }
+
+    /// Its status, `active` if the file has one this version does not know.
+    pub fn status(&self) -> ProjectStatus {
+        self.status
+    }
+
+    /// The status as the file has it, if this version does not know it.
+    pub fn unknown_status(&self) -> Option<&str> {
+        self.unknown_status.as_deref()
+    }
+
+    pub fn set_status(&mut self, status: ProjectStatus) {
+        self.status = status;
+        self.unknown_status = None;
     }
 
     /// Its category, `work` if the file has one this version does not know.
@@ -266,21 +300,15 @@ impl Project {
         if !is_color(&color) {
             return Err(format!("color must look like \"#3584e4\", found {color:?}"));
         }
-        // An unknown category counts as work, so that a typo or a value of a
-        // newer version does not keep the vault from opening.
-        let (category, unknown_category) = match file.category {
-            None => (ProjectCategory::default(), None),
-            Some(text) => match text.parse() {
-                Ok(category) => (category, None),
-                Err(_) => (ProjectCategory::default(), Some(text)),
-            },
-        };
+        let (status, unknown_status) = known_or_default(file.status);
+        let (category, unknown_category) = known_or_default(file.category);
 
         Ok(Self {
             name: file.name.unwrap_or_else(|| slug.to_string()),
             slug,
             color,
-            status: file.status.unwrap_or(ProjectStatus::Active),
+            status,
+            unknown_status,
             category,
             unknown_category,
             created: file.created,
@@ -298,7 +326,9 @@ impl Project {
         set(table, "format", i64::from(FORMAT).into());
         set(table, "name", self.name.as_str().into());
         set(table, "color", self.color.as_str().into());
-        set(table, "status", self.status.as_str().into());
+        if self.unknown_status.is_none() {
+            set(table, "status", self.status.as_str().into());
+        }
         if self.unknown_category.is_none() {
             set(table, "category", self.category.as_str().into());
         }
@@ -334,7 +364,7 @@ mod tests {
         let infra = &projects[1];
         assert_eq!(infra.name, "Infrastructure");
         assert_eq!(infra.color, "#2ec27e");
-        assert_eq!(infra.status, ProjectStatus::Active);
+        assert_eq!(infra.status(), ProjectStatus::Active);
         assert_eq!(infra.category(), ProjectCategory::Work);
         assert_eq!(infra.created, Some(date(2026, 4, 15)));
 
@@ -413,6 +443,17 @@ mod tests {
     }
 
     #[test]
+    fn unknown_statuses_count_as_active_and_are_kept() {
+        let mut project = Project::parse(slug("misc"), "format = 1\nstatus = \"done\"\n").unwrap();
+        assert_eq!(project.status(), ProjectStatus::Active);
+        assert_eq!(project.unknown_status(), Some("done"));
+        assert!(project.to_toml().contains("status = \"done\"\n"));
+        project.set_status(ProjectStatus::Archived);
+        assert_eq!(project.unknown_status(), None);
+        assert!(project.to_toml().contains("status = \"archived\"\n"));
+    }
+
+    #[test]
     fn unknown_categories_count_as_work_and_are_kept() {
         let text = "format = 1\ncategory = \"overhead\" # old\n";
         let mut project = Project::parse(slug("misc"), text).unwrap();
@@ -447,7 +488,7 @@ mod tests {
         let project = Project::parse(slug("misc"), "format = 1").unwrap();
         assert_eq!(project.name, "misc");
         assert_eq!(project.color, DEFAULT_COLOR);
-        assert_eq!(project.status, ProjectStatus::Active);
+        assert_eq!(project.status(), ProjectStatus::Active);
         assert_eq!(project.category(), ProjectCategory::Work);
         assert_eq!(project.created, None);
         assert!(!project.to_toml().contains("created"));
@@ -460,7 +501,6 @@ mod tests {
             "format = 2",
             "format = 1\ncolor = \"blue\"",
             "format = 1\ncolor = \"#12345\"",
-            "format = 1\nstatus = \"done\"",
             "format = 1\ncreated = \"2026-03-01\"",
             "format = 1\ncreated = 2026-03-01T10:00:00",
         ] {

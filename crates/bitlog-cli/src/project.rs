@@ -23,7 +23,7 @@ pub fn format_projects(vault: &Vault, repos: &BTreeMap<ProjectSlug, PathBuf>) ->
                 project.slug.to_string(),
                 project.name.clone(),
                 project.category().as_str().to_owned(),
-                project.status.as_str().to_owned(),
+                project.status().as_str().to_owned(),
                 project.color.clone(),
                 repos
                     .get(&project.slug)
@@ -152,7 +152,7 @@ fn apply(project: &mut Project, changes: ProjectChanges) -> Result<(), EditError
         project.set_category(category);
     }
     if let Some(status) = changes.status {
-        project.status = status;
+        project.set_status(status);
     }
     Ok(())
 }

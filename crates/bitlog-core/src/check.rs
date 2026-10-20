@@ -28,6 +28,11 @@ pub enum Problem {
         block: BlockId,
         project: ProjectSlug,
     },
+    /// A project status this version does not know, which counts as active.
+    UnknownProjectStatus {
+        project: ProjectSlug,
+        status: String,
+    },
     /// A project category this version does not know, which counts as work.
     UnknownProjectCategory {
         project: ProjectSlug,
@@ -133,6 +138,10 @@ impl fmt::Display for Problem {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Unreadable(err) => err.fmt(f),
+            Self::UnknownProjectStatus { project, status } => write!(
+                f,
+                "projects/{project}/project.toml: the unknown status {status:?} counts as active"
+            ),
             Self::UnknownProjectCategory { project, category } => write!(
                 f,
                 "projects/{project}/project.toml: the unknown category {category:?} counts as work"
@@ -261,12 +270,20 @@ impl Vault {
                 Err(err) => problems.push(Problem::Unreadable(err)),
             }
         }
-        problems.extend(self.projects().iter().filter_map(|project| {
-            Some(Problem::UnknownProjectCategory {
-                project: project.slug.clone(),
-                category: project.unknown_category()?.to_owned(),
-            })
-        }));
+        for project in self.projects() {
+            if let Some(status) = project.unknown_status() {
+                problems.push(Problem::UnknownProjectStatus {
+                    project: project.slug.clone(),
+                    status: status.to_owned(),
+                });
+            }
+            if let Some(category) = project.unknown_category() {
+                problems.push(Problem::UnknownProjectCategory {
+                    project: project.slug.clone(),
+                    category: category.to_owned(),
+                });
+            }
+        }
         for date in self.all_days()? {
             match self.load_day(date) {
                 Ok(Some(file)) => problems.extend(self.check_day(&file, &mut shown)),
@@ -551,17 +568,21 @@ mod tests {
     }
 
     #[test]
-    fn unknown_project_categories() {
+    fn unknown_project_statuses_and_categories() {
         let (_dir, vault) = sample_copy();
         let path = crate::Project::path(vault.root(), &"infra".parse().unwrap());
         let text = fs::read_to_string(&path)
             .unwrap()
+            .replace("status = \"active\"", "status = \"done\"")
             .replace("category = \"work\"", "category = \"overhead\"");
         fs::write(&path, text).unwrap();
         let vault = Vault::open(vault.root()).unwrap();
         assert_eq!(
-            messages(&vault)[1],
-            "projects/infra/project.toml: the unknown category \"overhead\" counts as work"
+            messages(&vault)[1..3],
+            [
+                "projects/infra/project.toml: the unknown status \"done\" counts as active",
+                "projects/infra/project.toml: the unknown category \"overhead\" counts as work",
+            ]
         );
     }
 

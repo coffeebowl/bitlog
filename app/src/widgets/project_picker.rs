@@ -12,7 +12,7 @@ pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static)
     let projects: Vec<&Project> = vault
         .projects()
         .iter()
-        .filter(|project| project.status != ProjectStatus::Archived)
+        .filter(|project| project.status() != ProjectStatus::Archived)
         .collect();
 
     let list = gtk::ListBox::builder()

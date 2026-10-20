@@ -64,7 +64,7 @@ impl Window {
             .projects()
             .iter()
             .filter(|project| {
-                project.status == ProjectStatus::Active
+                project.status() == ProjectStatus::Active
                     && project.category() != ProjectCategory::Break
             })
             .map(|project| {

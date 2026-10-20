@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{NotePath, Project, ProjectSlug, Vault};
+use bitlog_core::{NotePath, Project, ProjectSlug, ProjectStatus, Vault};
 use chrono::{DateTime, Local, NaiveDate};
 use gettextrs::gettext;
 use glib::subclass::Signal;
@@ -14,7 +14,7 @@ use gtk::{gio, glib};
 use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::config;
-use crate::format::{PROJECT_STATUSES, format_relative_day, format_time, format_weekday_date};
+use crate::format::{format_relative_day, format_time, format_weekday_date};
 use crate::markdown_view::MarkdownView;
 use crate::note_actions::{self, NoteHost};
 use crate::note_view::NoteView;
@@ -467,13 +467,13 @@ impl NoteHost for NotesPage {
 /// The projects of `vault` as the project page lists them: by status, and
 /// in their order within each.
 fn projects_in_order(vault: &Vault) -> Vec<&Project> {
-    PROJECT_STATUSES
+    ProjectStatus::ALL
         .iter()
         .flat_map(|status| {
             vault
                 .projects()
                 .iter()
-                .filter(move |project| project.status == *status)
+                .filter(move |project| project.status() == *status)
         })
         .collect()
 }

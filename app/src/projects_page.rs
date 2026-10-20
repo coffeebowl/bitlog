@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{NotePath, Period, Project, ProjectSlug, SaveError, Vault};
+use bitlog_core::{NotePath, Period, Project, ProjectSlug, ProjectStatus, SaveError, Vault};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
 use glib::subclass::Signal;
@@ -16,8 +16,7 @@ use crate::colors::color_dot;
 use crate::dialogs::note_dialogs::ask_note_name;
 use crate::dialogs::project_dialog::ProjectDialog;
 use crate::format::{
-    PROJECT_STATUSES, format_duration, format_recent_date, project_category_name,
-    project_status_name,
+    format_duration, format_recent_date, project_category_name, project_status_name,
 };
 use crate::note_actions::{self, NoteHost};
 use crate::note_view::NoteView;
@@ -281,11 +280,11 @@ impl ProjectsPage {
                 .map(|(_, date)| *date)
         };
         let mut has_projects = false;
-        for status in PROJECT_STATUSES {
+        for status in ProjectStatus::ALL {
             let projects: Vec<&Project> = vault
                 .projects()
                 .iter()
-                .filter(|project| project.status == status)
+                .filter(|project| project.status() == status)
                 .collect();
             if projects.is_empty() {
                 continue;
@@ -324,7 +323,7 @@ impl ProjectsPage {
     fn make_movable(&self, row: &adw::ActionRow, project: &Project) {
         let handle = drag_handle();
         row.add_suffix(&handle);
-        let status = project.status;
+        let status = project.status();
         let accepts = glib::clone!(
             #[weak(rename_to = page)]
             self,
@@ -336,7 +335,7 @@ impl ProjectsPage {
                     .parse()
                     .ok()
                     .and_then(|dragged: ProjectSlug| vault.project(&dragged).cloned())
-                    .is_some_and(|dragged| dragged.status == status)
+                    .is_some_and(|dragged| dragged.status() == status)
             }
         );
         let slug = project.slug.clone();
