@@ -30,6 +30,7 @@
     <file>style.css</file>
     <!-- From the GNOME Icon Library (CC0); GTK finds icons of the app under icons/. -->
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/analyze-symbolic.svg">symbolic/analyze-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="icons/scalable/actions/asset-folder-symbolic.svg">symbolic/asset-folder-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/calendar-symbolic.svg">symbolic/calendar-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/circle-check-symbolic.svg">symbolic/circle-check-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="icons/scalable/actions/contact-symbolic.svg">symbolic/contact-symbolic.svg</file>

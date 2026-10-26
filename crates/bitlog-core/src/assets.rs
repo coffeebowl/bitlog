@@ -41,6 +41,17 @@ impl Vault {
         self.assets_folder(asset.project()).join(asset.path())
     }
 
+    /// The asset of the project `project` at `path`, if it lies in its
+    /// assets folder.
+    pub fn asset_at(&self, project: &ProjectSlug, path: &Path) -> Option<AssetPath> {
+        let relative = path.strip_prefix(self.assets_folder(project)).ok()?;
+        let parts: Option<Vec<&str>> = relative
+            .components()
+            .map(|part| part.as_os_str().to_str())
+            .collect();
+        AssetPath::new(project.clone(), &parts?.join("/")).ok()
+    }
+
     /// Where `folder` lives, or the assets folder of `project`.
     pub fn asset_folder_path(&self, project: &ProjectSlug, folder: Option<&AssetPath>) -> PathBuf {
         folder.map_or_else(
@@ -360,6 +371,25 @@ mod tests {
             vault.asset_folder(&webshop, Some(&gone)).unwrap(),
             AssetFolder::default()
         );
+    }
+
+    #[test]
+    fn assets_at_paths() {
+        let (_dir, vault) = sample_copy();
+        let webshop = slug("webshop");
+        let folder = vault.assets_folder(&webshop);
+        assert_eq!(
+            vault.asset_at(&webshop, &folder.join("scans/a.pdf")),
+            Some(asset("projects/webshop/assets/scans/a.pdf"))
+        );
+        for elsewhere in [
+            folder.clone(),
+            folder.join(".cache/a.pdf"),
+            vault.assets_folder(&slug("infra")).join("a.pdf"),
+            vault.root().join("images/a.png"),
+        ] {
+            assert_eq!(vault.asset_at(&webshop, &elsewhere), None, "{elsewhere:?}");
+        }
     }
 
     #[test]

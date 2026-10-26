@@ -11,6 +11,7 @@ use crate::widgets::cards::{asset_card, folder_card};
 use crate::widgets::param;
 
 mod actions;
+mod dragging;
 
 /// The characters of the folder shown its name keeps at least when the way
 /// to it is shortened.
@@ -106,22 +107,12 @@ mod imp {
     impl ObjectImpl for AssetsView {
         fn constructed(&self) {
             self.parent_constructed();
-            let drop = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
-            drop.connect_drop(glib::clone!(
-                #[weak(rename_to = view)]
-                self.obj(),
-                #[upgrade_or]
-                false,
-                move |_, value, _, _| {
-                    let Ok(files) = value.get::<gdk::FileList>() else {
-                        return false;
-                    };
-                    let files = files.files();
-                    glib::spawn_future_local(async move { view.add_assets(&files).await });
-                    true
-                }
-            ));
-            self.stack.add_controller(drop);
+            let obj = self.obj();
+            obj.accept_drops(&*self.stack, |view| view.folder());
+            obj.accept_drops(&*self.files_button, |_| None);
+            obj.accept_drops(&*self.back_button, |view| {
+                view.folder().and_then(|folder| folder.parent())
+            });
             self.files_button.connect_clicked(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
@@ -154,7 +145,8 @@ mod imp {
 
 glib::wrapper! {
     /// The files of a project, in folders: those of one folder in a grid,
-    /// folders first, with a way up to the folder above.
+    /// folders first, with the way to it above. Files are moved by dragging
+    /// them onto a folder.
     pub struct AssetsView(ObjectSubclass<imp::AssetsView>)
         @extends adw::PreferencesGroup, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -221,7 +213,11 @@ impl AssetsView {
         match vault.asset_folder(&slug, folder.as_ref()) {
             Ok(found) => {
                 for folder in &found.folders {
-                    imp.grid.append(&folder_card(folder));
+                    let card = folder_card(folder);
+                    self.make_draggable(&card, folder);
+                    let into = folder.clone();
+                    self.accept_drops(&card, move |_| Some(into.clone()));
+                    imp.grid.append(&card);
                 }
                 let files: Vec<_> = found
                     .files
@@ -229,7 +225,11 @@ impl AssetsView {
                     .map(|asset| {
                         let card = match cards.remove(&asset.path) {
                             Some((known, card)) if known == asset => card,
-                            _ => asset_card(&vault, &asset),
+                            _ => {
+                                let card = asset_card(&vault, &asset);
+                                self.make_draggable(&card, &asset.path);
+                                card
+                            }
                         };
                         imp.grid.append(&card);
                         (asset, card)
@@ -305,6 +305,8 @@ impl AssetsView {
                 .child(&crumb_label(target.name()))
                 .css_classes(["flat", "crumb", "dim-label"])
                 .build();
+            let into = target.clone();
+            self.accept_drops(&button, move |_| Some(into.clone()));
             button.connect_clicked(glib::clone!(
                 #[weak(rename_to = view)]
                 self,

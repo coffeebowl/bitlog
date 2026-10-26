@@ -26,29 +26,38 @@ impl AssetsView {
             return;
         };
         let files: Vec<gio::File> = files.iter().filter_map(Result::ok).collect();
-        self.add_assets(&files).await;
+        self.add_assets(&files, self.folder()).await;
     }
 
-    /// Copies `files`, which may be folders, into the folder shown in the
-    /// background, then shows them. Files that cannot be added are named in
+    /// Puts `files`, which may be folders, into `folder` in the background,
+    /// then shows them: those among the assets of the project are moved
+    /// there, all others copied. Files that cannot be put there are named in
     /// one message.
-    pub(super) async fn add_assets(&self, files: &[gio::File]) {
+    pub(super) async fn add_assets(&self, files: &[gio::File], folder: Option<AssetPath>) {
         let Some(slug) = self.slug() else {
             return;
         };
-        let folder = self.folder();
         // A copy for the thread copying.
         let vault = Vault::clone(&self.vault());
         let paths: Vec<Option<PathBuf>> = files.iter().map(|file| file.path()).collect();
+        let moving = paths
+            .iter()
+            .flatten()
+            .all(|path| vault.asset_at(&slug, path).is_some());
         let errors = gio::spawn_blocking(move || {
             paths
                 .iter()
-                .filter_map(|path| match path {
-                    Some(path) => vault
-                        .add_asset(&slug, folder.as_ref(), path)
-                        .err()
-                        .map(|err| err.to_string()),
-                    None => Some(not_local()),
+                .filter_map(|path| {
+                    let Some(path) = path else {
+                        return Some(not_local());
+                    };
+                    let added = match vault.asset_at(&slug, path) {
+                        // A folder let go over its own card stays.
+                        Some(asset) if Some(&asset) == folder.as_ref() => Ok(asset),
+                        Some(asset) => vault.move_asset(&asset, folder.as_ref()),
+                        None => vault.add_asset(&slug, folder.as_ref(), path),
+                    };
+                    added.err().map(|err| err.to_string())
                 })
                 .collect::<Vec<_>>()
         })
@@ -56,7 +65,12 @@ impl AssetsView {
         .expect("copying files does not panic");
         self.reload();
         if !errors.is_empty() {
-            show_error(self, &gettext("Cannot Add Files"), &errors.join("\n"));
+            let heading = if moving {
+                gettext("Cannot Move Files")
+            } else {
+                gettext("Cannot Add Files")
+            };
+            show_error(self, &heading, &errors.join("\n"));
         }
     }
 

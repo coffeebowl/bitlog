@@ -99,8 +99,10 @@ flowboxchild.page-card {
 }
 
 /* Projects and tasks are moved in their lists by dragging them: the row
-   taken away is dimmed, a line shows where it goes, and it moves as a card. */
-row.dragging {
+   taken away is dimmed, a line shows where it goes, and it moves as a card.
+   A project's files dragged onto a folder are dimmed as well. */
+row.dragging,
+flowboxchild.dragging {
   opacity: 0.4;
 }
 

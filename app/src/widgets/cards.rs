@@ -182,17 +182,17 @@ pub fn asset_card(vault: &Vault, asset: &Asset) -> gtk::FlowBoxChild {
     )
 }
 
-/// A folder of assets in the grid: a folder as the file manager shows it, in
-/// place of a page, above its name and menu. The grid opens it when
-/// activated.
+/// A folder of assets in the grid: a folder in place of a page, above its
+/// name and menu. The grid opens it when activated.
 pub fn folder_card(folder: &AssetPath) -> gtk::FlowBoxChild {
     let page = gtk::Overlay::builder()
         .child(&Miniature::square(&gtk::Box::default()))
         .build();
     page.add_overlay(
         &gtk::Image::builder()
-            .icon_name("folder")
+            .icon_name("asset-folder-symbolic")
             .pixel_size(FOLDER_SIZE)
+            .css_classes(["dim-label"])
             .build(),
     );
     page_card(
