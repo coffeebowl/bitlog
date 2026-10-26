@@ -9,8 +9,7 @@ use toml_edit::DocumentMut;
 
 use crate::error::{ReadError, SaveError};
 use crate::file::{
-    FORMAT, check_format, content_hash, parse_text, parse_toml, read_file, read_folder, read_text,
-    write_atomic,
+    content_hash, parse_text, parse_toml, read_file, read_folder, read_text, write_atomic,
 };
 use crate::mentions::renamed_mentions;
 use crate::notes::change_texts;
@@ -60,7 +59,6 @@ pub struct Contact {
 
 #[derive(Deserialize)]
 struct ContactFile {
-    format: u32,
     name: Option<String>,
     nickname: Option<String>,
     company: Option<String>,
@@ -192,7 +190,6 @@ impl Contact {
 
     fn parse(slug: ContactSlug, text: &str) -> Result<Self, String> {
         let (file, document, hash): (ContactFile, DocumentMut, _) = parse_toml(text)?;
-        check_format(file.format)?;
         let table = document.as_table();
         let roles = labeled_texts(table, "projects")?
             .into_iter()
@@ -228,7 +225,6 @@ impl Contact {
     pub fn to_toml(&self) -> String {
         let mut document = self.document.clone();
         let table = document.as_table_mut();
-        set(table, "format", i64::from(FORMAT).into());
         set(table, "name", self.name.as_str().into());
         set_text(table, "nickname", &self.nickname);
         set_text(table, "company", &self.company);
@@ -476,7 +472,7 @@ mod tests {
         let text = contact.to_toml();
         assert_eq!(
             text,
-            "format = 1\nname = \"Kim\"\nnickname = \"K\"\ncompany = \"Example\"\nbirthday = 1990-05-17\narchived = true\n\n\
+            "name = \"Kim\"\nnickname = \"K\"\ncompany = \"Example\"\nbirthday = 1990-05-17\narchived = true\n\n\
              [phone]\nmobile = \"+49 170\"\n\"Home office\" = \"+49 30\"\n\n\
              [projects]\nwebshop = \"Product Owner\"\ninfra = \"\"\n"
         );
@@ -489,7 +485,7 @@ mod tests {
     fn writing_keeps_comments_and_order() {
         let mut contact = Contact::parse(
             slug("kim"),
-            "format = 1\nname = \"Kim\"\nphone = { work = \"1\" }\nunknown = \"K\"\n\n\
+            "name = \"Kim\"\nphone = { work = \"1\" }\nunknown = \"K\"\n\n\
              [email]\n# Read daily.\nwork = \"a@example.com\" # main\nprivate = \"b@example.com\"\n",
         )
         .unwrap();
@@ -499,25 +495,23 @@ mod tests {
         contact.company = "Example".to_owned();
         assert_eq!(
             contact.to_toml(),
-            "format = 1\nname = \"Kim\"\nunknown = \"K\"\ncompany = \"Example\"\n\n\
+            "name = \"Kim\"\nunknown = \"K\"\ncompany = \"Example\"\n\n\
              [email]\nprivate = \"b@example.com\"\n# Read daily.\nwork = \"c@example.com\" # main\n"
         );
     }
 
     #[test]
     fn defaults_and_invalid_files() {
-        let contact = Contact::parse(slug("kim"), "format = 1").unwrap();
+        let contact = Contact::parse(slug("kim"), "").unwrap();
         assert_eq!(contact.name, "kim");
         assert!(contact.phones.is_empty() && contact.roles.is_empty());
-        assert_eq!(contact.to_toml(), "format = 1\nname = \"kim\"\n");
+        assert_eq!(contact.to_toml(), "name = \"kim\"\n");
         for text in [
-            "",
-            "format = 2",
-            "format = 1\nphone = \"123\"",
-            "format = 1\n[phone]\nwork = 123",
-            "format = 1\n[projects]\nWeb = \"Owner\"",
-            "format = 1\nbirthday = \"1990-05-17\"",
-            "format = 1\narchived = \"yes\"",
+            "phone = \"123\"",
+            "[phone]\nwork = 123",
+            "[projects]\nWeb = \"Owner\"",
+            "birthday = \"1990-05-17\"",
+            "archived = \"yes\"",
         ] {
             assert!(Contact::parse(slug("a"), text).is_err(), "{text:?}");
         }
@@ -545,7 +539,7 @@ mod tests {
     fn unreadable_contacts_are_left_out() {
         let (_dir, mut vault) = sample_copy();
         let path = Contact::path(vault.root(), &slug("alex"));
-        fs::write(&path, "format = 1\nname = [").unwrap();
+        fs::write(&path, "name = [").unwrap();
         fs::write(vault.root().join("contacts/Not A Slug.toml"), "").unwrap();
         vault.reload_contacts().unwrap();
         let slugs: Vec<&str> = vault.contacts().iter().map(|c| c.slug.as_str()).collect();

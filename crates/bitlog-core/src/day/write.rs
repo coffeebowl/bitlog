@@ -4,7 +4,6 @@ use chrono::NaiveTime;
 
 use super::sections::escape_block_headings;
 use super::{Block, BlockId, Day};
-use crate::file::FORMAT;
 
 impl Day {
     /// The content of the day file. The front matter is written in canonical
@@ -28,19 +27,11 @@ impl Day {
     /// fields last. Every line ends with a line break.
     fn front_matter(&self) -> String {
         let mut lines = vec![
-            format!("format: {FORMAT}"),
             format!("date: {}", quote(&self.date.to_string())),
             format!("kind: {}", quote(&self.kind)),
         ];
         if let Some(location) = &self.location {
             lines.push(format!("location: {}", quote(location.as_str())));
-        }
-        if !self.tags.is_empty() {
-            let tags: Vec<String> = self.tags.iter().map(|tag| quote(tag)).collect();
-            lines.push(format!("tags: [{}]", tags.join(", ")));
-        }
-        if let Some(energy) = self.energy {
-            lines.push(format!("energy: {energy}"));
         }
         if !self.blocks.is_empty() {
             lines.push("blocks:".to_owned());
@@ -145,11 +136,9 @@ mod tests {
         let front_matter = written.split("---\n").nth(1).unwrap();
         assert_eq!(
             front_matter,
-            "format: 1\n\
-             date: \"2026-09-22\"\n\
+            "date: \"2026-09-22\"\n\
              kind: \"work\"\n\
              location: \"office\"\n\
-             tags: [\"review\"]\n\
              blocks:\n  \
              - { id: \"p1q2\", start: \"08:45\", end: \"10:00\", project: \"webshop\" }\n  \
              - { id: \"r3s4\", start: \"10:00\", end: \"10:15\", project: \"meetings\" }\n  \
@@ -164,17 +153,17 @@ mod tests {
 
     #[test]
     fn minimal_day() {
-        let day = parse("---\nformat: 1\ndate: \"2026-01-05\"\n---\n");
+        let day = parse("---\ndate: \"2026-01-05\"\n---\n");
         assert_eq!(
             day.to_markdown(),
-            "---\nformat: 1\ndate: \"2026-01-05\"\nkind: \"work\"\n---\n\n# 2026-01-05\n"
+            "---\ndate: \"2026-01-05\"\nkind: \"work\"\n---\n\n# 2026-01-05\n"
         );
         assert_eq!(Day::new(day.date), day);
     }
 
     #[test]
     fn unknown_fields_and_odd_strings_survive() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nkind: \"say \\\"no\\\"\"\n\
+        let text = "---\ndate: \"2026-01-05\"\nkind: \"say \\\"no\\\"\"\n\
                     tags: [\"a: b\", \"#x\"]\n\
                     \"yes\": 1\nnested: { list: [1, \"two\", null], flag: true }\n---\n";
         let day = parse(text);
@@ -185,7 +174,7 @@ mod tests {
 
     #[test]
     fn old_block_categories_are_dropped() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\", category: \"filler\" }\n---\n";
         let written = parse(text).to_markdown();
         assert!(
@@ -198,7 +187,7 @@ mod tests {
 
     #[test]
     fn untitled_blocks_and_texts() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\" }\n  \
                     - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"x\" }\n---\n\
                     \n\n\n## {#bbbb}\n\n\nText\n\n\n";
@@ -212,7 +201,7 @@ mod tests {
 
     #[test]
     fn block_headings_in_code_stay_text() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\" }\n  \
                     - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"x\" }\n---\n";
         let mut day = parse(text);
@@ -235,7 +224,7 @@ mod tests {
     fn duplicate_heading_stays_text() {
         // The second heading of block bbbb is text of aaaa. Written in order
         // of start times, it would come before the real one.
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"x\" }\n  \
                     - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"x\" }\n---\n\
                     \n## Later {#bbbb}\n\nKeep me.\n\n## Earlier {#aaaa}\n\nNotes\n\n## Copy {#bbbb}\n\nCopied.\n";

@@ -9,11 +9,11 @@ use toml_edit::{ArrayOfTables, DocumentMut, Item, Table};
 
 use crate::conflict::Merger;
 use crate::error::ReadError;
-use crate::file::{FORMAT, check_format, content_hash, parse_text, parse_toml, read_optional};
+use crate::file::{content_hash, parse_text, parse_toml, read_optional};
 use crate::toml_values::{local_date, same_item, set, set_date};
 use crate::{Contradiction, EditError, TaskId};
 
-/// Task fields of format version 1. Everything else is kept as is.
+/// The task fields BitLog knows. Everything else is kept as is.
 const KNOWN_FIELDS: [&str; 6] = ["id", "title", "status", "created", "due", "done"];
 
 #[derive(Debug, Clone)]
@@ -61,7 +61,6 @@ pub struct TaskList {
 
 #[derive(Deserialize)]
 struct TasksFile {
-    format: u32,
     #[serde(default)]
     task: Vec<TaskEntry>,
 }
@@ -291,7 +290,6 @@ impl TaskList {
 
     fn parse(text: &str) -> Result<Self, String> {
         let (file, document, hash): (TasksFile, _, _) = parse_toml(text)?;
-        check_format(file.format)?;
         let mut ids = HashSet::new();
         if let Some(task) = file.task.iter().find(|task| !ids.insert(&task.id)) {
             return Err(format!("task id {} is used twice", task.id));
@@ -335,7 +333,6 @@ impl TaskList {
     /// written exactly as they were.
     pub fn to_toml(&self) -> String {
         let mut document = self.document.clone();
-        set(document.as_table_mut(), "format", i64::from(FORMAT).into());
         if self.tasks.is_empty() {
             document.remove("task");
             return document.to_string();
@@ -411,7 +408,7 @@ mod tests {
     #[test]
     fn open_tasks_come_first() {
         let list = TaskList::parse(
-            "format = 1\n\n[[task]]\nid = \"aaaa\"\ntitle = \"A\"\nstatus = \"done\"\n\n\
+            "[[task]]\nid = \"aaaa\"\ntitle = \"A\"\nstatus = \"done\"\n\n\
              [[task]]\nid = \"bbbb\"\ntitle = \"B\"\n\n\
              [[task]]\nid = \"cccc\"\ntitle = \"C\"\nstatus = \"dropped\"\n\n\
              [[task]]\nid = \"dddd\"\ntitle = \"D\"\nstatus = \"open\"\n",
@@ -432,7 +429,7 @@ mod tests {
         assert_eq!(
             text,
             format!(
-                "format = 1\n\n\
+                "\
                  [[task]]\nid = \"{first}\"\ntitle = \"Call Kim\"\nstatus = \"open\"\ncreated = 2026-10-01\n\n\
                  [[task]]\nid = \"{second}\"\ntitle = \"Water the plants\"\nstatus = \"open\"\ncreated = 2026-10-02\n"
             )
@@ -534,7 +531,7 @@ mod tests {
     #[test]
     fn writing_keeps_comments_and_unknown_fields() {
         let mut list = TaskList::parse(
-            "# Small things.\nformat = 1\nowner = \"me\"\n\n\
+            "# Small things.\nowner = \"me\"\n\n\
              # Urgent!\n[[task]]\nid = \"aaaa\"\ntitle = 'Call' # by phone\nstatus = \"open\"\nnote = \"x\"\n\n\
              [[task]]\nid = \"bbbb\"\ntitle = \"B\"\nstatus = \"open\"\n",
         )
@@ -543,7 +540,7 @@ mod tests {
         list.set_title(&id("aaaa"), "Call Kim").unwrap();
         assert_eq!(
             list.to_toml(),
-            "# Small things.\nformat = 1\nowner = \"me\"\n\n\
+            "# Small things.\nowner = \"me\"\n\n\
              [[task]]\nid = \"bbbb\"\ntitle = \"B\"\nstatus = \"open\"\n\n\
              # Urgent!\n[[task]]\nid = \"aaaa\"\ntitle = \"Call Kim\" # by phone\nstatus = \"open\"\nnote = \"x\"\n"
         );
@@ -552,7 +549,7 @@ mod tests {
     #[test]
     fn inline_tables_are_read() {
         let list = TaskList::parse(
-            "format = 1\ntask = [{ id = \"aaaa\", title = \"A\" }, { id = \"bbbb\", title = \"B\", status = \"done\" }]\n",
+            "task = [{ id = \"aaaa\", title = \"A\" }, { id = \"bbbb\", title = \"B\", status = \"done\" }]\n",
         )
         .unwrap();
         assert_eq!(ids(&list), ["aaaa", "bbbb"]);
@@ -577,15 +574,13 @@ mod tests {
     #[test]
     fn invalid() {
         for text in [
-            "",
-            "format = 2",
-            "format = 1\n[[task]]\ntitle = \"No id\"",
-            "format = 1\n[[task]]\nid = \"aaaa\"",
-            "format = 1\n[[task]]\nid = \"AAAA\"\ntitle = \"A\"",
-            "format = 1\n[[task]]\nid = \"aaaa\"\ntitle = \"A\"\nstatus = \"waiting\"",
-            "format = 1\n[[task]]\nid = \"aaaa\"\ntitle = \"A\"\ndue = \"2026-10-01\"",
-            "format = 1\n[[task]]\nid = \"aaaa\"\ntitle = \"A\"\n[[task]]\nid = \"aaaa\"\ntitle = \"B\"",
-            "format = 1\ntask = 3",
+            "[[task]]\ntitle = \"No id\"",
+            "[[task]]\nid = \"aaaa\"",
+            "[[task]]\nid = \"AAAA\"\ntitle = \"A\"",
+            "[[task]]\nid = \"aaaa\"\ntitle = \"A\"\nstatus = \"waiting\"",
+            "[[task]]\nid = \"aaaa\"\ntitle = \"A\"\ndue = \"2026-10-01\"",
+            "[[task]]\nid = \"aaaa\"\ntitle = \"A\"\n[[task]]\nid = \"aaaa\"\ntitle = \"B\"",
+            "task = 3",
         ] {
             assert!(TaskList::parse(text).is_err(), "{text:?}");
         }

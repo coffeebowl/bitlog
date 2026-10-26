@@ -27,7 +27,6 @@ A day file starts with YAML front matter holding the day's details and its
 
 ```markdown
 ---
-format: 1
 date: "2026-09-23"
 kind: "work"
 location: "remote"
@@ -64,8 +63,7 @@ Free text about this block.
 
 Project notes are plain Markdown files, headings included. A wiki link
 `[[project-a/deployment]]` points to `projects/project-a/notes/deployment.md`,
-`[[deployment]]` to a note of the same project. Words like `#release` are
-tags.
+`[[deployment]]` to a note of the same project.
 
 The full format is described in `docs/format-spec.md` in the BitLog
 repository.

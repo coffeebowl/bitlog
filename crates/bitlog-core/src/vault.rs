@@ -946,9 +946,10 @@ mod tests {
         let (_dir, vault) = sample_copy();
         let path = vault.tasks_path();
         // Not in canonical order, so writing would change it.
-        let text = fs::read_to_string(&path)
-            .unwrap()
-            .replace("format = 1\n", "format = 1\n\n\n");
+        let text =
+            fs::read_to_string(&path)
+                .unwrap()
+                .replacen("\n\n[[task]]", "\n\n\n\n[[task]]", 1);
         fs::write(&path, &text).unwrap();
         let tasks = vault.load_tasks().unwrap();
         vault.update_tasks(&tasks, |_| Ok(())).unwrap();
@@ -961,7 +962,7 @@ mod tests {
         let archive = vault.task_archive_path(2026);
         fs::write(
             &archive,
-            "format = 1\n\n[[task]]\nid = \"r3m7\"\ntitle = \"Older\"\nstatus = \"done\"\n",
+            "[[task]]\nid = \"r3m7\"\ntitle = \"Older\"\nstatus = \"done\"\n",
         )
         .unwrap();
         let tasks = vault.load_tasks().unwrap();

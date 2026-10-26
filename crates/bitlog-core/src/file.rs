@@ -11,18 +11,6 @@ use toml_edit::DocumentMut;
 use crate::conflict::has_git_markers;
 use crate::error::{ReadError, SaveError};
 
-/// The only format version of vault files this code knows.
-pub(crate) const FORMAT: u32 = 1;
-
-/// Whether `format`, the version a file gives, is the one this code knows.
-pub(crate) fn check_format(format: u32) -> Result<(), String> {
-    if format == FORMAT {
-        Ok(())
-    } else {
-        Err(format!("unsupported format version {format}"))
-    }
-}
-
 /// Reads `path` and parses it, attaching the path to any error.
 pub(crate) fn read_file<T>(
     path: &Path,

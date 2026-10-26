@@ -452,7 +452,7 @@ mod tests {
         let vault = Vault::create(&dir.0, "Test", today).unwrap();
         let broken = dir.0.join("days/2026/09/2026-09-24.md");
         fs::create_dir_all(broken.parent().unwrap()).unwrap();
-        fs::write(&broken, "---\nformat: [\n---\n").unwrap();
+        fs::write(&broken, "---\ndate: [\n---\n").unwrap();
         let mut index = Index::open(&vault).unwrap();
         let skipped = index.refresh(&vault).unwrap();
         assert!(

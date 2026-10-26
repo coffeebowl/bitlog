@@ -410,7 +410,7 @@ mod tests {
     fn find_copies() {
         let (_dir, vault) = sample_copy();
         let root = vault.root();
-        fs::write(root.join("tasks (conflicted copy).toml"), "format = 1\n").unwrap();
+        fs::write(root.join("tasks (conflicted copy).toml"), "").unwrap();
         fs::write(
             root.join("projects/infra/notes/deployment.sync-conflict-20260922-181530-KNOTBK7.md"),
             "",

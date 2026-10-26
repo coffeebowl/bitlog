@@ -787,14 +787,14 @@ mod tests {
         let contacts = vault.root().join("contacts");
         fs::write(
             contacts.join("kim.toml"),
-            "format = 1\n[projects]\nwebshop = \"\"\ngone = \"Lead\"\n",
+            "[projects]\nwebshop = \"\"\ngone = \"Lead\"\n",
         )
         .unwrap();
-        fs::write(contacts.join("alex.toml"), "format = 2\n").unwrap();
+        fs::write(contacts.join("alex.toml"), "archived = \"yes\"\n").unwrap();
         fs::write(contacts.join("nobody.jpg"), "").unwrap();
         fs::write(contacts.join("kim.jpg"), "").unwrap();
         let messages = messages(&vault);
-        assert!(messages[messages.len() - 3].ends_with("alex.toml: unsupported format version 2"));
+        assert!(messages[messages.len() - 3].contains("alex.toml: TOML parse error"));
         assert_eq!(
             messages[messages.len() - 2..],
             [
@@ -811,7 +811,7 @@ mod tests {
         fs::write(&note, "<<<<<<< HEAD\nOurs\n=======\nTheirs\n>>>>>>> main\n").unwrap();
         fs::write(
             vault.tasks_path(),
-            "<<<<<<< HEAD\nformat = 1\n=======\n>>>>>>> main\n",
+            "<<<<<<< HEAD\n[[task]]\n=======\n>>>>>>> main\n",
         )
         .unwrap();
         let tasks = vault.load_tasks().unwrap_err().to_string();
@@ -831,7 +831,7 @@ mod tests {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(
             &path,
-            "---\nformat: 1\ndate: \"2026-09-25\"\nblocks:\n\
+            "---\ndate: \"2026-09-25\"\nblocks:\n\
              - { id: \"aa11\", start: \"09:00\", end: \"10:00\", project: \"gone\" }\n\
              - { id: \"bb22\", start: \"09:30\", end: \"11:00\", project: \"infra\" }\n\
              ---\n\n# 2026-09-25\n\nNote\n===\n\n## {#aa11}\n\n## {#bb22}\n",

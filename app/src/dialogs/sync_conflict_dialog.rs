@@ -394,8 +394,6 @@ fn field_title(name: &str) -> String {
     match name {
         "kind" => gettext("Kind of Day"),
         "location" => gettext("Location"),
-        "tags" => gettext("Tags"),
-        "energy" => gettext("Energy"),
         _ => name.to_owned(),
     }
 }
@@ -409,9 +407,6 @@ fn field_value(vault: &Vault, day: &Day, name: &str) -> String {
             .location
             .as_ref()
             .map_or_else(none, |key| vault.config().location_name(key).to_owned()),
-        "tags" if day.tags.is_empty() => none(),
-        "tags" => day.tags.join(", "),
-        "energy" => day.energy.map_or_else(none, |energy| energy.to_string()),
         _ => day
             .unknown_fields
             .get(name)

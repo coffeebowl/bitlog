@@ -22,8 +22,6 @@ impl Day {
             &None,
             field("location"),
         );
-        merger.value(&mut self.tags, &other.tags, &Vec::new(), field("tags"));
-        merger.value(&mut self.energy, &other.energy, &None, field("energy"));
         for (name, value) in &other.unknown_fields {
             let mut ours = self.unknown_fields.get(name).cloned();
             merger.value(&mut ours, &Some(value.clone()), &None, field(name));
@@ -110,7 +108,7 @@ mod tests {
     #[test]
     fn fields_empty_on_one_side_are_taken() {
         let mut ours = day(Vec::new());
-        ours.energy = Some(3);
+        ours.unknown_fields.insert("focus".to_owned(), 3.into());
         let mut theirs = day(Vec::new());
         theirs.location = Some("office".parse().unwrap());
         theirs.note = "From the laptop".to_owned();
@@ -118,7 +116,7 @@ mod tests {
             .unknown_fields
             .insert("mood".to_owned(), "calm".into());
         assert_eq!(merge(&mut ours, &theirs, &[]), []);
-        assert_eq!(ours.energy, Some(3));
+        assert_eq!(ours.unknown_fields["focus"], 3);
         assert_eq!(ours.location, theirs.location);
         assert_eq!(ours.note, "From the laptop");
         assert_eq!(ours.unknown_fields["mood"], "calm");
@@ -127,12 +125,10 @@ mod tests {
     #[test]
     fn different_fields_contradict() {
         let mut ours = day(Vec::new());
-        ours.energy = Some(3);
         ours.unknown_fields.insert("mood".to_owned(), "calm".into());
         ours.note = "Ours".to_owned();
         let mut theirs = ours.clone();
         theirs.kind = "vacation".to_owned();
-        theirs.energy = Some(4);
         theirs
             .unknown_fields
             .insert("mood".to_owned(), "busy".into());
@@ -141,7 +137,6 @@ mod tests {
             merge(&mut ours, &theirs, &[]),
             [
                 Contradiction::DayField("kind".to_owned()),
-                Contradiction::DayField("energy".to_owned()),
                 Contradiction::DayField("mood".to_owned()),
                 Contradiction::DayNote,
             ]
@@ -189,14 +184,14 @@ mod tests {
             block("aa11", "09:00", "10:00", "Deploy", "Ours"),
             block("bb22", "10:00", "11:00", "Review", ""),
         ]);
-        ours.energy = Some(3);
+        ours.location = Some("remote".parse().unwrap());
         let mut theirs = day(vec![
             block("aa11", "09:00", "09:30", "Deploy fix", "Theirs"),
             block("cc33", "10:30", "12:00", "Planning", ""),
         ]);
-        theirs.energy = Some(4);
+        theirs.location = Some("office".parse().unwrap());
         let chosen = [
-            Contradiction::DayField("energy".to_owned()),
+            Contradiction::DayField("location".to_owned()),
             Contradiction::Block(id("aa11")),
             Contradiction::Overlap(id("cc33")),
         ];
@@ -210,7 +205,7 @@ mod tests {
                 chosen[2].clone(),
             ]
         );
-        assert_eq!(ours.energy, Some(4));
+        assert_eq!(ours.location, theirs.location);
         // The text stays, it was not decided for the copy.
         assert_eq!(ours.blocks[0].title, "Deploy fix");
         assert_eq!(ours.blocks[0].end, time("09:30"));

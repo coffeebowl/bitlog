@@ -8,9 +8,7 @@ use serde::Deserialize;
 use toml_edit::DocumentMut;
 
 use crate::error::ReadError;
-use crate::file::{
-    FORMAT, check_format, content_hash, parse_text, parse_toml, read_file, read_folder,
-};
+use crate::file::{content_hash, parse_text, parse_toml, read_file, read_folder};
 use crate::toml_values::{local_date, set, set_date};
 use crate::{EditError, ProjectSlug};
 
@@ -115,7 +113,6 @@ impl FromStr for ProjectCategory {
 
 #[derive(Deserialize)]
 struct ProjectFile {
-    format: u32,
     name: Option<String>,
     color: Option<String>,
     status: Option<String>,
@@ -284,7 +281,6 @@ impl Project {
 
     fn parse(slug: ProjectSlug, text: &str) -> Result<Self, String> {
         let (file, document, hash): (ProjectFile, _, _) = parse_toml(text)?;
-        check_format(file.format)?;
         let color = file.color.unwrap_or_else(|| DEFAULT_COLOR.to_owned());
         if !is_color(&color) {
             return Err(format!("color must look like \"#3584e4\", found {color:?}"));
@@ -312,7 +308,6 @@ impl Project {
     pub fn to_toml(&self) -> String {
         let mut document = self.document.clone();
         let table = document.as_table_mut();
-        set(table, "format", i64::from(FORMAT).into());
         set(table, "name", self.name.as_str().into());
         set(table, "color", self.color.as_str().into());
         if self.unknown_status.is_none() {
@@ -377,14 +372,14 @@ mod tests {
     fn writing_keeps_comments_and_unknown_fields() {
         let mut project = Project::parse(
             slug("infra"),
-            "format = 1\nname = 'Infra' # short\n# Billed separately.\ncategory = \"work\"\nhomepage = \"x\"\n",
+            "name = 'Infra' # short\n# Billed separately.\ncategory = \"work\"\nhomepage = \"x\"\n",
         )
         .unwrap();
         project.name = "Infrastructure".to_owned();
         project.set_category(ProjectCategory::Private);
         assert_eq!(
             project.to_toml(),
-            "format = 1\nname = \"Infrastructure\" # short\n# Billed separately.\ncategory = \"private\"\nhomepage = \"x\"\ncolor = \"#3584e4\"\nstatus = \"active\"\n"
+            "name = \"Infrastructure\" # short\n# Billed separately.\ncategory = \"private\"\nhomepage = \"x\"\ncolor = \"#3584e4\"\nstatus = \"active\"\n"
         );
     }
 
@@ -394,7 +389,7 @@ mod tests {
         let text = project.to_toml();
         assert_eq!(
             text,
-            "format = 1\nname = \"Webshop\"\ncolor = \"#3584e4\"\nstatus = \"active\"\ncategory = \"work\"\ncreated = 2026-03-01\n"
+            "name = \"Webshop\"\ncolor = \"#3584e4\"\nstatus = \"active\"\ncategory = \"work\"\ncreated = 2026-03-01\n"
         );
         let read = Project::parse(slug("webshop"), &text).unwrap();
         assert_eq!(read.to_toml(), text);
@@ -433,7 +428,7 @@ mod tests {
 
     #[test]
     fn unknown_statuses_count_as_active_and_are_kept() {
-        let mut project = Project::parse(slug("misc"), "format = 1\nstatus = \"done\"\n").unwrap();
+        let mut project = Project::parse(slug("misc"), "status = \"done\"\n").unwrap();
         assert_eq!(project.status(), ProjectStatus::Active);
         assert_eq!(project.unknown_status(), Some("done"));
         assert!(project.to_toml().contains("status = \"done\"\n"));
@@ -444,7 +439,7 @@ mod tests {
 
     #[test]
     fn unknown_categories_count_as_work_and_are_kept() {
-        let text = "format = 1\ncategory = \"overhead\" # old\n";
+        let text = "category = \"overhead\" # old\n";
         let mut project = Project::parse(slug("misc"), text).unwrap();
         assert_eq!(project.category(), ProjectCategory::Work);
         assert_eq!(project.unknown_category(), Some("overhead"));
@@ -471,7 +466,7 @@ mod tests {
 
     #[test]
     fn defaults() {
-        let project = Project::parse(slug("misc"), "format = 1").unwrap();
+        let project = Project::parse(slug("misc"), "").unwrap();
         assert_eq!(project.name, "misc");
         assert_eq!(project.color, DEFAULT_COLOR);
         assert_eq!(project.status(), ProjectStatus::Active);
@@ -483,12 +478,10 @@ mod tests {
     #[test]
     fn invalid() {
         for text in [
-            "",
-            "format = 2",
-            "format = 1\ncolor = \"blue\"",
-            "format = 1\ncolor = \"#12345\"",
-            "format = 1\ncreated = \"2026-03-01\"",
-            "format = 1\ncreated = 2026-03-01T10:00:00",
+            "color = \"blue\"",
+            "color = \"#12345\"",
+            "created = \"2026-03-01\"",
+            "created = 2026-03-01T10:00:00",
         ] {
             assert!(Project::parse(slug("a"), text).is_err(), "{text:?}");
         }

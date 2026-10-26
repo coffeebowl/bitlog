@@ -1,4 +1,4 @@
-format = 1
+format_version = 1
 name = "Sample BitLog"
 
 [week]

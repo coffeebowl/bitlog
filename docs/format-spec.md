@@ -1,8 +1,7 @@
 # BitLog file format
 
-**Status:** Format version 1. BitLog implements all of it, except for two
-parts marked below: tags are defined but not evaluated yet, and project tasks
-are reserved for a later extension.
+**Status:** Format version 1. BitLog implements all of it, except for project
+tasks, which are reserved for a later extension.
 
 A BitLog vault is an ordinary folder of plain text files. Every file can be
 read and corrected by hand, in any text editor, without BitLog. The files are
@@ -74,7 +73,7 @@ exist. The other files and folders are created when first needed.
 ## Vault configuration: `bitlog.toml`
 
 ```toml
-format = 1
+format_version = 1
 name = "My BitLog"
 
 [week]
@@ -100,7 +99,8 @@ note_template = "templates/note.md"
 order = ["project-a", "project-b", "pause"]
 ```
 
-Only `format` is required. Missing fields take these defaults:
+Only `format_version` is required (see "Versioning"). Missing fields take
+these defaults:
 
 | Field | Default | Rule |
 | --- | --- | --- |
@@ -136,12 +136,9 @@ as sync conflict copies, is ignored when reading days.
 
 ````markdown
 ---
-format: 1
 date: "2026-09-23"
 kind: "work"
 location: "remote"
-tags: ["refactoring"]
-energy: 4
 blocks:
   - { id: "k7f3", start: "08:30", end: "10:00", project: "project-a" }
   - { id: "m2q8", start: "10:00", end: "10:15", project: "project-a" }
@@ -183,9 +180,9 @@ let token = refresh(&session).await?;
 - **Canonical form:** BitLog rewrites the front matter completely on every
   save, in a fixed field order, with **all strings in double quotes**. This
   avoids the well-known YAML pitfalls (`no` as a boolean, `10:30` as a number).
-  The order is `format`, `date`, `kind`, `location`, `tags`, `energy`,
-  `blocks`, as in the example above. `kind` is always written; the other
-  optional fields only when they have a value.
+  The order is `date`, `kind`, `location`, `blocks`, as in the example
+  above. `kind` is always written; the other optional fields only when they
+  have a value.
 - **Tolerant reading:** Unquoted values, multi-line lists and other valid YAML
   notations are accepted, for example after Obsidian has reformatted the front
   matter. Unknown fields are preserved and written back at the end of the front
@@ -194,12 +191,9 @@ let token = refresh(&session).await?;
 
 | Field | Type | Required |
 | --- | --- | --- |
-| `format` | integer | yes |
 | `date` | `"YYYY-MM-DD"`, matching the file name | yes |
 | `kind` | string | no, defaults to `work` |
 | `location` | key from `[locations]` | no |
-| `tags` | list | no |
-| `energy` | 1–5 | no |
 | `blocks[].id` | 4 characters `[a-z0-9]`, unique within the day | yes |
 | `blocks[].start`, `.end` | `"HH:MM"`, not equal | yes |
 | `blocks[].project` | project slug | yes |
@@ -224,8 +218,7 @@ outline of the document belongs to BitLog:
 
 - **Allowed:** paragraphs, lists and task lists, code blocks, inline code,
   bold, italic, strikethrough, links, images (see "Images"), block quotes,
-  tables, tags (`#tag`, without a space after the hash), mentions (`@kim`,
-  see "Contacts").
+  tables, mentions (`@kim`, see "Contacts").
 - **Not intended:** headings of any level, both `# Text` and setext headings
   (`===` or `---` below a line of text).
 - **In the app:** The editor offers no headings. Typed heading syntax is shown
@@ -305,7 +298,6 @@ outline of the document belongs to BitLog:
 ## Project: `project.toml`
 
 ```toml
-format = 1
 name = "Project A"
 color = "#3584e4"
 status = "active"                # active | paused | archived
@@ -317,7 +309,7 @@ The project's slug is the name of its folder. A folder below `projects/` is a
 project only if its name is a valid slug and it contains a `project.toml`;
 anything else there is ignored.
 
-Only `format` is required. Missing fields take these defaults:
+All fields are optional. Missing fields take these defaults:
 
 | Field | Default | Rule |
 | --- | --- | --- |
@@ -387,8 +379,6 @@ days. It is meant for small things like "get back to XYZ about the handover" or
 list is simply always there.
 
 ```toml
-format = 1
-
 [[task]]
 id = "t9x2"
 title = "Get back to XYZ about the handover"
@@ -404,8 +394,8 @@ created = 2026-09-22
 done = 2026-09-23                # when it was done or dropped
 ```
 
-Only `format` is required, and `id` and `title` for each task. Missing fields
-take these defaults:
+Only `id` and `title` are required for each task. Missing fields take these
+defaults:
 
 | Field | Default | Rule |
 | --- | --- | --- |
@@ -441,7 +431,6 @@ below `contacts/` whose name is no valid slug, such as sync conflict
 copies, are ignored.
 
 ```toml
-format = 1
 name = "Kim Meyer"
 nickname = "Kim"
 company = "Example GmbH"
@@ -466,7 +455,7 @@ work = "kim.meyer@example.com"
 webshop = "Product Owner"
 ```
 
-Only `format` is required. Missing fields take these defaults:
+All fields are optional. Missing fields take these defaults:
 
 | Field | Default | Rule |
 | --- | --- | --- |
@@ -485,10 +474,10 @@ Only `format` is required. Missing fields take these defaults:
   preferred ones. The labels `work`, `mobile` and `private` are shown
   translated, all others as written. Texts that are web addresses can be
   opened.
-- BitLog writes `format` and `name`, the other fields only if they have a
-  value, `archived` only if it is `true`. Comments, formatting, unchanged
-  values and unknown fields are kept as they are. Tables written inline,
-  such as `phone = { work = "…" }`, are written as tables of their own.
+- BitLog writes `name`, the other fields only if they have a value,
+  `archived` only if it is `true`. Comments, formatting, unchanged values and
+  unknown fields are kept as they are. Tables written inline, such as
+  `phone = { work = "…" }`, are written as tables of their own.
 - A contact's picture is `contacts/<slug>.jpg`, square, 256 pixels wide.
   Pictures of other names or formats are ignored.
 - **Mentions** name a contact by its slug after an `@`, as in `@kim`, in
@@ -512,8 +501,7 @@ Only `format` is required. Missing fields take these defaults:
 - Live in `projects/<slug>/notes/` and belong to the project only through this
   folder.
 - Plain Markdown; front matter is allowed but not evaluated.
-- BitLog only reads wiki links and mentions (see "Contacts") from them. Tags
-  are defined below, but not evaluated yet.
+- BitLog only reads wiki links and mentions (see "Contacts") from them.
 - Full Markdown, including headings.
 - Checkboxes are text, not managed tasks.
 - Only `.md` files directly in `notes/` are notes; subfolders are ignored.
@@ -529,11 +517,6 @@ Only `format` is required. Missing fields take these defaults:
 
 Links in code are text. A target that is no valid note path, such as
 `[[a/b/c]]`, points nowhere.
-
-**Tags** are words starting with `#`, followed by letters, digits, `-`, `_`
-or `/`, such as `#release` or `#area/backend`. A `#` followed by digits only,
-like `#123`, is no tag, so issue numbers stay what they are. Code, front
-matter and the `#` inside a word or link are no tags.
 
 **The template** named by `defaults.note_template` is used for new notes. It
 may contain these placeholders, which are replaced once when a note is
@@ -669,7 +652,9 @@ Every write:
 
 ## Versioning
 
-- Every TOML file and every day front matter carries `format`. BitLog reads
-  all known versions and writes the current one.
+- `format_version` in `bitlog.toml` is the version of the whole vault, of all
+  its files and folders. BitLog only opens a vault of the version it knows, so
+  that an older BitLog on another device refuses a newer vault instead of
+  misreading it and writing it back.
 - New optional fields do not increase the version; only renames or changes in
   meaning do, each with a migration.

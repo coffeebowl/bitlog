@@ -8,13 +8,18 @@ use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table, Value};
 
 use crate::error::ReadError;
-use crate::file::{FORMAT, check_format, content_hash, parse_text, parse_toml, read_file};
+use crate::file::{content_hash, parse_text, parse_toml, read_file};
 use crate::toml_values::{local_time, set, toml_time};
 use crate::{LocationKey, ProjectSlug};
 
+/// The only format version of a vault this code knows. It only goes up when a
+/// field is renamed or changes its meaning, so that older versions refuse the
+/// vault instead of misreading it.
+const FORMAT_VERSION: u32 = 1;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct VaultConfig {
-    pub format: u32,
+    pub format_version: u32,
     #[serde(default = "default_name")]
     pub name: String,
     #[serde(default)]
@@ -158,7 +163,13 @@ impl VaultConfig {
         let (week, grid) = (WeekConfig::default(), GridConfig::default());
         let mut document = self.document.clone();
         let doc = &mut document;
-        set_key(doc, None, "format", i64::from(FORMAT).into(), false);
+        set_key(
+            doc,
+            None,
+            "format_version",
+            i64::from(FORMAT_VERSION).into(),
+            false,
+        );
         set_key(
             doc,
             None,
@@ -254,7 +265,12 @@ impl VaultConfig {
     }
 
     fn validate(&self) -> Result<(), String> {
-        check_format(self.format)?;
+        if self.format_version != FORMAT_VERSION {
+            return Err(format!(
+                "unsupported format version {}",
+                self.format_version
+            ));
+        }
         if self.week.target_hours < 0.0 {
             return Err("week.target_hours must not be negative".to_owned());
         }
@@ -406,7 +422,7 @@ mod tests {
 
     #[test]
     fn defaults() {
-        let config = VaultConfig::parse("format = 1").unwrap();
+        let config = VaultConfig::parse("format_version = 1").unwrap();
         assert_eq!(config.name, "BitLog");
         assert_eq!(config.week, WeekConfig::default());
         assert_eq!(config.grid, GridConfig::default());
@@ -418,13 +434,14 @@ mod tests {
     #[test]
     fn tolerant_reading() {
         let config = VaultConfig::parse(
-            "format = 1\nunknown = true\n[week]\nfirst_day = \"Sunday\"\n[grid]\nday_start = 06:30\n",
+            "format_version = 1\nunknown = true\n[week]\nfirst_day = \"Sunday\"\n[grid]\nday_start = 06:30\n",
         )
         .unwrap();
         assert_eq!(config.week.first_day, Weekday::Sun);
         assert_eq!(config.grid.day_start, time(6, 30));
         let config =
-            VaultConfig::parse("format = 1\n[defaults]\nnote_template = \"./note.md\"").unwrap();
+            VaultConfig::parse("format_version = 1\n[defaults]\nnote_template = \"./note.md\"")
+                .unwrap();
         assert_eq!(
             config.defaults.note_template,
             Some(PathBuf::from("./note.md"))
@@ -435,22 +452,22 @@ mod tests {
     fn invalid() {
         for text in [
             "",
-            "format = 2",
-            "format = 1\n[grid]\nslot_minutes = 7",
-            "format = 1\n[grid]\nslot_minutes = 0",
-            "format = 1\n[grid]\nday_start = 19:00:00\nday_end = 07:00:00",
-            "format = 1\n[grid]\nday_start = 2026-01-01T07:00:00",
-            "format = 1\n[grid]\nday_start = \"07:00\"",
-            "format = 1\n[week]\nfirst_day = \"someday\"",
-            "format = 1\n[week]\ntarget_hours = -1.0",
-            "format = 1\n[week]\nworkdays = []",
-            "format = 1\n[locations]\nHome = \"Home\"",
-            "format = 1\n[defaults]\nlocation = \"office\"",
-            "format = 1\n[defaults]\nnote_template = \"/etc/passwd\"",
-            "format = 1\n[defaults]\nnote_template = \"../note.md\"",
-            "format = 1\n[defaults]\nnote_template = \"templates/../../note.md\"",
-            "format = 1\n[defaults]\nnote_template = \"\"",
-            "format = 1\n[projects]\norder = [\"Web Shop\"]",
+            "format_version = 2",
+            "format_version = 1\n[grid]\nslot_minutes = 7",
+            "format_version = 1\n[grid]\nslot_minutes = 0",
+            "format_version = 1\n[grid]\nday_start = 19:00:00\nday_end = 07:00:00",
+            "format_version = 1\n[grid]\nday_start = 2026-01-01T07:00:00",
+            "format_version = 1\n[grid]\nday_start = \"07:00\"",
+            "format_version = 1\n[week]\nfirst_day = \"someday\"",
+            "format_version = 1\n[week]\ntarget_hours = -1.0",
+            "format_version = 1\n[week]\nworkdays = []",
+            "format_version = 1\n[locations]\nHome = \"Home\"",
+            "format_version = 1\n[defaults]\nlocation = \"office\"",
+            "format_version = 1\n[defaults]\nnote_template = \"/etc/passwd\"",
+            "format_version = 1\n[defaults]\nnote_template = \"../note.md\"",
+            "format_version = 1\n[defaults]\nnote_template = \"templates/../../note.md\"",
+            "format_version = 1\n[defaults]\nnote_template = \"\"",
+            "format_version = 1\n[projects]\norder = [\"Web Shop\"]",
         ] {
             assert!(VaultConfig::parse(text).is_err(), "{text:?}");
         }
@@ -464,7 +481,7 @@ mod tests {
         for text in [
             std::fs::read_to_string(sample).unwrap().as_str(),
             init,
-            "format = 1\n",
+            "format_version = 1\n",
         ] {
             let config = VaultConfig::parse(text).unwrap();
             assert_eq!(config.to_toml().unwrap(), text);
@@ -474,7 +491,7 @@ mod tests {
     #[test]
     fn writing_keeps_comments() {
         let mut config = VaultConfig::parse(
-            "format = 1\n[grid]\nslot_minutes = 15 # quarter hours\nday_end = 19:00:00\n",
+            "format_version = 1\n[grid]\nslot_minutes = 15 # quarter hours\nday_end = 19:00:00\n",
         )
         .unwrap();
         config.grid.slot_minutes = 30;
@@ -482,13 +499,13 @@ mod tests {
         config.week.target_hours = 40.0;
         assert_eq!(
             config.to_toml().unwrap(),
-            "format = 1\n[grid]\nslot_minutes = 30 # quarter hours\nday_end = 20:30:00\n"
+            "format_version = 1\n[grid]\nslot_minutes = 30 # quarter hours\nday_end = 20:30:00\n"
         );
     }
 
     #[test]
     fn writing_adds_only_changed_keys() {
-        let mut config = VaultConfig::parse("format = 1\n").unwrap();
+        let mut config = VaultConfig::parse("format_version = 1\n").unwrap();
         config.name = "Work".to_owned();
         config.week.first_day = Weekday::Sun;
         config.grid.day_start = time(6, 30);
@@ -496,7 +513,7 @@ mod tests {
         let text = config.to_toml().unwrap();
         assert_eq!(
             text,
-            "format = 1\nname = \"Work\"\n\n[week]\nfirst_day = \"sun\"\n\n[grid]\nday_start = 06:30:00\n\n[defaults]\nnote_template = \"templates/note.md\"\n"
+            "format_version = 1\nname = \"Work\"\n\n[week]\nfirst_day = \"sun\"\n\n[grid]\nday_start = 06:30:00\n\n[defaults]\nnote_template = \"templates/note.md\"\n"
         );
         let read = VaultConfig::parse(&text).unwrap();
         assert_eq!(read.week, config.week);
@@ -508,7 +525,7 @@ mod tests {
     fn target_hours_shared_among_workdays() {
         use Weekday::*;
         let config = VaultConfig::parse(
-            "format = 1\n[week]\nworkdays = [\"thu\", \"Monday\", \"tue\", \"wed\", \"mon\"]\ntarget_hours = 32.0",
+            "format_version = 1\n[week]\nworkdays = [\"thu\", \"Monday\", \"tue\", \"wed\", \"mon\"]\ntarget_hours = 32.0",
         )
         .unwrap();
         assert_eq!(config.week.workdays(), [Mon, Tue, Wed, Thu]);
@@ -520,30 +537,37 @@ mod tests {
     #[test]
     fn writing_workdays() {
         use Weekday::*;
-        let text = "format = 1\n[week]\nworkdays = [\"Thursday\", \"mon\", \"tue\", \"wed\"]\n";
+        let text =
+            "format_version = 1\n[week]\nworkdays = [\"Thursday\", \"mon\", \"tue\", \"wed\"]\n";
         let mut config = VaultConfig::parse(text).unwrap();
         config.week.workdays = vec![Mon, Tue, Wed, Thu];
         assert_eq!(config.to_toml().unwrap(), text);
         config.week.workdays = vec![Fri, Mon];
         let text = config.to_toml().unwrap();
-        assert_eq!(text, "format = 1\n[week]\nworkdays = [\"mon\", \"fri\"]\n");
+        assert_eq!(
+            text,
+            "format_version = 1\n[week]\nworkdays = [\"mon\", \"fri\"]\n"
+        );
 
-        let mut config = VaultConfig::parse("format = 1\n").unwrap();
+        let mut config = VaultConfig::parse("format_version = 1\n").unwrap();
         config.week.workdays = vec![Mon, Tue, Wed, Thu, Fri];
-        assert_eq!(config.to_toml().unwrap(), "format = 1\n");
+        assert_eq!(config.to_toml().unwrap(), "format_version = 1\n");
         config.week.workdays = vec![Sat, Sun];
         assert_eq!(
             config.to_toml().unwrap(),
-            "format = 1\n\n[week]\nworkdays = [\"sat\", \"sun\"]\n"
+            "format_version = 1\n\n[week]\nworkdays = [\"sat\", \"sun\"]\n"
         );
     }
 
     #[test]
     fn writing_the_project_order() {
-        let mut config = VaultConfig::parse("format = 1\n").unwrap();
+        let mut config = VaultConfig::parse("format_version = 1\n").unwrap();
         config.projects.order = vec!["b".parse().unwrap(), "a".parse().unwrap()];
         let text = config.to_toml().unwrap();
-        assert_eq!(text, "format = 1\n\n[projects]\norder = [\"b\", \"a\"]\n");
+        assert_eq!(
+            text,
+            "format_version = 1\n\n[projects]\norder = [\"b\", \"a\"]\n"
+        );
         assert_eq!(VaultConfig::parse(&text).unwrap().projects, config.projects);
     }
 
@@ -561,7 +585,7 @@ mod tests {
 
     #[test]
     fn writing_rejects_invalid_settings() {
-        let mut config = VaultConfig::parse("format = 1").unwrap();
+        let mut config = VaultConfig::parse("format_version = 1").unwrap();
         config.grid.day_start = time(20, 0);
         assert!(config.to_toml().is_err());
     }

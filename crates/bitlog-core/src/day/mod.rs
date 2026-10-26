@@ -13,17 +13,15 @@ use chrono::{NaiveDate, NaiveTime, TimeDelta, Timelike};
 use serde::{Deserialize, Deserializer};
 
 use crate::error::ReadError;
-use crate::file::{check_format, parse_text};
+use crate::file::parse_text;
 use crate::{BlockId, LocationKey, Project, ProjectSlug};
 
 pub use edit::{RemovedText, reordered_spans};
 pub(crate) use sections::escaped_block_headings;
 pub use sections::trim_blank_lines;
 
-/// Front matter fields of format version 1. Everything else is kept as is.
-const KNOWN_FIELDS: [&str; 7] = [
-    "format", "date", "kind", "location", "tags", "energy", "blocks",
-];
+/// The front matter fields BitLog knows. Everything else is kept as is.
+const KNOWN_FIELDS: [&str; 4] = ["date", "kind", "location", "blocks"];
 
 const DEFAULT_KIND: &str = "work";
 
@@ -32,9 +30,6 @@ pub struct Day {
     pub date: NaiveDate,
     pub kind: String,
     pub location: Option<LocationKey>,
-    pub tags: Vec<String>,
-    /// 1 to 5.
-    pub energy: Option<u8>,
     /// Sorted by start time.
     pub blocks: Vec<Block>,
     /// The text between the date heading and the first block.
@@ -146,14 +141,10 @@ fn minutes_until(start: NaiveTime, end: NaiveTime) -> u32 {
 
 #[derive(Deserialize)]
 struct FrontMatter {
-    format: u32,
     #[serde(deserialize_with = "date")]
     date: NaiveDate,
     kind: Option<String>,
     location: Option<LocationKey>,
-    #[serde(default)]
-    tags: Vec<String>,
-    energy: Option<u8>,
     #[serde(default)]
     blocks: Vec<FrontMatterBlock>,
 }
@@ -195,8 +186,6 @@ impl Day {
             date,
             kind: DEFAULT_KIND.to_owned(),
             location: None,
-            tags: Vec::new(),
-            energy: None,
             blocks: Vec::new(),
             note: String::new(),
             unknown_fields: serde_json::Map::new(),
@@ -270,8 +259,6 @@ impl Day {
             date: front_matter.date,
             kind: front_matter.kind.unwrap_or_else(|| DEFAULT_KIND.to_owned()),
             location: front_matter.location,
-            tags: front_matter.tags,
-            energy: front_matter.energy,
             blocks,
             note: parsed.note.to_owned(),
             unknown_fields,
@@ -332,12 +319,6 @@ fn split_front_matter(text: &str) -> Result<(&str, &str), String> {
 }
 
 fn validate(front_matter: &FrontMatter) -> Result<(), String> {
-    check_format(front_matter.format)?;
-    if let Some(energy) = front_matter.energy
-        && !(1..=5).contains(&energy)
-    {
-        return Err(format!("energy must be between 1 and 5, found {energy}"));
-    }
     let mut ids = HashSet::new();
     for block in &front_matter.blocks {
         if !ids.insert(&block.id) {
@@ -421,8 +402,6 @@ mod tests {
         assert_eq!(day.date, NaiveDate::from_ymd_opt(2026, 9, 21).unwrap());
         assert_eq!(day.kind, "work");
         assert_eq!(day.location, Some("remote".parse().unwrap()));
-        assert_eq!(day.tags, ["planning"]);
-        assert_eq!(day.energy, Some(4));
         assert_eq!(day.note, "Back from vacation, catching up. #planning");
         assert!(day.unknown_fields.is_empty());
 
@@ -461,7 +440,6 @@ mod tests {
         assert!(warnings.is_empty());
         assert_eq!(day.kind, "work");
         assert_eq!(day.location, Some("office".parse().unwrap()));
-        assert_eq!(day.tags, ["review"]);
         // No date heading, the note starts right after the front matter.
         assert_eq!(day.note, "Office day, lots of reviews.");
         assert_eq!(
@@ -510,7 +488,7 @@ mod tests {
 
     #[test]
     fn minimal_day() {
-        let (day, warnings) = Day::parse("---\nformat: 1\ndate: \"2026-01-05\"\n---\n").unwrap();
+        let (day, warnings) = Day::parse("---\ndate: \"2026-01-05\"\n---\n").unwrap();
         assert!(warnings.is_empty());
         assert_eq!(day.kind, "work");
         assert!(day.blocks.is_empty());
@@ -521,7 +499,7 @@ mod tests {
     fn working_time_edge_cases() {
         let projects = Project::defaults(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
         // `work` was the span of working hours once and is now kept as is.
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\n\
+        let text = "---\ndate: \"2026-01-05\"\n\
                     work: { start: \"20:00\", end: \"02:00\" }\nblocks:\n  \
                     - { id: \"aaaa\", start: \"21:00\", end: \"23:00\", project: \"pause\" }\n  \
                     - { id: \"bbbb\", start: \"23:00\", end: \"01:00\", project: \"unknown\" }\n\
@@ -535,7 +513,7 @@ mod tests {
     #[test]
     fn working_time_by_project_category() {
         let projects = Project::defaults(NaiveDate::from_ymd_opt(2026, 1, 1).unwrap());
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"company\" }\n  \
                     - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"side-project\" }\n  \
                     - { id: \"cccc\", start: \"11:00\", end: \"12:00\", project: \"filler\" }\n  \
@@ -553,7 +531,7 @@ mod tests {
 
     #[test]
     fn block_without_heading() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"a\" }\n\
                     ---\n\n# 2026-01-05\n\nJust a note.\n";
         let (day, _) = Day::parse(text).unwrap();
@@ -566,7 +544,7 @@ mod tests {
 
     #[test]
     fn blocks_are_sorted_and_overlaps_reported() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"cccc\", start: \"11:00\", end: \"12:00\", project: \"a\" }\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"11:30\", project: \"a\" }\n  \
                     - { id: \"bbbb\", start: \"10:00\", end: \"10:30\", project: \"a\" }\n\
@@ -583,7 +561,7 @@ mod tests {
 
     #[test]
     fn marker_headings_that_are_no_boundary() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"a\" }\n\
                     ---\n\n# 2026-01-05\n\n## Early {#zzzz}\n\n## A {#aaaa}\n\nFirst\n\n\
                     > ## Quoted {#aaaa}\n\n## Again {#aaaa}\n\nSecond\n";
@@ -609,7 +587,7 @@ mod tests {
 
     #[test]
     fn open_code_block_hides_no_block() {
-        let text = "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+        let text = "---\ndate: \"2026-01-05\"\nblocks:\n  \
                     - { id: \"aaaa\", start: \"09:00\", end: \"10:00\", project: \"a\" }\n  \
                     - { id: \"bbbb\", start: \"10:00\", end: \"11:00\", project: \"a\" }\n\
                     ---\n\n# 2026-01-05\n\n## A {#aaaa}\n\nFirst\n\n```\n\n<!-- open\n\n\
@@ -641,26 +619,20 @@ mod tests {
 
     #[test]
     fn invalid_front_matter() {
-        assert!(parse_error("format: 1\n").contains("has to start with a front matter"));
-        assert!(parse_error("---\nformat: 1\n").contains("not closed"));
-        assert!(parse_error("---\nformat: 2\ndate: \"2026-01-05\"\n---\n").contains("version 2"));
-        assert!(
-            parse_error("---\nformat: 1\ndate: \"2026-01-05\"\nenergy: 6\n---\n")
-                .contains("energy")
-        );
+        assert!(parse_error("date: \"2026-01-05\"\n").contains("has to start with a front matter"));
+        assert!(parse_error("---\ndate: \"2026-01-05\"\n").contains("not closed"));
 
         let bad_time = parse_error(
-            "---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n  \
+            "---\ndate: \"2026-01-05\"\nblocks:\n  \
              - { id: \"aaaa\", start: \"9 Uhr\", end: \"10:00\", project: \"a\" }\n---\n",
         );
-        assert!(bad_time.contains("line 5"), "{bad_time}");
+        assert!(bad_time.contains("line 4"), "{bad_time}");
         assert!(bad_time.contains("expected a time \"HH:MM\""), "{bad_time}");
 
         let block = |id: &str, start: &str, end: &str| {
             format!("  - {{ id: \"{id}\", start: \"{start}\", end: \"{end}\", project: \"a\" }}\n")
         };
-        let day =
-            |blocks: &str| format!("---\nformat: 1\ndate: \"2026-01-05\"\nblocks:\n{blocks}---\n");
+        let day = |blocks: &str| format!("---\ndate: \"2026-01-05\"\nblocks:\n{blocks}---\n");
         let duplicate = day(&(block("aaaa", "09:00", "10:00") + &block("aaaa", "10:00", "11:00")));
         assert!(parse_error(&duplicate).contains("more than once"));
         assert!(parse_error(&day(&block("aaaa", "09:00", "09:00"))).contains("same time"));
@@ -670,7 +642,7 @@ mod tests {
     #[test]
     fn date_has_to_match_file_name() {
         let path = Path::new("/vault/2026-01-06.md");
-        let err = Day::read(path, "---\nformat: 1\ndate: \"2026-01-05\"\n---\n")
+        let err = Day::read(path, "---\ndate: \"2026-01-05\"\n---\n")
             .unwrap_err()
             .to_string();
         assert!(err.contains("2026-01-06.md"), "{err}");

@@ -349,7 +349,6 @@ my-vault/
 fn day_file() -> String {
     format!(
         "---
-format: 1
 date: \"2026-10-06\"
 kind: \"work\"
 location: \"remote\"
