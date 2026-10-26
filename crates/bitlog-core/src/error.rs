@@ -54,12 +54,14 @@ pub enum EditError {
     UnknownContact(ContactSlug),
     #[error("the contact {0} exists already")]
     ContactExists(ContactSlug),
-    #[error("there is no file {0}")]
+    #[error("there is no {0}")]
     UnknownAsset(AssetPath),
-    #[error("the file {0} exists already")]
+    #[error("{0} exists already")]
     AssetExists(AssetPath),
     #[error("{} is no file", .0.display())]
     NotAFile(PathBuf),
+    #[error("{} cannot go into a folder of its own", .0.display())]
+    IntoOwnFolder(PathBuf),
     #[error("a repository path has to be absolute, found {}", .0.display())]
     InvalidRepoPath(PathBuf),
     #[error("{} is not a Git repository", .0.display())]

@@ -345,7 +345,7 @@ impl fmt::Display for NotePath {
 }
 
 /// Identifies a project asset, a file in `projects/<slug>/assets/` or one of
-/// its subfolders, by its path relative to the vault,
+/// its subfolders, or such a subfolder, by its path relative to the vault,
 /// `projects/<slug>/assets/<path>`, always with `/` as separator.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct AssetPath {
@@ -376,7 +376,7 @@ impl AssetPath {
         &self.path
     }
 
-    /// The file name, without the folder.
+    /// The file or folder name, without the folder it lies in.
     pub fn name(&self) -> &str {
         self.path.rsplit('/').next().unwrap_or_default()
     }
@@ -386,16 +386,33 @@ impl AssetPath {
         self.path.rsplit_once('/').map_or("", |(folder, _)| folder)
     }
 
-    /// The asset `name` in the same folder.
-    pub fn with_name(&self, name: &str) -> Result<Self, InvalidId> {
+    /// The subfolder the asset lies in, or `None` at the top of the assets.
+    pub fn parent(&self) -> Option<Self> {
+        self.path.rsplit_once('/').map(|(folder, _)| Self {
+            project: self.project.clone(),
+            path: folder.to_owned(),
+        })
+    }
+
+    /// The asset `name` in `folder`, or at the top of the assets of
+    /// `project` if there is no folder.
+    pub fn in_folder(
+        project: &ProjectSlug,
+        folder: Option<&AssetPath>,
+        name: &str,
+    ) -> Result<Self, InvalidId> {
         if !is_file_name(name) {
             return Err(InvalidId::new("asset name", name, ASSET_NAME_RULE));
         }
-        let path = match self.folder() {
-            "" => name.to_owned(),
-            folder => format!("{folder}/{name}"),
-        };
-        Self::new(self.project.clone(), &path)
+        match folder {
+            Some(folder) => Self::new(folder.project.clone(), &format!("{}/{name}", folder.path)),
+            None => Self::new(project.clone(), name),
+        }
+    }
+
+    /// The asset `name` in the same folder.
+    pub fn with_name(&self, name: &str) -> Result<Self, InvalidId> {
+        Self::in_folder(&self.project, self.parent().as_ref(), name)
     }
 }
 
@@ -548,6 +565,32 @@ mod tests {
         );
         for invalid in ["", ".b.pdf", "other/b.pdf", ".."] {
             assert!(path.with_name(invalid).is_err(), "{invalid:?}");
+        }
+    }
+
+    #[test]
+    fn assets_in_folders() {
+        let path: AssetPath = "projects/webshop/assets/scans/2026/a.pdf".parse().unwrap();
+        let parent = path.parent().unwrap();
+        assert_eq!(parent.to_string(), "projects/webshop/assets/scans/2026");
+        assert_eq!(parent.parent().unwrap().parent(), None);
+
+        let webshop = path.project();
+        assert_eq!(
+            AssetPath::in_folder(webshop, Some(&parent), "b.pdf").unwrap(),
+            path.with_name("b.pdf").unwrap()
+        );
+        assert_eq!(
+            AssetPath::in_folder(webshop, None, "b.pdf")
+                .unwrap()
+                .to_string(),
+            "projects/webshop/assets/b.pdf"
+        );
+        for invalid in ["", ".b.pdf", "other/b.pdf", ".."] {
+            assert!(
+                AssetPath::in_folder(webshop, None, invalid).is_err(),
+                "{invalid:?}"
+            );
         }
     }
 

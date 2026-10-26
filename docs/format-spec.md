@@ -543,10 +543,13 @@ replaces only the link targets and keeps the rest of each link.
   apps.
 - Hidden files and folders, whose names start with `.`, are no assets, nor
   is anything in them. Sync conflict copies are assets of their own.
-- An asset added under a name that is taken gets a number before its
-  extension, as in `offer (2).pdf`.
-- BitLog keeps no links to assets. Renaming or removing one changes
-  nothing else, not even an image link to it (see "Images").
+- A folder is added with all it holds but hidden files and folders and
+  links to folders.
+- A file or folder added or moved under a name that is taken gets a
+  number, before the extension of a file, as in `offer (2).pdf`, after the
+  name of a folder, as in `scans (2)`.
+- BitLog keeps no links to assets. Renaming, moving or removing one
+  changes nothing else, not even an image link to it (see "Images").
 
 ## Images
 

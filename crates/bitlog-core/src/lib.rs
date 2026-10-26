@@ -26,7 +26,7 @@ mod toml_values;
 mod vault;
 mod watch;
 
-pub use assets::Asset;
+pub use assets::{Asset, AssetFolder};
 pub use check::Problem;
 pub use config::{DefaultsConfig, GridConfig, ProjectsConfig, VaultConfig, WeekConfig};
 pub use conflict::{ConflictCopy, ConflictVersions, Contradiction};

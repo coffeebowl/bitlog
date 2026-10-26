@@ -43,7 +43,7 @@ impl ProjectView {
                 .iter()
                 .filter_map(|path| match path {
                     Some(path) => vault
-                        .add_asset(&slug, path)
+                        .add_asset(&slug, None, path)
                         .err()
                         .map(|err| err.to_string()),
                     None => Some(not_local()),
