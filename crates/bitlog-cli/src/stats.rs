@@ -119,7 +119,7 @@ Remote work days in 2026: 1 remote, 1 hybrid
         let times = [
             time("company", 360),
             time("side-project", 120),
-            time("business-trips", 120),
+            time("filler", 120),
             time("pause", 30),
         ];
         let first = date(2026, 3, 2);
@@ -127,11 +127,11 @@ Remote work days in 2026: 1 remote, 1 hybrid
         std::fs::remove_dir_all(&root).unwrap();
         assert!(
             stats.contains(
-                "Your Company       6 h  75 %\n\
-                 Business Trips     2 h  25 %\n\
-                 Total              8 h\n\
-                 Private            2 h\n\
-                 Breaks          30 min\n"
+                "Your Company     6 h  75 %\n\
+                 Filler           2 h  25 %\n\
+                 Total            8 h\n\
+                 Private          2 h\n\
+                 Breaks        30 min\n"
             ),
             "{stats}"
         );

@@ -36,7 +36,7 @@ impl Index {
     ) -> Result<String, IndexError> {
         let blocks = self.blocks_between(period.map(|p| p.0), period.map(|p| p.1))?;
         let mut csv = String::from(
-            "date,start,end,minutes,project,project_name,project_category,category,title,text\r\n",
+            "date,start,end,minutes,project,project_name,project_category,title,text\r\n",
         );
         for (slug, block) in blocks {
             let project = vault.project(&slug);
@@ -50,7 +50,6 @@ impl Index {
                 project
                     .map_or("", |project| project.category().as_str())
                     .to_owned(),
-                block.category.as_str().to_owned(),
                 block.title,
                 block.text,
             ];
@@ -124,7 +123,7 @@ mod tests {
         let lines: Vec<&str> = csv.split("\r\n").collect();
         assert_eq!(
             lines[0],
-            "date,start,end,minutes,project,project_name,project_category,category,title,text"
+            "date,start,end,minutes,project,project_name,project_category,title,text"
         );
         assert_eq!(
             lines.last(),
@@ -133,7 +132,7 @@ mod tests {
         );
         assert!(
             lines.contains(
-                &"2026-09-23,22:30,00:30,120,infra,Infrastructure,work,work,Release deployment,\
+                &"2026-09-23,22:30,00:30,120,infra,Infrastructure,work,Release deployment,\
                   \"Deployed 2.4.0 to production, cache purged at 00:10.\""
             ),
             "{csv}"

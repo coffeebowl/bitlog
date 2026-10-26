@@ -232,7 +232,7 @@ mod tests {
             "webshop   Webshop         work   active  #3584e4\n\
              infra     Infrastructure  work   active  #2ec27e  /code/infra, /code/proto\n\
              meetings  Meetings        work   active  #f6d32d\n\
-             filler    Filler          work   active  #c061cb\n\
+             filler    Filler          duty   active  #c061cb\n\
              pause     Break           break  active  #9a9996\n"
         );
     }

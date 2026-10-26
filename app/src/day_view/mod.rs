@@ -48,8 +48,7 @@ mod imp {
         /// the day shown.
         pub undo_toast: RefCell<Option<adw::Toast>>,
         /// The stateful actions `day.kind` and `day.location`, whose state
-        /// is the value of the day shown, and `day.block-category`, whose
-        /// state is that of the block shown.
+        /// is the value of the day shown.
         pub actions: gio::SimpleActionGroup,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
@@ -95,12 +94,6 @@ mod imp {
         pub block_project_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub block_project_label: TemplateChild<gtk::Label>,
-        #[template_child]
-        pub block_category_button: TemplateChild<gtk::MenuButton>,
-        #[template_child]
-        pub block_category_icon: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub block_category_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub block_text: TemplateChild<MarkdownView>,
         #[template_child]
@@ -207,7 +200,6 @@ mod imp {
             ));
             view.setup_detail_actions();
             view.setup_time_popovers();
-            view.setup_category_menu();
             view.setup_text_editing();
             view.setup_panel_resizing();
         }

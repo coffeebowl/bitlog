@@ -144,7 +144,7 @@ tags: ["refactoring"]
 energy: 4
 blocks:
   - { id: "k7f3", start: "08:30", end: "10:00", project: "project-a" }
-  - { id: "m2q8", start: "10:00", end: "10:15", project: "project-a", category: "overhead" }
+  - { id: "m2q8", start: "10:00", end: "10:15", project: "project-a" }
   - { id: "p4w1", start: "10:15", end: "12:00", project: "project-b" }
   - { id: "b8n2", start: "12:00", end: "12:30", project: "pause" }
 ---
@@ -177,8 +177,7 @@ let token = refresh(&session).await?;
 - YAML front matter between two `---` lines at the start of the file, read as
   **YAML 1.2**.
 - Blocks are a list of flow mappings, **one block per line**, sorted by start
-  time. Their keys are written in the order `id`, `start`, `end`, `project`,
-  `category`; `category` only when it is not `work`.
+  time.
 - Times are strings `"HH:MM"`, the date is a string `"YYYY-MM-DD"`, both in the
   user's local time zone. BitLog validates both itself.
 - **Canonical form:** BitLog rewrites the front matter completely on every
@@ -204,7 +203,6 @@ let token = refresh(&session).await?;
 | `blocks[].id` | 4 characters `[a-z0-9]`, unique within the day | yes |
 | `blocks[].start`, `.end` | `"HH:MM"`, not equal | yes |
 | `blocks[].project` | project slug | yes |
-| `blocks[].category` | `work`, `overhead` or `filler` | no, defaults to `work` |
 
 ### Date heading
 
@@ -284,11 +282,6 @@ outline of the document belongs to BitLog:
 - Blocks do not have to be contiguous. The point is a rough assignment.
 - An `end` earlier than `start` means the next day. The block counts towards
   the day it starts on.
-- **Block categories** say what kind of work a block is: `work` is the actual
-  work on its project, `overhead` everything around it, such as meetings,
-  coordination and planning, `filler` loose time such as e-mails, chats or
-  research. Only blocks of `work` and `private` projects have one; others
-  keep theirs, but it means nothing there.
 - **Working time** is the sum of the blocks of `work` and `duty` projects, see
   the project categories below; time without a block does not count. Blocks of
   projects that do not exist count as work.
@@ -348,10 +341,9 @@ count as working time, and is it work?
 | **Is work** | `work`, such as a customer project | `private`, such as a side project |
 | **Is no work** | `duty`, such as a business trip | `break`, time off |
 
-Only work is divided further by the categories of its blocks. What counts is
-the user's choice per project; BitLog has no rules of its own about it. The
-standup and the week report leave out `private` projects, the block exports
-keep them.
+What counts is the user's choice per project; BitLog has no rules of its own
+about it. The standup and the week report leave out `private` projects, the
+block exports keep them.
 
 The paths to a project's local Git repositories differ on every machine, so
 they are stored per device in `.bitlog/device.toml`:
@@ -380,12 +372,12 @@ notes in all notes, day notes and block texts.
 | --- | --- | --- |
 | `company` | Your Company | `work` |
 | `side-project` | Your Side Project | `private` |
-| `business-trips` | Business Trips | `duty` |
+| `filler` | Filler | `duty` |
 | `pause` | Break | `break` |
 
 `company` takes time that belongs to no customer project, such as company
-meetings; meetings or e-mails of a project go into its blocks, with the block
-categories `overhead` and `filler`.
+meetings, `filler` the loose time around the work, such as e-mails, longer
+chats and talking with colleagues.
 
 ## Tasks: `tasks.toml`
 
@@ -613,11 +605,11 @@ same name. Nothing reads them back.
 
 The CSV files follow RFC 4180 (UTF-8, comma, CRLF, a header line). The
 blocks have the columns `date`, `start`, `end`, `minutes`, `project`,
-`project_name`, `project_category`, `category` (of the block), `title` and
-`text`; an `end` before `start` is on the next day, as in the day files. The
-week report lists the time per project that counts as working time, then each
-day with its details, day note and blocks with their texts, without those of
-`private` projects.
+`project_name`, `project_category`, `title` and `text`; an `end` before
+`start` is on the next day, as in the day files. The week report lists the
+time per project that counts as working time, then each day with its
+details, day note and blocks with their texts, without those of `private`
+projects.
 
 ## Writing rules
 

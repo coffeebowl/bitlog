@@ -100,12 +100,6 @@ impl ProjectCategory {
     pub fn counts_as_working_time(self) -> bool {
         matches!(self, Self::Work | Self::Duty)
     }
-
-    /// Whether blocks of such projects are work, which block categories
-    /// divide further.
-    pub fn is_work(self) -> bool {
-        matches!(self, Self::Work | Self::Private)
-    }
 }
 
 impl FromStr for ProjectCategory {
@@ -181,12 +175,7 @@ impl Project {
                 "#33d17a",
                 ProjectCategory::Private,
             ),
-            (
-                "business-trips",
-                "Business Trips",
-                "#2190a4",
-                ProjectCategory::Duty,
-            ),
+            ("filler", "Filler", "#c061cb", ProjectCategory::Duty),
             ("pause", "Break", "#9a9996", ProjectCategory::Break),
         ]
         .into_iter()
@@ -472,15 +461,12 @@ mod tests {
     }
 
     #[test]
-    fn categories_answer_both_questions() {
-        let answers: Vec<_> = ProjectCategory::ALL
+    fn work_and_duty_count_as_working_time() {
+        let counted: Vec<_> = ProjectCategory::ALL
             .into_iter()
-            .map(|category| (category.counts_as_working_time(), category.is_work()))
+            .filter(|category| category.counts_as_working_time())
             .collect();
-        assert_eq!(
-            answers,
-            [(true, true), (false, true), (true, false), (false, false)]
-        );
+        assert_eq!(counted, [ProjectCategory::Work, ProjectCategory::Duty]);
     }
 
     #[test]

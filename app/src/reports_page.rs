@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{BlockCategory, Period, ProjectCategory, ProjectSlug, Vault};
+use bitlog_core::{Period, ProjectCategory, ProjectSlug, Vault};
 use bitlog_index::export;
 use chrono::{Datelike, Local, NaiveDate, TimeDelta};
 use gettextrs::gettext;
@@ -13,8 +13,8 @@ use gtk::{gdk, glib};
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
 use crate::format::{
-    block_category_name, format_duration, format_month, format_range, format_share,
-    format_short_date, project_category_name,
+    format_duration, format_month, format_range, format_share, format_short_date,
+    project_category_name,
 };
 use crate::launch;
 use crate::search_index::{ReportData, SearchIndex};
@@ -303,10 +303,6 @@ impl ReportsPage {
                 *time,
                 total,
             );
-            let shares = category_shares(&data.categories, slug, *time);
-            if category(slug).is_work() && !shares.is_empty() {
-                row.set_subtitle(&shares);
-            }
             let bar = ShareBar::new(vec![(project_color(vault, slug), share(*time, most))], 10);
             // Wide enough beside long names to compare.
             bar.set_width_request(60);
@@ -339,29 +335,16 @@ impl ReportsPage {
             format_duration(total)
         });
 
-        // The working time by block category, as only work has them, and
-        // the time of duty projects beside it.
-        let block_time = |of: BlockCategory| -> TimeDelta {
-            data.categories
-                .iter()
-                .filter(|(slug, block, _)| *block == of && category(slug) == ProjectCategory::Work)
-                .map(|(.., time)| *time)
-                .sum()
-        };
-        let kinds = BlockCategory::ALL
-            .into_iter()
-            .map(|of| (category_color(of), block_category_name(of), block_time(of)))
-            .chain([(
-                DUTY_COLOR,
-                project_category_name(ProjectCategory::Duty),
-                time_of(ProjectCategory::Duty),
-            )]);
         let mut parts = Vec::new();
-        for (color, name, time) in kinds {
+        for (color, of) in [
+            (WORK_COLOR, ProjectCategory::Work),
+            (DUTY_COLOR, ProjectCategory::Duty),
+        ] {
+            let time = time_of(of);
             if time.is_zero() {
                 continue;
             }
-            let row = time_row(color, &name, time, total);
+            let row = time_row(color, &project_category_name(of), time, total);
             rows.push((imp.categories_group.get(), row));
             parts.push((parse(color), share(time, total)));
         }
@@ -422,44 +405,10 @@ fn average_lightness(vault: &Vault) -> f32 {
     }
 }
 
-/// The fixed color of duty in "Time per Category", beside those of the block
-/// categories.
+/// The fixed colors of the categories that count as working time, from the
+/// accent colors of GNOME.
+const WORK_COLOR: &str = "#3584e4";
 const DUTY_COLOR: &str = "#2190a4";
-
-/// The fixed color of `category`, one of the accent colors of GNOME.
-fn category_color(category: BlockCategory) -> &'static str {
-    match category {
-        BlockCategory::Work => "#3584e4",
-        BlockCategory::Overhead => "#c88800",
-        BlockCategory::Filler => "#9141ac",
-    }
-}
-
-/// The shares of overhead and filler in the time `total` of the project
-/// `slug`, as in "15 % overhead · 5 % filler", empty if there are none.
-fn category_shares(
-    categories: &[(ProjectSlug, BlockCategory, TimeDelta)],
-    slug: &ProjectSlug,
-    total: TimeDelta,
-) -> String {
-    let shares: Vec<String> = BlockCategory::ALL
-        .into_iter()
-        .filter_map(|category| {
-            let text = match category {
-                BlockCategory::Work => return None,
-                // Translators: A share of a project's time, as in "15 % overhead".
-                BlockCategory::Overhead => gettext("{share} overhead"),
-                // Translators: A share of a project's time, as in "5 % filler".
-                BlockCategory::Filler => gettext("{share} filler"),
-            };
-            let (.., time) = categories
-                .iter()
-                .find(|(project, of, _)| project == slug && *of == category)?;
-            Some(text.replace("{share}", &format_share(*time, total)))
-        })
-        .collect();
-    shares.join(" · ")
-}
 
 /// A row with a dot in `color`, a name, and the time and its share of `total`.
 fn time_row(color: &str, name: &str, time: TimeDelta, total: TimeDelta) -> adw::ActionRow {

@@ -21,4 +21,4 @@ location = "remote"
 note_template = "templates/note.md"
 
 [projects]
-order = ["company", "side-project", "business-trips", "pause"]
+order = ["company", "side-project", "filler", "pause"]

@@ -1,18 +1,16 @@
 //! The panel of the day view that shows the block chosen: its title,
-//! time, project, category and text, and how wide it is.
+//! time, project and text, and how wide it is.
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{
-    BlockCategory, BlockId, RemovedText, format_span, minute_of_day, time_at_minute,
-};
+use bitlog_core::{BlockId, RemovedText, format_span, minute_of_day, time_at_minute};
 use chrono::NaiveTime;
 use gettextrs::gettext;
 use gtk::{gio, glib};
 
-use super::{DayView, variant_string};
+use super::DayView;
 use crate::config;
-use crate::format::{block_category_icon, block_category_name, format_time};
+use crate::format::format_time;
 use crate::widgets::project_picker::{project_markup, project_popover};
 
 impl DayView {
@@ -183,42 +181,7 @@ impl DayView {
         ));
     }
 
-    /// Lets the category menu set the category of the block shown.
-    pub(super) fn setup_category_menu(&self) {
-        let imp = self.imp();
-        let action = gio::SimpleAction::new_stateful(
-            "block-category",
-            Some(glib::VariantTy::STRING),
-            &"".to_variant(),
-        );
-        action.connect_change_state(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move |_, value| {
-                let category: BlockCategory = variant_string(value)
-                    .parse()
-                    .expect("the menu offers the categories");
-                let id = view.imp().shown_block.borrow().clone();
-                if let Some(id) = id {
-                    view.update(|day| day.set_block_category(&id, category));
-                }
-            }
-        ));
-        imp.actions.add_action(&action);
-        let menu = gio::Menu::new();
-        for category in BlockCategory::ALL {
-            let item = gio::MenuItem::new(Some(&block_category_name(category)), None);
-            item.set_action_and_target_value(
-                Some("day.block-category"),
-                Some(&category.as_str().to_variant()),
-            );
-            menu.append_item(&item);
-        }
-        imp.block_category_button.set_menu_model(Some(&menu));
-    }
-
-    /// Shows title, time, project, category and text of the block `index`
-    /// in the panel.
+    /// Shows title, time, project and text of the block `index` in the panel.
     pub(super) fn show_block(&self, index: usize) {
         let imp = self.imp();
         // Saving texts does not reorder the blocks, so `index` stays valid.
@@ -246,14 +209,6 @@ impl DayView {
             || glib::markup_escape_text(project_name).to_string(),
             project_markup,
         ));
-        imp.block_category_icon
-            .set_icon_name(Some(block_category_icon(block.category)));
-        imp.block_category_label
-            .set_label(&block_category_name(block.category));
-        // Only work is divided into categories.
-        imp.block_category_button
-            .set_visible(vault.project_category(&block.project).is_work());
-        self.set_menu_state("block-category", block.category.as_str());
         let id = block.id.clone();
         imp.block_project_button.set_popover(Some(&project_popover(
             &vault,

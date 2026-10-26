@@ -45,7 +45,7 @@ pub(super) fn snapshot(widget: &gtk::Widget, snapshot: &gtk::Snapshot) {
     let fields = [
         (parse("#3584e4"), gettext("Customers")),
         (parse("#33d17a"), gettext("Side projects")),
-        (parse("#2190a4"), gettext("Business trips")),
+        (parse("#c061cb"), gettext("Filler")),
         (with_alpha(&foreground, 0.5), gettext("Lunch")),
     ];
     for (index, (category, (color, example))) in

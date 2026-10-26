@@ -22,7 +22,6 @@ bitlog standup            # the last day with work and today, with your commits,
 
 bitlog block add 09:00-10:30 webshop "Checkout flow"
 bitlog block edit k7f3 --time 09:00-11:00 --title "Checkout and cart"
-bitlog block add 11:00-11:30 webshop Weekly --category overhead   # or filler; work by default
 bitlog block note k7f3    # edit the block's text in $VISUAL or $EDITOR
 bitlog block rm k7f3 --move-text
 bitlog set --location office

@@ -40,8 +40,6 @@ pub enum EditError {
     InvalidColor(String),
     #[error("unknown project status {0:?}, expected active, paused or archived")]
     InvalidStatus(String),
-    #[error("unknown block category {0:?}, expected work, overhead or filler")]
-    InvalidBlockCategory(String),
     #[error("unknown project category {0:?}, expected work, private, duty or break")]
     InvalidProjectCategory(String),
     #[error("there is no task {0}")]

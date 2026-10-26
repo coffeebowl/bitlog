@@ -7,9 +7,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::process;
 
 use anyhow::{Context, Result, bail};
-use bitlog_core::{
-    BlockCategory, BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, Vault,
-};
+use bitlog_core::{BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, RemovedText, Vault};
 use chrono::{NaiveDate, NaiveTime};
 
 /// Applies `change` to the day `date`, creating its file if needed.
@@ -44,13 +42,10 @@ pub fn add_block(
     (start, end): (NaiveTime, NaiveTime),
     project: ProjectSlug,
     title: &str,
-    category: BlockCategory,
 ) -> Result<()> {
     let mut id = None;
     update_day(vault, date, |day| {
-        let added = day.add_block(start, end, project, title, vault.projects())?;
-        day.set_block_category(&added, category)?;
-        id = Some(added);
+        id = Some(day.add_block(start, end, project, title, vault.projects())?);
         Ok(())
     })?;
     println!("Added block {}", id.expect("the block was added"));
@@ -60,7 +55,6 @@ pub fn add_block(
 pub struct BlockChanges {
     pub span: Option<(NaiveTime, NaiveTime)>,
     pub project: Option<ProjectSlug>,
-    pub category: Option<BlockCategory>,
     pub title: Option<String>,
 }
 
@@ -76,9 +70,6 @@ pub fn edit_block(
         }
         if let Some(project) = changes.project {
             day.set_block_project(id, project, vault.projects())?;
-        }
-        if let Some(category) = changes.category {
-            day.set_block_category(id, category)?;
         }
         if let Some(title) = &changes.title {
             day.set_block_title(id, title)?;

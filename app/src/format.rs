@@ -1,6 +1,6 @@
 //! Dates, times, durations and counts as the app shows them.
 
-use bitlog_core::{BlockCategory, ProjectCategory, ProjectStatus, TaskStatus, capitalize, percent};
+use bitlog_core::{ProjectCategory, ProjectStatus, TaskStatus, capitalize, percent};
 use chrono::{Datelike, NaiveDate, NaiveTime, TimeDelta};
 use gettextrs::gettext;
 use gtk::glib;
@@ -163,23 +163,6 @@ pub fn kind_name(kind: &str) -> String {
         "sick" => gettext("Sick"),
         "holiday" => gettext("Public Holiday"),
         _ => capitalize(kind),
-    }
-}
-
-/// The symbolic icon of `category`, shown in blocks and the block panel.
-pub fn block_category_icon(category: BlockCategory) -> &'static str {
-    match category {
-        BlockCategory::Work => "hammer-symbolic",
-        BlockCategory::Overhead => "calendar-symbolic",
-        BlockCategory::Filler => "view-refresh-symbolic",
-    }
-}
-
-pub fn block_category_name(category: BlockCategory) -> String {
-    match category {
-        BlockCategory::Work => gettext("Work"),
-        BlockCategory::Overhead => gettext("Overhead"),
-        BlockCategory::Filler => gettext("Filler"),
     }
 }
 

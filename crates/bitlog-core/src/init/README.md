@@ -33,7 +33,7 @@ kind: "work"
 location: "remote"
 blocks:
   - { id: "k7f3", start: "08:30", end: "10:00", project: "project-a" }
-  - { id: "m2q8", start: "10:00", end: "10:15", project: "project-a", category: "overhead" }
+  - { id: "m2q8", start: "10:00", end: "10:15", project: "project-a" }
   - { id: "b8n2", start: "12:00", end: "12:30", project: "pause" }
 ---
 
@@ -57,9 +57,6 @@ Free text about this block.
 - Every project has a category in its `project.toml`. Working time is the
   sum of the blocks of `work` and `duty` projects; blocks of `private` and
   `break` projects and time without a block do not count.
-- Blocks of `work` and `private` projects have a category of their own:
-  `work` by default, `overhead` for meetings and planning, `filler` for loose
-  time such as e-mails.
 - The text below a heading belongs to the user and is kept as written. Block
   texts and the day note contain no headings of their own.
 

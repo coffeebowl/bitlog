@@ -85,21 +85,17 @@ fn days() -> Topic {
             Block::Heading(gettext("What Counts")),
             Block::Figure(Kind::Categories),
             Block::Text(gettext(
-                "The category of a project answers two questions about its time: does it count as working time, and is it work? <b>Work</b> is both, such as your company or a customer project. <b>Private</b> is work that doesn’t count, such as a side project. <b>Duty</b> counts without being work, such as a business trip. <b>Break</b> is time off and doesn’t count, just like time without a block. What counts is up to you; set it when you edit a project.",
+                "The category of a project answers two questions about its time: does it count as working time, and is it work? <b>Work</b> is both, such as your company or a customer project. <b>Private</b> is work that doesn’t count, such as a side project. <b>Duty</b> counts without being work, such as filler or a business trip. <b>Break</b> is time off and doesn’t count, just like time without a block. What counts is up to you; set it when you edit a project.",
             )),
             Block::Text(gettext(
-                "A new vault comes with one project of each category; rename them to fit. Time that belongs to no customer project, such as company meetings or internal tasks, goes into the company project. Unlike a gap, a break is a block, so it can have a title and notes: “Lunch”, “Shopping”, “Talk with John”.",
-            )),
-            Block::Heading(gettext("Kinds of Work")),
-            Block::Text(gettext(
-                "Blocks of work and private projects also say what kind of work they were. <b>Work</b> is the actual work on a project. <b>Overhead</b> is everything around it: meetings, coordination, planning. <b>Filler</b> is loose time such as e-mails, chats or research. In the timeline, a small symbol at the right shows the kind, and the stripe of overhead and filler is lighter. The reports show how much of each project went into them.",
+                "A new vault comes with one project of each category; rename them to fit. Filler takes the loose time around your work: e-mails, longer chats, talking with colleagues. Time that belongs to no customer project, such as company meetings or internal tasks, goes into the company project. Unlike a gap, a break is a block, so it can have a title and notes: “Lunch”, “Shopping”, “Talk with John”.",
             )),
             Block::Text(gettext(
                 "The standup and the week report leave out private projects, so you can share them as they are.",
             )),
             Block::Heading(gettext("Logging Blocks")),
             Block::Text(gettext(
-                "To add a block, drag over free time in the timeline or press <b>Ctrl+N</b>. Drag a block to move it, or past other blocks to reorder them. Drag its top or bottom edge to change its length. Click a block to change its project, category, title or text. On touch screens, press and hold instead of dragging. Dots next to the title of a block show how much of its text doesn’t fit: one for a few words, up to five for a long text.",
+                "To add a block, drag over free time in the timeline or press <b>Ctrl+N</b>. Drag a block to move it, or past other blocks to reorder them. Drag its top or bottom edge to change its length. Click a block to change its project, title or text. On touch screens, press and hold instead of dragging. Dots next to the title of a block show how much of its text doesn’t fit: one for a few words, up to five for a long text.",
             )),
             Block::Heading(gettext("The Day")),
             Block::Text(gettext(

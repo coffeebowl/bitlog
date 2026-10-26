@@ -50,7 +50,7 @@ impl Kind {
     fn description(self) -> String {
         match self {
             Self::Day => gettext(
-                "A morning with blocks of work, overhead and filler, a gap without a block and a break; dots show text that doesn’t fit",
+                "A morning with blocks of three projects, a gap without a block and a break; dots show text that doesn’t fit",
             ),
             Self::Categories => gettext(
                 "The four project categories by whether their time counts as working time and whether it is work, each with an example",

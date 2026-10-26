@@ -1,6 +1,6 @@
 //! Days as the terminal shows them.
 
-use bitlog_core::{BlockCategory, Day, Vault, format_span};
+use bitlog_core::{Day, Vault, format_span};
 use chrono::{NaiveDate, TimeDelta};
 
 use crate::table::table;
@@ -10,8 +10,7 @@ pub fn heading(date: NaiveDate) -> String {
     date.format("%A, %Y-%m-%d").to_string()
 }
 
-/// The heading, the day's details and a table of its blocks with their ids,
-/// their categories beside the project unless they are work.
+/// The heading, the day's details and a table of its blocks with their ids.
 pub fn format_day(vault: &Vault, day: &Day) -> String {
     let details = vault.day_details(day, format_duration);
     let mut text = format!("{}\n{details}\n\n", heading(day.date));
@@ -22,15 +21,12 @@ pub fn format_day(vault: &Vault, day: &Day) -> String {
         .blocks
         .iter()
         .map(|block| {
-            let mut project = vault.project_name(&block.project).to_owned();
-            if block.category != BlockCategory::Work {
-                project = format!("{project} ({})", block.category.as_str());
-            }
+            let project = vault.project_name(&block.project);
             [
                 block.id.to_string(),
                 format_span(block.span()),
                 format_duration(block.duration()),
-                project,
+                project.to_owned(),
                 block.title.clone(),
             ]
         })
@@ -76,21 +72,6 @@ mod tests {
              dd44  12:30–13:15        45 min  Break           Lunch\n\
              ee55  13:15–15:00    1 h 45 min  Webshop         Release notes\n\
              ff66  22:30–00:30+1         2 h  Infrastructure  Release deployment\n"
-        );
-    }
-
-    #[test]
-    fn categories_stand_beside_the_project() {
-        let vault =
-            Vault::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault"))
-                .unwrap();
-        let date = NaiveDate::from_ymd_opt(2026, 9, 23).unwrap();
-        let mut day = vault.load_day(date).unwrap().unwrap().day;
-        day.blocks[1].category = BlockCategory::Overhead;
-        let text = format_day(&vault, &day);
-        assert!(
-            text.contains("bb22  10:00–10:15        15 min  Meetings (overhead)  Daily\n"),
-            "{text}"
         );
     }
 

@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use bitlog_core::{BlockCategory, ContactSlug, NotePath, ProjectSlug, Vault};
+use bitlog_core::{ContactSlug, NotePath, ProjectSlug, Vault};
 use bitlog_index::{Backlink, Index, IndexError, ProjectBlock, SearchHit};
 use chrono::{NaiveDate, TimeDelta};
 use gtk::{gio, glib};
@@ -36,8 +36,6 @@ pub struct ReportData {
     pub times: Vec<(ProjectSlug, TimeDelta)>,
     /// The time spent on each project on each day of the period.
     pub days: Vec<(NaiveDate, ProjectSlug, TimeDelta)>,
-    /// The time spent in each block category of each project in the period.
-    pub categories: Vec<(ProjectSlug, BlockCategory, TimeDelta)>,
 }
 
 /// Clones share the same index.
@@ -147,7 +145,6 @@ impl SearchIndex {
             Ok(ReportData {
                 times: index.project_time(period.0, period.1)?,
                 days: index.project_time_per_day(period.0, period.1)?,
-                categories: index.category_time(period.0, period.1)?,
             })
         })
         .await

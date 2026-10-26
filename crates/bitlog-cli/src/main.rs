@@ -293,13 +293,11 @@ fn block(vault: &Vault, date: NaiveDate, command: BlockCommand) -> Result<()> {
             span,
             project,
             title,
-            category,
-        } => edit::add_block(vault, date, span, project, &title, category),
+        } => edit::add_block(vault, date, span, project, &title),
         BlockCommand::Edit {
             id,
             time,
             project,
-            category,
             title,
         } => edit::edit_block(
             vault,
@@ -308,7 +306,6 @@ fn block(vault: &Vault, date: NaiveDate, command: BlockCommand) -> Result<()> {
             BlockChanges {
                 span: time,
                 project,
-                category,
                 title,
             },
         ),
