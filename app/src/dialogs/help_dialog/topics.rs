@@ -123,7 +123,7 @@ fn projects() -> Topic {
             )),
             Block::Heading(gettext("Files")),
             Block::Text(gettext(
-                "You can also keep files with a project, such as PDFs, office documents or images. They open in your system’s default app.",
+                "You can also keep files with a project, such as PDFs, office documents or images, and sort them into folders. They open in your system’s default app. Files and folders dropped onto the list are copied into the folder shown.",
             )),
             Block::Heading(gettext("Git")),
             Block::Text(gettext(

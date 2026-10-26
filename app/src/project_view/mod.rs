@@ -2,20 +2,21 @@
 //! this device, its Git log.
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{Asset, AssetPath, NotePath, Period, Project, ProjectSlug, Vault, format_span};
+use bitlog_core::{NotePath, Period, Project, ProjectSlug, Vault, format_span};
 use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
-use gtk::{gdk, glib};
+use gtk::glib;
 
+use crate::assets_view::AssetsView;
 use crate::colors;
 use crate::format::{
     format_duration, format_full_date, format_range, format_share, format_weekday_date,
@@ -24,12 +25,11 @@ use crate::format::{
 use crate::git_page::GitPage;
 use crate::markdown_view::MarkdownView;
 use crate::search_index::{ProjectData, SearchIndex};
-use crate::widgets::cards::{asset_card, note_card, note_preview, show_preview};
+use crate::widgets::cards::{note_card, note_preview, show_preview};
 use crate::widgets::heatmap::Heatmap;
 use crate::widgets::param;
 use crate::window::show_action;
 
-mod assets;
 mod people;
 
 /// Blocks the timeline shows at first and adds with "Load More".
@@ -48,8 +48,6 @@ mod imp {
         pub slug: RefCell<Option<ProjectSlug>>,
         /// The notes in the grid, in its order, with their previews.
         pub notes: RefCell<Vec<(NotePath, MarkdownView)>>,
-        /// The assets in the grid, in its order, with their cards.
-        pub assets: RefCell<Vec<(Asset, gtk::FlowBoxChild)>>,
         pub vault: RefCell<Option<Rc<Vault>>>,
         pub index: RefCell<SearchIndex>,
         /// Counts the lookups in the index, so that one finishing after a
@@ -88,13 +86,7 @@ mod imp {
         #[template_child]
         pub notes_error_row: TemplateChild<adw::ActionRow>,
         #[template_child]
-        pub add_assets_button: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub assets_stack: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub assets_grid: TemplateChild<gtk::FlowBox>,
-        #[template_child]
-        pub assets_error_row: TemplateChild<adw::ActionRow>,
+        pub assets_view: TemplateChild<AssetsView>,
         #[template_child]
         pub people_list: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -114,37 +106,10 @@ mod imp {
         type ParentType = adw::NavigationPage;
 
         fn class_init(klass: &mut Self::Class) {
+            AssetsView::ensure_type();
             GitPage::ensure_type();
             Heatmap::ensure_type();
             klass.bind_template();
-            klass.install_action_async("assets.add", None, |view, _, _| async move {
-                view.choose_assets().await;
-            });
-            klass.install_action_async("assets.open-folder", None, |view, _, _| async move {
-                view.open_assets_folder().await;
-            });
-            klass.install_action_async(
-                "assets.open",
-                Some(glib::VariantTy::STRING),
-                |view, _, asset| async move {
-                    view.open_asset(param(asset.as_ref(), "assets")).await;
-                },
-            );
-            klass.install_action_async(
-                "assets.show",
-                Some(glib::VariantTy::STRING),
-                |view, _, asset| async move {
-                    view.show_asset_in_folder(param(asset.as_ref(), "assets"))
-                        .await;
-                },
-            );
-            klass.install_action_async(
-                "assets.rename",
-                Some(glib::VariantTy::STRING),
-                |view, _, asset| async move {
-                    view.rename_asset(param(asset.as_ref(), "assets")).await;
-                },
-            );
             klass.install_action_async("people.add", None, |view, _, _| async move {
                 view.add_person().await;
             });
@@ -160,13 +125,6 @@ mod imp {
                 "people.remove",
                 Some(glib::VariantTy::STRING),
                 |view, _, contact| view.remove_person(&param(contact, "contacts")),
-            );
-            klass.install_action_async(
-                "assets.trash",
-                Some(glib::VariantTy::STRING),
-                |view, _, asset| async move {
-                    view.trash_asset(param(asset.as_ref(), "assets")).await;
-                },
             );
         }
 
@@ -205,35 +163,6 @@ mod imp {
                         }
                     }
                 ));
-            let drop = gtk::DropTarget::new(gdk::FileList::static_type(), gdk::DragAction::COPY);
-            drop.connect_drop(glib::clone!(
-                #[weak(rename_to = view)]
-                self.obj(),
-                #[upgrade_or]
-                false,
-                move |_, value, _, _| {
-                    let Ok(files) = value.get::<gdk::FileList>() else {
-                        return false;
-                    };
-                    let files = files.files();
-                    glib::spawn_future_local(async move { view.add_assets(&files).await });
-                    true
-                }
-            ));
-            self.assets_stack.add_controller(drop);
-            self.assets_grid.connect_child_activated(glib::clone!(
-                #[weak(rename_to = view)]
-                self.obj(),
-                move |_, card| {
-                    let index = usize::try_from(card.index()).expect("cards are in the grid");
-                    let target = view.imp().assets.borrow()[index]
-                        .0
-                        .path
-                        .to_string()
-                        .to_variant();
-                    let _ = WidgetExt::activate_action(&view, "assets.open", Some(&target));
-                }
-            ));
             self.notes_grid.connect_child_activated(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
@@ -280,8 +209,15 @@ impl ProjectView {
     }
 
     /// Switches from the Git page back to the project's main page.
-    pub fn show_project_tab(&self) {
+    fn show_project_tab(&self) {
         self.imp().view_stack.set_visible_child_name("project");
+    }
+
+    /// Shows the project as when it is opened anew: its main page, with the
+    /// top of its files.
+    pub fn show_start(&self) {
+        self.show_project_tab();
+        self.imp().assets_view.show_folder(None);
     }
 
     /// Uses `index` for the time spent on projects and their blocks.
@@ -325,7 +261,7 @@ impl ProjectView {
         imp.empty_new_note_button
             .set_action_target_value(Some(&target));
 
-        self.show_assets();
+        imp.assets_view.show(vault, &project.slug);
         self.show_people(vault, &project.slug);
 
         imp.notes_grid.remove_all();
@@ -354,45 +290,9 @@ impl ProjectView {
         imp.notes.replace(notes);
     }
 
-    /// Shows the assets of the project as they are now. The cards of the
-    /// assets that did not change stay, so that their previews are not read
-    /// again.
+    /// Shows the assets of the project as they are now.
     pub fn show_assets(&self) {
-        let imp = self.imp();
-        let (Some(slug), Some(vault)) = (self.slug(), imp.vault.borrow().clone()) else {
-            return;
-        };
-        imp.assets_grid.remove_all();
-        let mut cards: HashMap<AssetPath, (Asset, gtk::FlowBoxChild)> = imp
-            .assets
-            .take()
-            .into_iter()
-            .map(|(asset, card)| (asset.path.clone(), (asset, card)))
-            .collect();
-        match vault.assets(&slug) {
-            Ok(assets) => {
-                let assets: Vec<_> = assets
-                    .into_iter()
-                    .map(|asset| {
-                        let card = match cards.remove(&asset.path) {
-                            Some((known, card)) if known == asset => card,
-                            _ => asset_card(&vault, &asset),
-                        };
-                        imp.assets_grid.append(&card);
-                        (asset, card)
-                    })
-                    .collect();
-                imp.assets_stack
-                    .set_visible_child_name(if assets.is_empty() { "empty" } else { "list" });
-                imp.add_assets_button.set_visible(!assets.is_empty());
-                imp.assets.replace(assets);
-            }
-            Err(err) => {
-                imp.assets_error_row.set_subtitle(&err.to_string());
-                imp.assets_stack.set_visible_child_name("error");
-                imp.add_assets_button.set_visible(true);
-            }
-        }
+        self.imp().assets_view.reload();
     }
 
     /// Shows the notes in the grid as they are now, as after editing one.

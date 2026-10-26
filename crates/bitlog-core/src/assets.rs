@@ -42,25 +42,11 @@ impl Vault {
     }
 
     /// Where `folder` lives, or the assets folder of `project`.
-    fn folder_path(&self, project: &ProjectSlug, folder: Option<&AssetPath>) -> PathBuf {
+    pub fn asset_folder_path(&self, project: &ProjectSlug, folder: Option<&AssetPath>) -> PathBuf {
         folder.map_or_else(
             || self.assets_folder(project),
             |folder| self.asset_path(folder),
         )
-    }
-
-    /// The assets of the project `project`, those in subfolders included,
-    /// sorted by path. Hidden files and folders are left out.
-    pub fn assets(&self, project: &ProjectSlug) -> Result<Vec<Asset>, ReadError> {
-        let mut assets = Vec::new();
-        let mut folders = vec![None];
-        while let Some(folder) = folders.pop() {
-            let found = self.asset_folder(project, folder.as_ref())?;
-            assets.extend(found.files);
-            folders.extend(found.folders.into_iter().map(Some));
-        }
-        assets.sort_by(|a, b| a.path.cmp(&b.path));
-        Ok(assets)
     }
 
     /// What `folder` holds, or the top of the assets of the project
@@ -70,7 +56,7 @@ impl Vault {
         project: &ProjectSlug,
         folder: Option<&AssetPath>,
     ) -> Result<AssetFolder, ReadError> {
-        let path = self.folder_path(project, folder);
+        let path = self.asset_folder_path(project, folder);
         let io_error = |source| ReadError::Io {
             path: path.clone(),
             source,
@@ -130,7 +116,7 @@ impl Vault {
             .free_asset(project, folder, name, metadata.is_dir())
             .map_err(EditError::from)?;
         if metadata.is_dir() {
-            let into = self.folder_path(project, folder);
+            let into = self.asset_folder_path(project, folder);
             fs::create_dir_all(&into).map_err(|err| write_error(&into, err))?;
             let into = fs::canonicalize(&into).map_err(|err| read_error(&into, err))?;
             let source = fs::canonicalize(source).map_err(|err| read_error(source, err))?;
@@ -225,7 +211,10 @@ impl Vault {
         if asset.parent().as_ref() == folder {
             return Ok(asset.clone());
         }
-        if self.folder_path(asset.project(), folder).starts_with(&from) {
+        if self
+            .asset_folder_path(asset.project(), folder)
+            .starts_with(&from)
+        {
             return Err(EditError::IntoOwnFolder(from).into());
         }
         let moved = self
@@ -328,35 +317,6 @@ mod tests {
     }
 
     #[test]
-    fn list_assets() {
-        let (_dir, vault) = sample_copy();
-        assert!(vault.assets(&slug("webshop")).unwrap().is_empty());
-
-        put(
-            &vault,
-            "webshop",
-            &[
-                "plan.pdf",
-                "scans/2026/offer.png",
-                ".plan.pdf.0badf00d.tmp",
-                ".cache/thumb.png",
-            ],
-        );
-        let assets = vault.assets(&slug("webshop")).unwrap();
-        let paths: Vec<_> = assets.iter().map(|asset| asset.path.to_string()).collect();
-        assert_eq!(
-            paths,
-            [
-                "projects/webshop/assets/plan.pdf",
-                "projects/webshop/assets/scans/2026/offer.png"
-            ]
-        );
-        assert_eq!(assets[0].size, 5);
-        let folder = vault.assets_folder(&slug("webshop"));
-        assert_eq!(vault.asset_path(&assets[0].path), folder.join("plan.pdf"));
-    }
-
-    #[test]
     fn list_folders() {
         let (_dir, vault) = sample_copy();
         let webshop = slug("webshop");
@@ -373,7 +333,8 @@ mod tests {
                 "a.pdf",
                 "scans/2026/offer.png",
                 "empty/",
-                ".cache/",
+                ".plan.pdf.0badf00d.tmp",
+                ".cache/thumb.png",
             ],
         );
         let top = vault.asset_folder(&webshop, None).unwrap();
@@ -381,6 +342,9 @@ mod tests {
             names(&top),
             (vec!["empty", "scans"], vec!["a.pdf", "b.pdf"])
         );
+        assert_eq!(top.files[0].size, 5);
+        let folder = vault.assets_folder(&webshop);
+        assert_eq!(vault.asset_path(&top.files[0].path), folder.join("a.pdf"));
         let scans = vault.asset_folder(&webshop, Some(&top.folders[1])).unwrap();
         assert_eq!(names(&scans), (vec!["2026"], vec![]));
         let year = vault

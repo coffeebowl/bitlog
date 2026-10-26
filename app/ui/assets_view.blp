@@ -1,0 +1,141 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $BitLogAssetsView: Adw.PreferencesGroup {
+  // In place of the title, so that the folders on the way to the one shown
+  // can follow it and be clicked.
+  Box {
+    margin-bottom: 6;
+
+    // Goes to the top, but only from a folder; at the top it is just the
+    // title.
+    Button files_button {
+      can-target: false;
+      focusable: false;
+
+      child: Label {
+        label: _("Files");
+
+        styles [
+          "heading",
+        ]
+      };
+
+      styles [
+        "flat",
+        "crumb",
+        "crumb-title",
+      ]
+    }
+
+    Box crumbs {
+      hexpand: true;
+    }
+
+    // Only in a folder.
+    Button back_button {
+      icon-name: "go-previous-symbolic";
+      tooltip-text: _("Parent Folder");
+      action-name: "assets.up";
+      visible: false;
+
+      styles [
+        "flat",
+      ]
+    }
+
+    Button {
+      icon-name: "folder-new-symbolic";
+      tooltip-text: _("New Folder");
+      action-name: "assets.new-folder";
+
+      styles [
+        "flat",
+      ]
+    }
+
+    Button {
+      icon-name: "folder-open-symbolic";
+      tooltip-text: _("Open Folder");
+      action-name: "assets.open-folder";
+
+      styles [
+        "flat",
+      ]
+    }
+
+    Button {
+      icon-name: "list-add-symbolic";
+      tooltip-text: _("Add Files");
+      action-name: "assets.add";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+
+  // Files dropped onto it are added.
+  Stack stack {
+    vhomogeneous: false;
+
+    StackPage {
+      name: "list";
+
+      child: FlowBox grid {
+        valign: start;
+        homogeneous: true;
+        selection-mode: none;
+        max-children-per-line: 8;
+        column-spacing: 12;
+        row-spacing: 18;
+      };
+    }
+
+    StackPage {
+      name: "empty";
+
+      child: ListBox {
+        valign: start;
+        selection-mode: none;
+
+        Adw.ButtonRow {
+          title: _("_Add Files…");
+          use-underline: true;
+          start-icon-name: "list-add-symbolic";
+          action-name: "assets.add";
+        }
+
+        styles [
+          "boxed-list",
+        ]
+      };
+    }
+
+    StackPage {
+      name: "error";
+
+      child: ListBox {
+        valign: start;
+        selection-mode: none;
+
+        Adw.ActionRow error_row {
+          title: _("Cannot Read Files");
+
+          [prefix]
+          Image {
+            icon-name: "dialog-error-symbolic";
+          }
+        }
+
+        styles [
+          "boxed-list",
+        ]
+      };
+    }
+
+    styles [
+      "assets-drop",
+    ]
+  }
+}

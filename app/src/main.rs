@@ -1,4 +1,5 @@
 mod alert;
+mod assets_view;
 mod calendar_view;
 mod colors;
 mod config;

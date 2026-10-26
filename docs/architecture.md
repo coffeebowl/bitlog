@@ -51,7 +51,7 @@ bitlog-cli (`bitlog`)   ·   app (`bitlog-gtk`)
 | `src/calendar_view.rs`, `src/reports_page.rs` | Calendar and reports |
 | `src/tasks_page.rs`, `src/task_list_view.rs` | Tasks; the list also shows on the day page |
 | `src/notes_page.rs`, `src/note_view.rs` | All notes, and one note |
-| `src/projects_page.rs`, `src/project_view/`, `src/git_page.rs` | Projects, one project, and its Git log |
+| `src/projects_page.rs`, `src/project_view/`, `src/assets_view/`, `src/git_page.rs` | Projects, one project, its files, and its Git log |
 | `src/contacts_page/`, `src/contact_view.rs` | Contacts, and one contact |
 | `src/markdown_view/` | The Markdown editor used for all texts |
 | `src/dialogs/` | All dialogs, including help and preferences |

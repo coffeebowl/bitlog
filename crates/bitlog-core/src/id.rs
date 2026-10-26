@@ -381,11 +381,6 @@ impl AssetPath {
         self.path.rsplit('/').next().unwrap_or_default()
     }
 
-    /// The subfolder of the assets folder the asset lies in, or `""`.
-    pub fn folder(&self) -> &str {
-        self.path.rsplit_once('/').map_or("", |(folder, _)| folder)
-    }
-
     /// The subfolder the asset lies in, or `None` at the top of the assets.
     pub fn parent(&self) -> Option<Self> {
         self.path.rsplit_once('/').map(|(folder, _)| Self {
@@ -529,14 +524,11 @@ mod tests {
         assert_eq!(path.project().as_str(), "webshop");
         assert_eq!(path.path(), "scans/Offer 2026.pdf");
         assert_eq!(path.name(), "Offer 2026.pdf");
-        assert_eq!(path.folder(), "scans");
         assert_eq!(
             path.to_string(),
             "projects/webshop/assets/scans/Offer 2026.pdf"
         );
 
-        let top: AssetPath = "projects/webshop/assets/logo.png".parse().unwrap();
-        assert_eq!(top.folder(), "");
         // Sync conflict copies are assets like any other file.
         let copy = "projects/webshop/assets/a.sync-conflict-20260922-181530-KNOTBK7.png";
         assert!(copy.parse::<AssetPath>().is_ok());

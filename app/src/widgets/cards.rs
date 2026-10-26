@@ -1,5 +1,6 @@
-//! Cards of notes and assets in the grids of the project view and the
-//! notes page, with the miniatures of their pages.
+//! Cards of notes, assets and their folders in the grids of the project
+//! view, the assets view and the notes page, with the miniatures of their
+//! pages.
 
 use adw::prelude::*;
 use bitlog_core::{Asset, AssetPath, NotePath, Vault, without_front_matter};
@@ -15,6 +16,8 @@ const PREVIEW_LINES: usize = 50;
 /// How wide the miniature of a note reads its images at most, in pixels of
 /// its page, which is shown far smaller.
 const PREVIEW_IMAGE_WIDTH: i32 = 270;
+/// The size of the folder on the card of a folder.
+const FOLDER_SIZE: i32 = 96;
 
 /// The text of `note`, or none if it cannot be read.
 fn note_text(vault: &Vault, note: &NotePath) -> String {
@@ -61,8 +64,10 @@ pub fn note_card(
     preview: &MarkdownView,
     details: Option<&gtk::Label>,
 ) -> gtk::FlowBoxChild {
+    let page = Miniature::new(preview);
+    page.add_css_class("miniature-page");
     page_card(
-        &Miniature::new(preview),
+        &page,
         note.name(),
         note.name(),
         details,
@@ -71,8 +76,8 @@ pub fn note_card(
     )
 }
 
-/// A card in a grid of notes or assets: `page`, the miniature of a page,
-/// above `name`, with `tooltip`, `details` if given, and `menu`.
+/// A card in a grid of notes or assets: `page`, the miniature of a page or
+/// a folder, above `name`, with `tooltip`, `details` if given, and `menu`.
 fn page_card(
     page: &impl IsA<gtk::Widget>,
     name: &str,
@@ -81,7 +86,6 @@ fn page_card(
     menu_tooltip: &str,
     menu: &gio::Menu,
 ) -> gtk::FlowBoxChild {
-    page.add_css_class("miniature-page");
     // Takes up rounding, so that the names line up.
     page.set_vexpand(true);
 
@@ -162,26 +166,47 @@ pub fn note_menu(note: &NotePath) -> gio::Menu {
     menu
 }
 
-/// An asset in the grid: its page, above its name, folder and size, and
-/// menu. The grid opens it when activated.
+/// An asset in the grid: its page, above its name, size and menu. The grid
+/// opens it when activated.
 pub fn asset_card(vault: &Vault, asset: &Asset) -> gtk::FlowBoxChild {
     let path = &asset.path;
-    let mut details = vec![glib::format_size(asset.size).to_string()];
-    if !path.folder().is_empty() {
-        details.insert(0, path.folder().to_owned());
-    }
+    let page = asset_page(vault, asset);
+    page.add_css_class("miniature-page");
     page_card(
-        &asset_page(vault, asset),
+        &page,
         path.name(),
-        path.path(),
-        Some(&gtk::Label::new(Some(&details.join(" · ")))),
+        path.name(),
+        Some(&gtk::Label::new(Some(&glib::format_size(asset.size)))),
         &gettext("File Menu"),
         &asset_menu(path),
     )
 }
 
-/// Showing `asset` in its folder, renaming it and moving it to the trash.
-/// Opening it is what clicking its card does.
+/// A folder of assets in the grid: a folder as the file manager shows it, in
+/// place of a page, above its name and menu. The grid opens it when
+/// activated.
+pub fn folder_card(folder: &AssetPath) -> gtk::FlowBoxChild {
+    let page = gtk::Overlay::builder()
+        .child(&Miniature::square(&gtk::Box::default()))
+        .build();
+    page.add_overlay(
+        &gtk::Image::builder()
+            .icon_name("folder")
+            .pixel_size(FOLDER_SIZE)
+            .build(),
+    );
+    page_card(
+        &page,
+        folder.name(),
+        folder.name(),
+        None,
+        &gettext("Folder Menu"),
+        &asset_menu(folder),
+    )
+}
+
+/// Showing the file or folder `asset` in its folder, renaming it and moving
+/// it to the trash. Opening it is what clicking its card does.
 fn asset_menu(asset: &AssetPath) -> gio::Menu {
     let target = asset.to_string().to_variant();
     let menu = gio::Menu::new();

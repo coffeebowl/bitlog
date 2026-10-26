@@ -71,6 +71,20 @@ flowboxchild.page-card {
   color: var(--accent-fg-color);
 }
 
+/* The folders on the way to the one shown follow the title "Files", which
+   alone is bold, all spaced alike. */
+.crumb {
+  padding-left: 10px;
+  padding-right: 10px;
+  font-weight: normal;
+}
+
+/* "Files" goes to the top, but stays where the titles of the other groups
+   are: its button reaches out to the left as far as it is padded. */
+.crumb-title {
+  margin-left: -10px;
+}
+
 /* Files dragged over a project's files show where they will be added, as
    libadwaita's tab overview shows where a tab goes. */
 .assets-drop {
