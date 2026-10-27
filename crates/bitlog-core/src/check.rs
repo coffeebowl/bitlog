@@ -810,11 +810,11 @@ mod tests {
         let note = vault.note_path(&"projects/infra/notes/deployment.md".parse().unwrap());
         fs::write(&note, "<<<<<<< HEAD\nOurs\n=======\nTheirs\n>>>>>>> main\n").unwrap();
         fs::write(
-            vault.tasks_path(),
+            vault.tasks_path(None),
             "<<<<<<< HEAD\n[[task]]\n=======\n>>>>>>> main\n",
         )
         .unwrap();
-        let tasks = vault.load_tasks().unwrap_err().to_string();
+        let tasks = vault.load_tasks(None).unwrap_err().to_string();
         assert!(
             tasks.ends_with("tasks.toml: it holds Git conflict markers, resolve them with Git")
         );

@@ -64,7 +64,9 @@ pub(crate) fn insert(
     match file {
         IndexFile::Day(_) => insert_day(tx, &Day::read(path, text)?.0)?,
         IndexFile::Note(note) => insert_note(tx, note, text)?,
-        IndexFile::Tasks => insert_tasks(tx, &TaskList::read(path, text)?)?,
+        IndexFile::Tasks(project) => {
+            insert_tasks(tx, project.as_ref(), &TaskList::read(path, text)?)?;
+        }
     }
     Ok(())
 }
@@ -77,7 +79,10 @@ pub(crate) fn remove(tx: &Transaction, file: &IndexFile) -> rusqlite::Result<()>
             "DELETE FROM notes WHERE project = ? AND name = ?",
             [note.project().as_str(), note.name()],
         )?,
-        IndexFile::Tasks => tx.execute("DELETE FROM tasks", [])?,
+        IndexFile::Tasks(project) => tx.execute(
+            "DELETE FROM tasks WHERE project IS ?",
+            [project.as_ref().map(ProjectSlug::as_str)],
+        )?,
     };
     Ok(())
 }
@@ -136,7 +141,7 @@ fn place(source: &Found) -> (Option<&NotePath>, Option<NaiveDate>, Option<&str>)
         Found::Note(note) => (Some(note), None, None),
         Found::DayNote(date) => (None, Some(*date), None),
         Found::Block { date, id } => (None, Some(*date), Some(id.as_str())),
-        Found::Task(_) => unreachable!("tasks hold no links or mentions"),
+        Found::Task { .. } => unreachable!("tasks hold no links or mentions"),
     }
 }
 
@@ -188,12 +193,20 @@ fn insert_mentions(tx: &Transaction, source: &Found, text: &str) -> rusqlite::Re
     Ok(())
 }
 
-fn insert_tasks(tx: &Transaction, tasks: &TaskList) -> rusqlite::Result<()> {
+/// Puts `tasks`, the task list of `project` or the global one, into the
+/// index.
+fn insert_tasks(
+    tx: &Transaction,
+    project: Option<&ProjectSlug>,
+    tasks: &TaskList,
+) -> rusqlite::Result<()> {
     let mut insert = tx.prepare_cached(
-        "INSERT INTO tasks (id, title, status, created, due, done) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO tasks (project, id, title, status, created, due, done)
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )?;
     for task in tasks.tasks() {
         insert.execute(params![
+            project.map(ProjectSlug::as_str),
             task.id.as_str(),
             task.title,
             task.status.as_str(),

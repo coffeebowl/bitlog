@@ -49,7 +49,7 @@ bitlog-cli (`bitlog`)   ·   app (`bitlog-gtk`)
 | `src/window/` | The main window: sidebar, navigation, opening and watching the vault |
 | `src/day_view/`, `src/timeline/` | The day page and its timeline of blocks |
 | `src/calendar_view.rs`, `src/reports_page.rs` | Calendar and reports |
-| `src/tasks_page.rs`, `src/task_list_view.rs` | Tasks; the list also shows on the day page |
+| `src/tasks_page.rs`, `src/task_lists_view.rs`, `src/task_list_view/` | Tasks: all lists, and one list or all due tasks, as on the project and day pages |
 | `src/notes_page.rs`, `src/note_view.rs` | All notes, and one note |
 | `src/projects_page.rs`, `src/project_view/`, `src/assets_view/`, `src/git_page.rs` | Projects, one project, its files, and its Git log |
 | `src/contacts_page/`, `src/contact_view.rs` | Contacts, and one contact |

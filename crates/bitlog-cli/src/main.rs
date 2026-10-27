@@ -6,7 +6,7 @@ use std::io::{self, IsTerminal};
 use std::path::{self, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use bitlog_core::{Period, RemovedText, TaskStatus, Vault, week_start};
+use bitlog_core::{EditError, Period, ProjectSlug, RemovedText, TaskStatus, Vault, week_start};
 use bitlog_index::{Index, export};
 use chrono::{Local, NaiveDate};
 use clap::Parser;
@@ -83,7 +83,7 @@ fn main() -> Result<()> {
         }
         Command::Project { command } => project(vault, command, today),
         Command::Contact { command } => contact(vault, command),
-        Command::Task { command } => task(&vault, command, today),
+        Command::Task { project, command } => task(&vault, project.as_ref(), command, today),
         Command::Set {
             kind,
             location,
@@ -256,16 +256,32 @@ fn contact(mut vault: Vault, command: ContactCommand) -> Result<()> {
     }
 }
 
-fn task(vault: &Vault, command: TaskCommand, today: NaiveDate) -> Result<()> {
+/// Runs `command` on the task list of `project`, or on the global one.
+fn task(
+    vault: &Vault,
+    project: Option<&ProjectSlug>,
+    command: TaskCommand,
+    today: NaiveDate,
+) -> Result<()> {
+    if let Some(slug) = project.filter(|slug| vault.project(slug).is_none()) {
+        return Err(EditError::UnknownProject(slug.clone()).into());
+    }
     match command {
         TaskCommand::List { all } => {
-            print!("{}", task::format_tasks(&vault.load_tasks()?, all, today));
+            print!(
+                "{}",
+                task::format_tasks(&vault.load_tasks(project)?, all, today)
+            );
             Ok(())
         }
-        TaskCommand::Add { title, due } => task::add_task(vault, &title, due, today),
-        TaskCommand::Done { id } => task::set_status(vault, &id, TaskStatus::Done, today),
-        TaskCommand::Drop { id } => task::set_status(vault, &id, TaskStatus::Dropped, today),
-        TaskCommand::Reopen { id } => task::set_status(vault, &id, TaskStatus::Open, today),
+        TaskCommand::Add { title, due } => task::add_task(vault, project, &title, due, today),
+        TaskCommand::Done { id } => task::set_status(vault, project, &id, TaskStatus::Done, today),
+        TaskCommand::Drop { id } => {
+            task::set_status(vault, project, &id, TaskStatus::Dropped, today)
+        }
+        TaskCommand::Reopen { id } => {
+            task::set_status(vault, project, &id, TaskStatus::Open, today)
+        }
         TaskCommand::Edit {
             id,
             title,
@@ -273,6 +289,7 @@ fn task(vault: &Vault, command: TaskCommand, today: NaiveDate) -> Result<()> {
             no_due,
         } => task::edit_task(
             vault,
+            project,
             &id,
             TaskChanges {
                 title,
@@ -281,9 +298,9 @@ fn task(vault: &Vault, command: TaskCommand, today: NaiveDate) -> Result<()> {
         ),
         TaskCommand::Move { id, position } => {
             let position = usize::try_from(position).expect("u32 fits into usize");
-            task::move_task(vault, &id, position)
+            task::move_task(vault, project, &id, position)
         }
-        TaskCommand::Archive => task::archive_tasks(vault, today),
+        TaskCommand::Archive => task::archive_tasks(vault, project, today),
     }
 }
 

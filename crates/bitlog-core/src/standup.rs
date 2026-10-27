@@ -1,20 +1,22 @@
 //! A summary of the last working day and of today for a standup meeting.
 
 use std::collections::BTreeMap;
+use std::iter;
 
 use chrono::{Datelike, NaiveDate};
 
 use crate::error::ReadError;
 use crate::git_log::own_commits_on;
-use crate::{Block, Day, ProjectSlug, TaskList, TaskStatus, Vault, repo_name};
+use crate::{Block, Day, ProjectSlug, Task, TaskList, TaskStatus, Vault, repo_name};
 
 impl Vault {
     /// A standup summary for the day `today` in Markdown, to paste into a
     /// chat. "Yesterday" is the last day before `today` with working time,
     /// with the tasks done on it; "Today" holds the blocks of `today` and the
-    /// open tasks due by then. Blocks are listed by project with their
-    /// titles, and with the user's commits of that day in the project's
-    /// repositories on this device. Breaks and private projects are left out.
+    /// open tasks due by then, those of projects with the project's name.
+    /// Blocks are listed by project with their titles, and with the user's
+    /// commits of that day in the project's repositories on this device.
+    /// Breaks and private projects are left out, with their tasks.
     ///
     /// It reads the repositories, so programs with a user interface call
     /// it outside the main thread.
@@ -36,13 +38,16 @@ impl Vault {
             None => Vec::new(),
         };
         let mut lines = self.project_lines(&blocks, today)?;
-        let tasks = self.load_tasks()?;
-        let due: Vec<&str> = tasks
-            .tasks()
-            .iter()
-            .filter(|task| task.is_open() && task.due.is_some_and(|due| due <= today))
-            .map(|task| task.title.as_str())
-            .collect();
+        let mut due = Vec::new();
+        for project in self.task_lists() {
+            due.extend(
+                self.load_tasks(project)?
+                    .tasks()
+                    .iter()
+                    .filter(|task| task.is_open() && task.due.is_some_and(|due| due <= today))
+                    .map(|task| self.task_title(project, task)),
+            );
+        }
         if !due.is_empty() {
             lines.push(format!("Due: {}", due.join(", ")));
         }
@@ -137,15 +142,35 @@ impl Vault {
 
     /// The titles of the tasks done on `date`, also those archived since.
     fn tasks_done_on(&self, date: NaiveDate) -> Result<Vec<String>, ReadError> {
-        let archive = TaskList::load(&self.task_archive_path(date.year()))?;
-        let tasks = self.load_tasks()?;
-        Ok(tasks
-            .tasks()
-            .iter()
-            .chain(archive.tasks())
-            .filter(|task| task.status == TaskStatus::Done && task.done == Some(date))
-            .map(|task| task.title.clone())
-            .collect())
+        let mut done = Vec::new();
+        for project in self.task_lists() {
+            let archive = TaskList::load(&self.task_archive_path(project, date.year()))?;
+            done.extend(
+                self.load_tasks(project)?
+                    .tasks()
+                    .iter()
+                    .chain(archive.tasks())
+                    .filter(|task| task.status == TaskStatus::Done && task.done == Some(date))
+                    .map(|task| self.task_title(project, task)),
+            );
+        }
+        Ok(done)
+    }
+
+    /// The global task list (`None`), then those of the projects that count
+    /// as working time.
+    fn task_lists(&self) -> impl Iterator<Item = Option<&ProjectSlug>> {
+        let projects = self.projects().iter().map(|project| &project.slug);
+        iter::once(None).chain(projects.filter(|slug| self.counts(slug)).map(Some))
+    }
+
+    /// The title of `task` of the list of `project`, with the project's name
+    /// if it has one: "Fix the cart (Webshop)".
+    fn task_title(&self, project: Option<&ProjectSlug>, task: &Task) -> String {
+        match project {
+            Some(slug) => format!("{} ({})", task.title, self.project_name(slug)),
+            None => task.title.clone(),
+        }
     }
 }
 
@@ -358,7 +383,10 @@ mod tests {
             .unwrap();
         let standup = vault.standup(date(2026, 9, 28)).unwrap();
         assert!(standup.starts_with("**Yesterday** · Wednesday, 2026-09-23\n"));
-        assert!(standup.ends_with("**Today** · Monday, 2026-09-28\n\nNothing planned yet.\n"));
+        assert!(standup.ends_with(
+            "**Today** · Monday, 2026-09-28\n\n\
+             - Due: Fix the rounding of discounts in the cart (Webshop)\n"
+        ));
     }
 
     #[test]
@@ -370,17 +398,43 @@ mod tests {
     #[test]
     fn due_tasks_are_for_today() {
         let standup = sample_vault().standup(date(2026, 10, 1)).unwrap();
-        assert!(standup.ends_with("\n- Due: Renew the TLS certificate for staging\n"));
+        assert!(standup.ends_with(
+            "\n- Due: Renew the TLS certificate for staging, \
+             Fix the rounding of discounts in the cart (Webshop)\n"
+        ));
     }
 
     #[test]
     fn archived_tasks_count_as_done() {
         let (_dir, vault) = sample_copy();
-        let tasks = vault.load_tasks().unwrap();
-        vault.archive_tasks(&tasks, date(2026, 9, 23)).unwrap();
-        assert!(fs::exists(vault.task_archive_path(2026)).unwrap());
+        let tasks = vault.load_tasks(None).unwrap();
+        vault
+            .archive_tasks(None, &tasks, date(2026, 9, 23))
+            .unwrap();
+        assert!(fs::exists(vault.task_archive_path(None, 2026)).unwrap());
         let standup = vault.standup(date(2026, 9, 23)).unwrap();
         assert!(standup.contains("- Done: Take the keyboard to the office\n"));
         assert!(!standup.contains("Book a meeting room"));
+
+        let webshop = "webshop".parse().unwrap();
+        let tasks = vault.load_tasks(Some(&webshop)).unwrap();
+        vault
+            .archive_tasks(Some(&webshop), &tasks, date(2026, 9, 24))
+            .unwrap();
+        let standup = vault.standup(date(2026, 9, 24)).unwrap();
+        assert!(standup.contains("- Done: Update the payment provider SDK (Webshop)\n"));
+    }
+
+    #[test]
+    fn tasks_of_private_projects_are_left_out() {
+        let (_dir, mut vault) = sample_copy();
+        vault
+            .update_project(&"webshop".parse().unwrap(), |project| {
+                project.set_category(ProjectCategory::Private);
+                Ok(())
+            })
+            .unwrap();
+        let standup = vault.standup(date(2026, 10, 1)).unwrap();
+        assert!(!standup.contains("Webshop"), "{standup}");
     }
 }

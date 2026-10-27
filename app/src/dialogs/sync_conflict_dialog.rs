@@ -263,7 +263,11 @@ fn changed(path: &Path) -> String {
 pub fn file_title(vault: &Vault, of: &VaultChange) -> String {
     match of {
         VaultChange::Day(date) => format_full_date(*date),
-        VaultChange::Tasks => gettext("Tasks"),
+        VaultChange::Tasks(None) => gettext("Tasks"),
+        VaultChange::Tasks(Some(slug)) => {
+            // Translators: The task list of a project, as in "Tasks · Webshop".
+            gettext("Tasks · {project}").replace("{project}", vault.project_name(slug))
+        }
         VaultChange::Note(note) => {
             format!("{} / {}", vault.project_name(note.project()), note.name())
         }

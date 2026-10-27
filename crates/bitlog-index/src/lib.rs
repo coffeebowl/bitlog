@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::UNIX_EPOCH;
 
-use bitlog_core::{NotePath, ReadError, Vault, VaultChange, content_hash};
+use bitlog_core::{NotePath, ProjectSlug, ReadError, Vault, VaultChange, content_hash};
 use chrono::NaiveDate;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
@@ -40,6 +40,7 @@ const MIGRATION_STEPS: &[M] = &[
     M::up(include_str!("migrations/08-mentions.sql")),
     M::up(include_str!("migrations/09-block-categories.sql")),
     M::up(include_str!("migrations/10-no-block-categories.sql")),
+    M::up(include_str!("migrations/11-project-tasks.sql")),
 ];
 const MIGRATIONS: Migrations = Migrations::from_slice(MIGRATION_STEPS);
 
@@ -104,7 +105,8 @@ impl Index {
 enum IndexFile {
     Day(NaiveDate),
     Note(NotePath),
-    Tasks,
+    /// The task list of a project, or the global one.
+    Tasks(Option<ProjectSlug>),
 }
 
 impl IndexFile {
@@ -112,7 +114,7 @@ impl IndexFile {
         match self {
             Self::Day(date) => vault.day_path(*date),
             Self::Note(note) => vault.note_path(note),
-            Self::Tasks => vault.tasks_path(),
+            Self::Tasks(project) => vault.tasks_path(project.as_ref()),
         }
     }
 
@@ -130,7 +132,7 @@ impl IndexFile {
         match VaultChange::from_path(Path::new(key))? {
             VaultChange::Day(date) => Some(Self::Day(date)),
             VaultChange::Note(note) => Some(Self::Note(note)),
-            VaultChange::Tasks => Some(Self::Tasks),
+            VaultChange::Tasks(project) => Some(Self::Tasks(project)),
             VaultChange::Config
             | VaultChange::Project(_)
             | VaultChange::Assets(_)
@@ -150,7 +152,13 @@ struct FileState {
 
 fn refresh(tx: &Transaction, vault: &Vault) -> Result<Vec<ReadError>, IndexError> {
     sync_projects(tx, vault)?;
-    let mut files = vec![IndexFile::Tasks];
+    let mut files = vec![IndexFile::Tasks(None)];
+    files.extend(
+        vault
+            .projects()
+            .iter()
+            .map(|project| IndexFile::Tasks(Some(project.slug.clone()))),
+    );
     files.extend(vault.all_days()?.into_iter().map(IndexFile::Day));
     for note in vault.all_notes() {
         files.push(IndexFile::Note(note?));
@@ -193,8 +201,12 @@ fn update(
             })
         })
         .optional()?;
-    // A note of a project that is gone is gone as well.
-    let orphan = matches!(file, IndexFile::Note(note) if vault.project(note.project()).is_none());
+    // A note or task list of a project that is gone is gone as well.
+    let orphan = match file {
+        IndexFile::Note(note) => vault.project(note.project()).is_none(),
+        IndexFile::Tasks(Some(project)) => vault.project(project).is_none(),
+        IndexFile::Day(_) | IndexFile::Tasks(None) => false,
+    };
     let metadata = match fs::metadata(&path) {
         Ok(_) if orphan => None,
         Ok(metadata) => Some(metadata),
@@ -393,7 +405,8 @@ mod tests {
         assert_eq!(count(&index, "days"), 3);
         assert_eq!(count(&index, "blocks"), 17);
         assert_eq!(count(&index, "notes"), 3);
-        assert_eq!(count(&index, "tasks"), 4);
+        // Two tasks of the project share their id with a global one.
+        assert_eq!(count(&index, "tasks"), 6);
     }
 
     #[test]
@@ -505,7 +518,7 @@ mod tests {
         fs::remove_file(vault.day_path(date(21))).unwrap();
         fs::remove_file(dir.0.join("projects/infra/notes/deployment.md")).unwrap();
         fs::write(dir.0.join("projects/infra/notes/backups.md"), "# Backups\n").unwrap();
-        fs::remove_file(vault.tasks_path()).unwrap();
+        fs::remove_file(vault.tasks_path(None)).unwrap();
         index.refresh(&vault).unwrap();
         assert_eq!(count(&index, "days"), 2);
         assert_eq!(block_title(&index, "a1b2"), None);
@@ -518,13 +531,14 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(notes, ["backups"]);
-        assert_eq!(count(&index, "tasks"), 0);
-        // Two days and three notes.
-        assert_eq!(count(&index, "files"), 5);
+        // Those of the project are left.
+        assert_eq!(count(&index, "tasks"), 2);
+        // Two days, three notes and the tasks of the project.
+        assert_eq!(count(&index, "files"), 6);
     }
 
     #[test]
-    fn refresh_removes_the_notes_of_removed_projects() {
+    fn refresh_removes_the_notes_and_tasks_of_removed_projects() {
         let (dir, _vault, mut index) = sample_copy();
         let project = dir.0.join("projects/webshop/project.toml");
         let text = fs::read_to_string(&project).unwrap();
@@ -532,11 +546,13 @@ mod tests {
         index.refresh(&Vault::open(&dir.0).unwrap()).unwrap();
         assert_eq!(count(&index, "projects"), 4);
         assert_eq!(count(&index, "notes"), 1);
+        assert_eq!(count(&index, "tasks"), 4);
         // Blocks may belong to projects that do not exist.
         assert_eq!(count(&index, "blocks"), 17);
         fs::write(&project, text).unwrap();
         index.refresh(&Vault::open(&dir.0).unwrap()).unwrap();
         assert_eq!(count(&index, "notes"), 3);
+        assert_eq!(count(&index, "tasks"), 6);
     }
 
     #[test]
@@ -592,7 +608,21 @@ mod tests {
         let hits = index.search("vacation", 10).unwrap();
         assert_eq!(found(&hits), [&Found::DayNote(date(21))]);
         let hits = index.search("tls", 10).unwrap();
-        assert_eq!(found(&hits), [&Found::Task("h4c8".parse().unwrap())]);
+        assert_eq!(
+            found(&hits),
+            [&Found::Task {
+                project: None,
+                id: "h4c8".parse().unwrap()
+            }]
+        );
+        let hits = index.search("discounts", 10).unwrap();
+        assert_eq!(
+            found(&hits),
+            [&Found::Task {
+                project: Some("webshop".parse().unwrap()),
+                id: "p2k5".parse().unwrap()
+            }]
+        );
     }
 
     #[test]

@@ -235,7 +235,9 @@ template $BitLogDayView: Adw.NavigationPage {
                       placeholder: _("Add a note · no headings");
                     }
 
-                    $BitLogTaskListView tasks {}
+                    $BitLogTaskListView tasks {
+                      all-due: true;
+                    }
 
                     $BitLogTimeline timeline {}
                   };
@@ -269,7 +271,9 @@ template $BitLogDayView: Adw.NavigationPage {
 
                   Adw.Clamp {
                     maximum-size: 720;
-                    child: $BitLogTaskListView empty_tasks {};
+                    child: $BitLogTaskListView empty_tasks {
+                      all-due: true;
+                    };
                   }
                 };
               };

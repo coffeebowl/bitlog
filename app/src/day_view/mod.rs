@@ -276,8 +276,8 @@ impl DayView {
         self.show_tasks();
     }
 
-    /// Shows the open tasks, read again, on today only: they belong to no
-    /// day, and past days stay a plain log.
+    /// Shows the open tasks due by today, read again, on today only: they
+    /// belong to no day, and past days stay a plain log.
     pub fn show_tasks(&self) {
         let imp = self.imp();
         let is_today = self.date() == Local::now().date_naive();

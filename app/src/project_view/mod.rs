@@ -1,5 +1,5 @@
-//! One project: its time, notes, assets, blocks and, with a repository on
-//! this device, its Git log.
+//! One project: its time, tasks, notes, assets, blocks and, with a
+//! repository on this device, its Git log.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
@@ -25,6 +25,7 @@ use crate::format::{
 use crate::git_page::GitPage;
 use crate::markdown_view::MarkdownView;
 use crate::search_index::{ProjectData, SearchIndex};
+use crate::task_list_view::TaskListView;
 use crate::widgets::cards::{note_card, note_preview, show_preview};
 use crate::widgets::heatmap::Heatmap;
 use crate::widgets::param;
@@ -78,6 +79,8 @@ mod imp {
         #[template_child]
         pub heatmap: TemplateChild<Heatmap>,
         #[template_child]
+        pub tasks: TemplateChild<TaskListView>,
+        #[template_child]
         pub notes_stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub notes_grid: TemplateChild<gtk::FlowBox>,
@@ -109,6 +112,7 @@ mod imp {
             AssetsView::ensure_type();
             GitPage::ensure_type();
             Heatmap::ensure_type();
+            TaskListView::ensure_type();
             klass.bind_template();
             klass.install_action_async("people.add", None, |view, _, _| async move {
                 view.add_person().await;
@@ -261,6 +265,9 @@ impl ProjectView {
         imp.empty_new_note_button
             .set_action_target_value(Some(&target));
 
+        imp.tasks.set_vault(vault.clone());
+        imp.tasks.set_project(Some(project.slug.clone()));
+        imp.tasks.reload();
         imp.assets_view.show(vault, &project.slug);
         self.show_people(vault, &project.slug);
 
@@ -293,6 +300,11 @@ impl ProjectView {
     /// Shows the assets of the project as they are now.
     pub fn show_assets(&self) {
         self.imp().assets_view.reload();
+    }
+
+    /// Shows the tasks of the project as they are now.
+    pub fn show_tasks(&self) {
+        self.imp().tasks.reload();
     }
 
     /// Shows the notes in the grid as they are now, as after editing one.

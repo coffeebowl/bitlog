@@ -173,10 +173,13 @@ fn tasks() -> Topic {
         blocks: vec![
             Block::Figure(Kind::Tasks),
             Block::Text(gettext(
-                "The task list is for small things you shouldn’t forget, like getting back to someone. It isn’t tied to a project or a day: open tasks show up every day until you check them off, so nothing needs to be carried over.",
+                "The global task list is for small things you shouldn’t forget, like getting back to someone. Each project also has a task list of its own, on the project page. The task page shows all of them.",
             )),
             Block::Text(gettext(
-                "Tasks with a due date turn red once they’re overdue. Drag tasks to reorder them, or use <b>Alt+Up</b> and <b>Alt+Down</b>. <b>Archive</b> moves finished tasks out of the list into a file for each year.",
+                "Today’s page shows the open tasks of all lists that are due, until you check them off, so nothing needs to be carried over. A task you add there is due today and goes to the global list, unless you pick another date or a project.",
+            )),
+            Block::Text(gettext(
+                "Tasks with a due date turn red once they’re overdue. On the task and project pages, drag tasks to reorder them, or use <b>Alt+Up</b> and <b>Alt+Down</b>. <b>Archive</b> moves finished tasks out of the list into a file for each year.",
             )),
         ],
     }

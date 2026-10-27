@@ -9,7 +9,8 @@ to work with them.
 - `bitlog.toml` – settings of the vault: week, time grid and locations.
 - `days/YYYY/MM/YYYY-MM-DD.md` – one Markdown file per day.
 - `projects/<slug>/project.toml` – one folder per project, with Markdown notes
-  in `notes/` and any other files, such as PDFs or images, in `assets/`.
+  in `notes/`, any other files, such as PDFs or images, in `assets/`, and
+  the project's tasks in `tasks.toml`.
 - `images/` – images shown in day notes, block texts and project notes,
   linked like `![Login form](../../../images/login-form.png)`.
 - `tasks.toml` – a global list of small tasks, once there are any.

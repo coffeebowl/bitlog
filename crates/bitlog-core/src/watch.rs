@@ -24,7 +24,8 @@ const DEBOUNCE: Duration = Duration::from_millis(300);
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum VaultChange {
     Config,
-    Tasks,
+    /// The task list of a project, or the global one.
+    Tasks(Option<ProjectSlug>),
     Project(ProjectSlug),
     Note(NotePath),
     /// An asset of the project, or a subfolder of its assets.
@@ -253,8 +254,11 @@ impl VaultChange {
             .collect::<Option<_>>()?;
         match parts.as_slice() {
             ["bitlog.toml"] => Some(VaultChange::Config),
-            ["tasks.toml"] => Some(VaultChange::Tasks),
+            ["tasks.toml"] => Some(VaultChange::Tasks(None)),
             ["projects", slug, "project.toml"] => slug.parse().ok().map(VaultChange::Project),
+            ["projects", slug, "tasks.toml"] => {
+                slug.parse().ok().map(|slug| VaultChange::Tasks(Some(slug)))
+            }
             ["projects", slug, "notes", name] => {
                 NotePath::new(slug.parse().ok()?, name.strip_suffix(".md")?)
                     .ok()
@@ -305,7 +309,11 @@ mod tests {
     fn changes_of_paths() {
         let change = |path: &str| VaultChange::from_path(Path::new(path));
         assert_eq!(change("bitlog.toml"), Some(VaultChange::Config));
-        assert_eq!(change("tasks.toml"), Some(VaultChange::Tasks));
+        assert_eq!(change("tasks.toml"), Some(VaultChange::Tasks(None)));
+        assert_eq!(
+            change("projects/webshop/tasks.toml"),
+            Some(VaultChange::Tasks(Some("webshop".parse().unwrap())))
+        );
         assert_eq!(
             change("projects/infra/project.toml"),
             Some(VaultChange::Project("infra".parse().unwrap()))
@@ -356,6 +364,7 @@ mod tests {
             "projects/infra/assets/.plan.pdf.0badf00d.tmp",
             "projects/infra/assets/.cache/thumb.png",
             "tasks-archive-2026.toml",
+            "projects/infra/tasks-archive-2026.toml",
             ".tasks.toml.0badf00d.tmp",
             ".git/index",
         ] {

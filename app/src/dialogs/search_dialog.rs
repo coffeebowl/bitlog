@@ -398,7 +398,15 @@ fn hit_row(vault: &Vault, hit: &SearchHit) -> (adw::ActionRow, RowAction) {
                 .replace("{project}", vault.project_name(note.project()))
                 .replace("{name}", note.name()),
         ),
-        Found::Task(_) => ("circle-check-symbolic", gettext("Task")),
+        Found::Task { project: None, .. } => ("circle-check-symbolic", gettext("Task")),
+        Found::Task {
+            project: Some(project),
+            ..
+        } => (
+            "circle-check-symbolic",
+            // Translators: Where a search found something, as in "Task · Webshop".
+            gettext("Task · {project}").replace("{project}", vault.project_name(project)),
+        ),
     };
     let (action, target) = show_action(&hit.found);
     let row = result_row(&snippet_markup(hit), &place, icon);

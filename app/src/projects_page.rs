@@ -427,6 +427,16 @@ impl ProjectsPage {
         }
     }
 
+    /// Shows the tasks of the project open as they are now, if it is one of
+    /// `projects`, whose tasks were changed elsewhere.
+    pub fn tasks_changed(&self, projects: &[ProjectSlug]) {
+        let imp = self.imp();
+        let shown = imp.project_view.slug();
+        if shows(&imp.nav, "project") && shown.is_some_and(|slug| projects.contains(&slug)) {
+            imp.project_view.show_tasks();
+        }
+    }
+
     /// Shows the project open with its notes as they are now, and marks the
     /// links of the note open again. Returns whether the project is still
     /// there.

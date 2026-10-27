@@ -2,7 +2,7 @@
 
 use std::ops::Range;
 
-use bitlog_core::{BlockId, NotePath, TaskId};
+use bitlog_core::{BlockId, NotePath, ProjectSlug, TaskId};
 use chrono::NaiveDate;
 use rusqlite::Row;
 
@@ -29,7 +29,11 @@ pub enum Found {
     DayNote(NaiveDate),
     /// The name or text of a note.
     Note(NotePath),
-    Task(TaskId),
+    /// A task of the list of `project`, or of the global one.
+    Task {
+        project: Option<ProjectSlug>,
+        id: TaskId,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +77,7 @@ impl Index {
              FROM notes_search JOIN notes n ON n.rowid = notes_search.rowid
              WHERE notes_search MATCH ?1
              UNION ALL
-             SELECT 3, NULL, t.id, NULL, snippet(tasks_search, 0, {marks}), bm25(tasks_search)
+             SELECT 3, NULL, t.id, t.project, snippet(tasks_search, 0, {marks}), bm25(tasks_search)
              FROM tasks_search JOIN tasks t ON t.rowid = tasks_search.rowid
              WHERE tasks_search MATCH ?1
              ORDER BY rank, date DESC
@@ -105,7 +109,13 @@ fn found(row: &Row) -> rusqlite::Result<Found> {
         },
         1 => Found::DayNote(row.get(1)?),
         2 => Found::Note(note_path(row, 3, 2)?),
-        3 => Found::Task(parsed(row, 2)?),
+        3 => Found::Task {
+            project: row
+                .get::<_, Option<String>>(3)?
+                .map(|_| parsed(row, 3))
+                .transpose()?,
+            id: parsed(row, 2)?,
+        },
         _ => unreachable!("the search query has four kinds"),
     })
 }

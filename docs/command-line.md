@@ -48,6 +48,7 @@ bitlog task done h4c8     # also: drop, reopen
 bitlog task edit h4c8 --title "Renew the certificates" --no-due
 bitlog task move h4c8 1   # to the top of the open tasks
 bitlog task archive       # move finished tasks to tasks-archive-YYYY.toml
+bitlog task list --project webshop   # --project works with all task commands, for the tasks of a project
 
 bitlog search release deploy     # blocks, day notes, notes and tasks holding both words
 bitlog search '"release notes"'  # the words as written, one after the other

@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use crate::error::{ReadError, SaveError};
 use crate::file::{parse_text, read_folder, read_optional, read_text};
 use crate::vault::EXPORTS;
-use crate::{BlockId, Day, DayFile, TaskId, TaskList, Vault, VaultChange};
+use crate::{BlockId, Day, DayFile, ProjectSlug, TaskId, TaskList, Vault, VaultChange};
 
 /// A conflict copy of a vault file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,7 +70,8 @@ enum Versions {
     Missing(String),
     Same(String),
     Days(DayFile, Day),
-    Tasks(TaskList, TaskList),
+    /// The task lists of a project, or the global ones.
+    Tasks(Option<ProjectSlug>, TaskList, TaskList),
     Texts(String, String),
 }
 
@@ -79,7 +80,7 @@ enum Merged {
     /// The original holds everything already.
     Kept,
     Day(DayFile, Day),
-    Tasks(TaskList, TaskList),
+    Tasks(Option<ProjectSlug>, TaskList, TaskList),
     /// The text of the copy takes the original's place.
     Replaced(String),
 }
@@ -173,7 +174,7 @@ impl Vault {
             Versions::Missing(text) => ConflictVersions::Texts(String::new(), text),
             Versions::Same(text) => ConflictVersions::Texts(text.clone(), text),
             Versions::Days(file, theirs) => ConflictVersions::Days(file.day, theirs),
-            Versions::Tasks(ours, theirs) => ConflictVersions::Tasks(ours, theirs),
+            Versions::Tasks(_, ours, theirs) => ConflictVersions::Tasks(ours, theirs),
             Versions::Texts(ours, theirs) => ConflictVersions::Texts(ours, theirs),
         })
     }
@@ -194,8 +195,8 @@ impl Vault {
                     Ok(())
                 })?;
             }
-            Merged::Tasks(tasks, merged) => {
-                self.update_tasks(&tasks, |current| {
+            Merged::Tasks(project, tasks, merged) => {
+                self.update_tasks(project.as_ref(), &tasks, |current| {
                     *current = merged;
                     Ok(())
                 })?;
@@ -242,7 +243,8 @@ impl Vault {
                 })?;
                 Versions::Days(file, other)
             }
-            VaultChange::Tasks => Versions::Tasks(
+            VaultChange::Tasks(project) => Versions::Tasks(
+                project.clone(),
                 TaskList::read(&original, &ours)?,
                 TaskList::read(&copy_path, &theirs)?,
             ),
@@ -271,10 +273,11 @@ impl Vault {
                 day.merge(&other, &mut merger);
                 Merged::Day(file, day)
             }
-            Versions::Tasks(tasks, other) => {
+            Versions::Tasks(project, tasks, other) => {
                 let mut merged = tasks.clone();
-                merged.merge(&other, &self.archived_task_ids()?, &mut merger);
-                Merged::Tasks(tasks, merged)
+                let archived = self.archived_task_ids(project.as_ref())?;
+                merged.merge(&other, &archived, &mut merger);
+                Merged::Tasks(project, tasks, merged)
             }
             Versions::Texts(_, text) => {
                 if merger.contradiction(Contradiction::Content) {
@@ -287,10 +290,15 @@ impl Vault {
         Ok((merged, merger.found))
     }
 
-    /// The ids of all archived tasks.
-    fn archived_task_ids(&self) -> Result<HashSet<TaskId>, ReadError> {
+    /// The ids of the archived tasks of `project`, or of the global list.
+    fn archived_task_ids(
+        &self,
+        project: Option<&ProjectSlug>,
+    ) -> Result<HashSet<TaskId>, ReadError> {
         let mut ids = HashSet::new();
-        for entry in read_folder(self.root())? {
+        let folder = self.tasks_path(project);
+        let folder = folder.parent().expect("task lists lie in a folder");
+        for entry in read_folder(folder)? {
             let path = entry.path();
             let is_archive = entry.file_name().to_str().is_some_and(|name| {
                 name.starts_with("tasks-archive-")
@@ -446,7 +454,7 @@ mod tests {
                 },
                 ConflictCopy {
                     path: "tasks (conflicted copy).toml".into(),
-                    of: VaultChange::Tasks,
+                    of: VaultChange::Tasks(None),
                 },
             ]
         );
@@ -568,7 +576,7 @@ mod tests {
     #[test]
     fn merge_task_copy() {
         let (_dir, vault) = sample_copy();
-        let tasks = vault.load_tasks().unwrap();
+        let tasks = vault.load_tasks(None).unwrap();
         let mut theirs = tasks;
         theirs
             .set_due(&"t9x2".parse().unwrap(), Some(date(2026, 10, 2)))
@@ -576,12 +584,12 @@ mod tests {
         let added = theirs.add("Order new cables", date(2026, 9, 23)).unwrap();
         let copy = ConflictCopy {
             path: "tasks.sync-conflict-20260923-101010-KNOTBK7.toml".into(),
-            of: VaultChange::Tasks,
+            of: VaultChange::Tasks(None),
         };
         fs::write(vault.root().join(&copy.path), theirs.to_toml()).unwrap();
         assert_eq!(vault.contradictions(&copy).unwrap(), []);
         vault.merge_conflict(&copy, &[]).unwrap();
-        let merged = vault.load_tasks().unwrap();
+        let merged = vault.load_tasks(None).unwrap();
         assert_eq!(
             merged.task(&"t9x2".parse().unwrap()).unwrap().due,
             Some(date(2026, 10, 2))
@@ -593,7 +601,7 @@ mod tests {
     fn task_copy(vault: &Vault, theirs: &TaskList) -> ConflictCopy {
         let copy = ConflictCopy {
             path: "tasks (conflicted copy).toml".into(),
-            of: VaultChange::Tasks,
+            of: VaultChange::Tasks(None),
         };
         fs::write(vault.root().join(&copy.path), theirs.to_toml()).unwrap();
         copy
@@ -602,19 +610,59 @@ mod tests {
     #[test]
     fn archived_tasks_stay_archived() {
         let (_dir, vault) = sample_copy();
-        let tasks = vault.load_tasks().unwrap();
+        let tasks = vault.load_tasks(None).unwrap();
         // Archived here, while the copy still holds the finished tasks.
-        vault.archive_tasks(&tasks, date(2026, 9, 23)).unwrap();
+        vault
+            .archive_tasks(None, &tasks, date(2026, 9, 23))
+            .unwrap();
         let copy = task_copy(&vault, &tasks);
         assert_eq!(vault.contradictions(&copy).unwrap(), []);
         vault.merge_conflict(&copy, &[]).unwrap();
-        assert_eq!(vault.load_tasks().unwrap().tasks().len(), 2);
+        assert_eq!(vault.load_tasks(None).unwrap().tasks().len(), 2);
+    }
+
+    #[test]
+    fn project_task_copies_merge_into_their_list() {
+        let (_dir, vault) = sample_copy();
+        let webshop: ProjectSlug = "webshop".parse().unwrap();
+        let tasks = vault.load_tasks(Some(&webshop)).unwrap();
+        vault
+            .archive_tasks(Some(&webshop), &tasks, date(2026, 9, 24))
+            .unwrap();
+        let mut theirs = tasks;
+        theirs
+            .add("Add a gift card option", date(2026, 9, 24))
+            .unwrap();
+        let copy = ConflictCopy {
+            path: "projects/webshop/tasks (conflicted copy).toml".into(),
+            of: VaultChange::Tasks(Some(webshop.clone())),
+        };
+        fs::write(vault.root().join(&copy.path), theirs.to_toml()).unwrap();
+        assert!(vault.conflict_copies().unwrap().contains(&copy));
+        assert_eq!(vault.contradictions(&copy).unwrap(), []);
+        vault.merge_conflict(&copy, &[]).unwrap();
+        // The archived task stays in the archive of the project.
+        let titles: Vec<String> = vault
+            .load_tasks(Some(&webshop))
+            .unwrap()
+            .tasks()
+            .iter()
+            .map(|task| task.title.clone())
+            .collect();
+        assert_eq!(
+            titles,
+            [
+                "Fix the rounding of discounts in the cart",
+                "Add a gift card option"
+            ]
+        );
+        assert_eq!(vault.load_tasks(None).unwrap().tasks().len(), 4);
     }
 
     #[test]
     fn different_task_fields_contradict() {
         let (_dir, vault) = sample_copy();
-        let tasks = vault.load_tasks().unwrap();
+        let tasks = vault.load_tasks(None).unwrap();
         let id: TaskId = "h4c8".parse().unwrap();
         let mut theirs = tasks;
         theirs.set_title(&id, "Renew all certificates").unwrap();
@@ -629,7 +677,7 @@ mod tests {
             ]
         );
         vault.merge_conflict(&copy, &[title]).unwrap();
-        let merged = vault.load_tasks().unwrap();
+        let merged = vault.load_tasks(None).unwrap();
         let task = merged.task(&id).unwrap();
         assert_eq!(task.title, "Renew all certificates");
         assert_eq!(task.due, Some(date(2026, 9, 30)));

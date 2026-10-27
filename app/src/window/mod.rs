@@ -70,7 +70,10 @@ pub fn show_action(found: &Found) -> (&'static str, glib::Variant) {
         ),
         Found::DayNote(date) => ("win.show-day", date.to_string().to_variant()),
         Found::Note(note) => ("win.show-note", note.to_string().to_variant()),
-        Found::Task(id) => ("win.show-task", id.to_string().to_variant()),
+        Found::Task { project, id } => (
+            "win.show-task",
+            (project.as_ref().map(ProjectSlug::to_string), id.to_string()).to_variant(),
+        ),
     }
 }
 
@@ -256,11 +259,16 @@ mod imp {
             );
             klass.install_action(
                 "win.show-task",
-                Some(glib::VariantTy::STRING),
-                |window, _, id| {
-                    let id: TaskId = param(id, "tasks");
+                Some(glib::VariantTy::new("(mss)").expect("(mss) is a variant type")),
+                |window, _, task| {
+                    let (project, id): (Option<String>, String) = task
+                        .and_then(glib::Variant::get)
+                        .expect("tasks are passed as their project, if any, and id");
+                    let project: Option<ProjectSlug> =
+                        project.map(|slug| slug.parse().expect("slugs are passed as they are"));
+                    let id: TaskId = id.parse().expect("task ids are passed as they are");
                     window.show_tasks();
-                    window.imp().tasks_page.show_task(&id);
+                    window.imp().tasks_page.show_task(project.as_ref(), &id);
                 },
             );
             klass.install_action(

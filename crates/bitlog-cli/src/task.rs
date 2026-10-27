@@ -1,7 +1,7 @@
-//! Commands for the global task list.
+//! Commands for the global task list and those of projects.
 
 use anyhow::Result;
-use bitlog_core::{EditError, Task, TaskId, TaskList, TaskStatus, Vault};
+use bitlog_core::{EditError, ProjectSlug, Task, TaskId, TaskList, TaskStatus, Vault};
 use chrono::NaiveDate;
 
 use crate::table::table;
@@ -42,23 +42,26 @@ fn lines(tasks: &[&Task], note: impl Fn(&Task) -> String) -> String {
     table(&rows, &[])
 }
 
-/// Applies `change` to the task list and saves it.
+/// Applies `change` to the task list of `project`, or the global one, and
+/// saves it.
 fn update(
     vault: &Vault,
+    project: Option<&ProjectSlug>,
     change: impl FnOnce(&mut TaskList) -> Result<(), EditError>,
 ) -> Result<TaskList> {
-    let tasks = vault.load_tasks()?;
-    Ok(vault.update_tasks(&tasks, change)?)
+    let tasks = vault.load_tasks(project)?;
+    Ok(vault.update_tasks(project, &tasks, change)?)
 }
 
 pub fn add_task(
     vault: &Vault,
+    project: Option<&ProjectSlug>,
     title: &str,
     due: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Result<()> {
     let mut id = None;
-    update(vault, |tasks| {
+    update(vault, project, |tasks| {
         let added = tasks.add(title, today)?;
         tasks.set_due(&added, due)?;
         id = Some(added);
@@ -68,8 +71,14 @@ pub fn add_task(
     Ok(())
 }
 
-pub fn set_status(vault: &Vault, id: &TaskId, status: TaskStatus, today: NaiveDate) -> Result<()> {
-    update(vault, |tasks| tasks.set_status(id, status, today))?;
+pub fn set_status(
+    vault: &Vault,
+    project: Option<&ProjectSlug>,
+    id: &TaskId,
+    status: TaskStatus,
+    today: NaiveDate,
+) -> Result<()> {
+    update(vault, project, |tasks| tasks.set_status(id, status, today))?;
     Ok(())
 }
 
@@ -80,8 +89,13 @@ pub struct TaskChanges {
     pub due: Option<Option<NaiveDate>>,
 }
 
-pub fn edit_task(vault: &Vault, id: &TaskId, changes: TaskChanges) -> Result<()> {
-    update(vault, |tasks| {
+pub fn edit_task(
+    vault: &Vault,
+    project: Option<&ProjectSlug>,
+    id: &TaskId,
+    changes: TaskChanges,
+) -> Result<()> {
+    update(vault, project, |tasks| {
         if let Some(title) = &changes.title {
             tasks.set_title(id, title)?;
         }
@@ -95,8 +109,13 @@ pub fn edit_task(vault: &Vault, id: &TaskId, changes: TaskChanges) -> Result<()>
 
 /// Moves the task `id` to `position`, counted from 1 among the open or the
 /// finished tasks, whichever it belongs to.
-pub fn move_task(vault: &Vault, id: &TaskId, position: usize) -> Result<()> {
-    update(vault, |tasks| {
+pub fn move_task(
+    vault: &Vault,
+    project: Option<&ProjectSlug>,
+    id: &TaskId,
+    position: usize,
+) -> Result<()> {
+    update(vault, project, |tasks| {
         let task = tasks
             .task(id)
             .ok_or_else(|| EditError::UnknownTask(id.clone()))?;
@@ -110,10 +129,10 @@ pub fn move_task(vault: &Vault, id: &TaskId, position: usize) -> Result<()> {
     Ok(())
 }
 
-pub fn archive_tasks(vault: &Vault, today: NaiveDate) -> Result<()> {
-    let tasks = vault.load_tasks()?;
+pub fn archive_tasks(vault: &Vault, project: Option<&ProjectSlug>, today: NaiveDate) -> Result<()> {
+    let tasks = vault.load_tasks(project)?;
     let finished = tasks.tasks().iter().filter(|task| !task.is_open()).count();
-    vault.archive_tasks(&tasks, today)?;
+    vault.archive_tasks(project, &tasks, today)?;
     println!("Archived {finished} finished tasks.");
     Ok(())
 }
@@ -127,7 +146,7 @@ mod tests {
     fn sample_tasks() -> TaskList {
         Vault::open(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/sample-vault"))
             .unwrap()
-            .load_tasks()
+            .load_tasks(None)
             .unwrap()
     }
 

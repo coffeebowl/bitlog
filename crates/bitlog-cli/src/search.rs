@@ -26,7 +26,11 @@ pub fn place(found: &Found) -> String {
         Found::Block { date, id } => format!("{date} {id}"),
         Found::DayNote(date) => format!("{date} day note"),
         Found::Note(note) => format!("{}/{}", note.project(), note.name()),
-        Found::Task(id) => format!("task {id}"),
+        Found::Task { project: None, id } => format!("task {id}"),
+        Found::Task {
+            project: Some(project),
+            id,
+        } => format!("{project} task {id}"),
     }
 }
 
@@ -60,6 +64,13 @@ mod tests {
 
     use super::*;
 
+    fn task(project: Option<&str>, id: &str) -> Found {
+        Found::Task {
+            project: project.map(|slug| slug.parse().unwrap()),
+            id: id.parse().unwrap(),
+        }
+    }
+
     fn hit(found: Found, snippet: &str, word: &str) -> SearchHit {
         let start = snippet.find(word).unwrap();
         SearchHit {
@@ -81,13 +92,15 @@ mod tests {
             hit(block, "Release deployment", "deploy"),
             hit(Found::DayNote(date), "Deployed  late.", "Deploy"),
             hit(Found::Note(note), "# Deployment\n\nReleases…", "Deploy"),
-            hit(Found::Task("h4c8".parse().unwrap()), "Deploy TLS", "Deploy"),
+            hit(task(None, "h4c8"), "Deploy TLS", "Deploy"),
+            hit(task(Some("infra"), "p2k5"), "Deploy keys", "Deploy"),
         ];
         let expected = "\
 2026-09-23 ff66      Release deployment
 2026-09-23 day note  Deployed late.
 infra/deployment     # Deployment Releases…
 task h4c8            Deploy TLS
+infra task p2k5      Deploy keys
 ";
         assert_eq!(format_hits(&hits, false), expected);
         assert_eq!(one_line(&hits[0], true), "Release \x1b[1mdeploy\x1b[0mment");

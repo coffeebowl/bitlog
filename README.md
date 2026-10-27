@@ -8,7 +8,7 @@
 
 BitLog splits the working day into blocks and assigns them to projects, roughly and without a stopwatch. Blocks can carry Markdown notes, projects keep a small set of notes and files of their own, and contacts keep the people you work with, their roles in your projects and every place you mention them with `@`.
 
-One task list stays in view on every day, so open tasks never need to be carried over. Reports show where your time went per week, month or year, and a standup summary is ready to be pasted into the chat. All data lives in plain text files in an ordinary directory, which you can sync with Git or anything else.
+Tasks live in a global list or with their project, and today's page shows the ones that are due, so nothing needs to be carried over. Reports show where your time went per week, month or year, and a standup summary is ready to be pasted into the chat. All data lives in plain text files in an ordinary directory, which you can sync with Git or anything else.
 
 ## Installing
 

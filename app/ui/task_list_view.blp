@@ -34,7 +34,35 @@ template $BitLogTaskListView: Adw.Bin {
 
       Adw.EntryRow new_task {
         title: _("New Task");
-        show-apply-button: true;
+
+        [suffix]
+        MenuButton new_project_button {
+          visible: false;
+          valign: center;
+          tooltip-text: _("Project");
+          always-show-arrow: true;
+
+          // Long names would make the row too wide for narrow windows.
+          child: Label new_project_label {
+            ellipsize: end;
+            max-width-chars: 16;
+          };
+
+          styles [
+            "flat",
+          ]
+        }
+
+        [suffix]
+        MenuButton new_due_button {
+          visible: false;
+          valign: center;
+          tooltip-text: _("Due Date");
+
+          styles [
+            "flat",
+          ]
+        }
       }
     }
 

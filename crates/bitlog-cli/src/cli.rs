@@ -61,8 +61,11 @@ pub enum Command {
         #[command(subcommand)]
         command: ContactCommand,
     },
-    /// List, add or change the tasks of the global task list.
+    /// List, add or change the tasks of the global task list or of a project.
     Task {
+        /// The project whose tasks to work with [default: the global task list]
+        #[arg(long, global = true)]
+        project: Option<ProjectSlug>,
         #[command(subcommand)]
         command: TaskCommand,
     },
@@ -333,7 +336,7 @@ pub enum TaskCommand {
         position: u32,
     },
     /// Move all done and dropped tasks to the archive of the year they were
-    /// finished in, tasks-archive-YYYY.toml.
+    /// finished in, tasks-archive-YYYY.toml next to the list.
     Archive,
 }
 
@@ -445,6 +448,8 @@ mod tests {
         assert!(parse("bitlog task edit t9x2").is_err());
         assert!(parse("bitlog task edit t9x2 --due 2026-09-30 --no-due").is_err());
         assert!(parse("bitlog task move t9x2 0").is_err());
+        parse("bitlog task --project webshop add Fix").unwrap();
+        parse("bitlog task done p2k5 --project webshop").unwrap();
         parse("bitlog standup 2026-09-23").unwrap();
         parse("bitlog log webshop --limit 5").unwrap();
         assert!(parse("bitlog log").is_err());

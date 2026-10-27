@@ -41,7 +41,9 @@ app/src/project_view/mod.rs
 app/src/project_view/people.rs
 app/src/projects_page.rs
 app/src/reports_page.rs
-app/src/task_list_view.rs
+app/src/task_list_view/editing.rs
+app/src/task_list_view/mod.rs
+app/src/task_list_view/rows.rs
 app/src/trash.rs
 app/src/widgets/cards.rs
 app/src/widgets/heatmap.rs

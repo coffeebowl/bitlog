@@ -2,10 +2,10 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
-use bitlog_core::{TaskId, Vault};
+use bitlog_core::{ProjectSlug, TaskId, Vault};
 use gtk::glib;
 
-use crate::task_list_view::TaskListView;
+use crate::task_lists_view::TaskListsView;
 
 mod imp {
     use super::*;
@@ -14,7 +14,7 @@ mod imp {
     #[template(resource = "/dev/bitlog/BitLog/tasks_page.ui")]
     pub struct TasksPage {
         #[template_child]
-        pub list: TemplateChild<TaskListView>,
+        pub lists: TemplateChild<TaskListsView>,
         #[template_child]
         pub show_finished: TemplateChild<gtk::ToggleButton>,
     }
@@ -26,7 +26,7 @@ mod imp {
         type ParentType = adw::NavigationPage;
 
         fn class_init(klass: &mut Self::Class) {
-            TaskListView::ensure_type();
+            TaskListsView::ensure_type();
             klass.bind_template();
         }
 
@@ -41,7 +41,8 @@ mod imp {
 }
 
 glib::wrapper! {
-    /// All tasks of the vault, to add, edit, sort and archive.
+    /// All tasks of the vault, those of each project apart, to add, edit,
+    /// sort and archive.
     pub struct TasksPage(ObjectSubclass<imp::TasksPage>)
         @extends adw::NavigationPage, gtk::Widget,
         @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
@@ -50,19 +51,19 @@ glib::wrapper! {
 impl TasksPage {
     /// Shows the tasks of `vault` from the next call of `reload` on.
     pub fn set_vault(&self, vault: Rc<Vault>) {
-        self.imp().list.set_vault(vault);
+        self.imp().lists.set_vault(vault);
     }
 
-    /// Reads the task list and shows it.
+    /// Reads the task lists and shows them.
     pub fn reload(&self) {
-        self.imp().list.reload();
+        self.imp().lists.reload();
     }
 
-    /// Moves the focus to the open task `id`, or shows the finished tasks
-    /// if it is one of them.
-    pub fn show_task(&self, id: &TaskId) {
+    /// Moves the focus to the open task `id` of `project`, or of the global
+    /// list, or shows the finished tasks if it is one of them.
+    pub fn show_task(&self, project: Option<&ProjectSlug>, id: &TaskId) {
         let imp = self.imp();
-        if !imp.list.focus_task(id) {
+        if !imp.lists.focus_task(project, id) {
             imp.show_finished.set_active(true);
         }
     }

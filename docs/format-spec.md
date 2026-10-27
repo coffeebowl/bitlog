@@ -1,7 +1,6 @@
 # BitLog file format
 
-**Status:** Format version 1. BitLog implements all of it, except for project
-tasks, which are reserved for a later extension.
+**Status:** Format version 1. BitLog implements all of it.
 
 A BitLog vault is an ordinary folder of plain text files. Every file can be
 read and corrected by hand, in any text editor, without BitLog. The files are
@@ -21,7 +20,7 @@ at any time.
 | Project note | A Markdown note belonging to a project | `projects/<slug>/notes/*.md` |
 | Project asset | Any other file kept with a project, such as a PDF or an image | `projects/<slug>/assets/**` |
 | Image | A picture shown in day notes, block texts and project notes | `images/**` |
-| Task | An item on the global task list | `tasks.toml` |
+| Task | An item on the global task list or the task list of a project | `tasks.toml`, `projects/<slug>/tasks.toml` |
 | Contact | A person, with their roles in projects | `contacts/<slug>.toml` |
 
 A block refers to its project by slug. A project note belongs to its project
@@ -54,6 +53,7 @@ my-vault/
   contacts/kim.jpg                   # their picture
   days/2026/09/2026-09-23.md         # one day: front matter, day note, blocks with text
   projects/project-a/project.toml
+  projects/project-a/tasks.toml      # the tasks of the project
   projects/project-a/notes/auth-middleware.md
   projects/project-a/assets/scans/offer.pdf  # any files, in any subfolders
   images/login-form.png              # images shown in texts
@@ -378,6 +378,12 @@ days. It is meant for small things like "get back to XYZ about the handover" or
 "take the keyboard to the office". Nothing is carried over from day to day; the
 list is simply always there.
 
+Each project may have a **task list of its own**,
+`projects/<slug>/tasks.toml`, for the tasks of that project. It has the same
+format and rules as the global list, its archives lie next to it, and it
+leaves the global list alone. A task belongs to its project only through
+the folder its list lives in.
+
 ```toml
 [[task]]
 id = "t9x2"
@@ -399,7 +405,7 @@ defaults:
 
 | Field | Default | Rule |
 | --- | --- | --- |
-| `id` | – | a task ID, unique within the file |
+| `id` | – | a task ID, unique within the file; lists may share IDs |
 | `title` | – | one line of text |
 | `status` | `"open"` | `open`, `done` or `dropped` |
 | `created` | none | TOML local date |
@@ -421,8 +427,6 @@ defaults:
   `created`, else of the current date. An archive has the same format as
   `tasks.toml` and is extended at the end; a task whose ID is taken in the
   archive gets a new one there.
-- **Project tasks** are reserved for a later format extension. They will live
-  in separate files per project and will not change the global list.
 
 ## Contacts: `contacts/<slug>.toml`
 
@@ -636,9 +640,9 @@ Every write:
 - Day files: blocks are merged by their IDs, a block only the copy has only
   if it overlaps no block of the original. Front matter fields, block times,
   projects, titles and texts and the day note are compared one by one.
-- `tasks.toml`: tasks are merged by their IDs, field by field. A task only
-  one side has whose ID is in a task archive was archived on the other side
-  and stays archived.
+- Task lists: tasks are merged by their IDs, field by field. A task only one
+  side has whose ID is in an archive of the same list was archived on the
+  other side and stays archived.
 - Project notes, `project.toml`, contacts and `bitlog.toml`: never merged;
   the user picks a version. Copies of pictures are left alone.
 - A copy that is the same as its original, or whose original is missing, is

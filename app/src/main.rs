@@ -22,6 +22,7 @@ mod projects_page;
 mod reports_page;
 mod search_index;
 mod task_list_view;
+mod task_lists_view;
 mod tasks_page;
 mod timeline;
 mod trash;

@@ -352,7 +352,7 @@ pub fn backlink_row(vault: &Vault, backlink: &Backlink) -> adw::ActionRow {
             (title_markup(title, &project), format_full_date(*date))
         }
         Found::DayNote(date) => (escaped(&gettext("Day Note")), format_full_date(*date)),
-        Found::Task(_) => unreachable!("tasks hold no links or mentions"),
+        Found::Task { .. } => unreachable!("tasks hold no links or mentions"),
     };
     adw::ActionRow::builder()
         .title(title)

@@ -340,11 +340,19 @@ impl Window {
         if changes.contains(&VaultChange::Day(imp.day_view.date())) {
             imp.day_view.reload();
         }
-        if changes.contains(&VaultChange::Tasks) {
+        let tasks: Vec<ProjectSlug> = changes
+            .iter()
+            .filter_map(|change| match change {
+                VaultChange::Tasks(Some(slug)) => Some(slug.clone()),
+                _ => None,
+            })
+            .collect();
+        if !tasks.is_empty() || changes.contains(&VaultChange::Tasks(None)) {
             imp.day_view.show_tasks();
             if self.shows(&imp.tasks_page) {
                 imp.tasks_page.reload();
             }
+            imp.projects_page.tasks_changed(&tasks);
         }
         let notes: Vec<NotePath> = changes
             .iter()
