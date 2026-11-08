@@ -358,6 +358,12 @@ renames its folder, sets the new slug in all its blocks, in `projects.order`,
 in the roles of contacts and in `.bitlog/device.toml`, and changes the targets of wiki links to its
 notes in all notes, day notes and block texts.
 
+**Deleting** a project moves its blocks on all days to another project,
+which BitLog asks for, removes it from `projects.order`, the roles of
+contacts and `.bitlog/device.toml`, then deletes its folder with its notes,
+files and tasks. The app moves the folder to the trash. Wiki links to its
+notes are left as they are and point to no note.
+
 **Default projects of a new vault**, one of each category, in this order:
 
 | Slug | Name | Category |

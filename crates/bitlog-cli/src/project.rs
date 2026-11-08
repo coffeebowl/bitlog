@@ -1,9 +1,10 @@
 //! Commands for projects.
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use bitlog_core::{
     Commit, EditError, Project, ProjectCategory, ProjectSlug, ProjectStatus, Vault,
     check_repo_path, git_log, repo_name,
@@ -144,6 +145,47 @@ pub fn rename_project(vault: &mut Vault, slug: &ProjectSlug, new_slug: &ProjectS
         plural(days, "day"),
         plural(notes, "note")
     );
+    Ok(())
+}
+
+/// Deletes the project `slug` with its folder for good, as there is no
+/// trash here. Its blocks need `blocks_to`, the project they move to, and
+/// anything in its folder but its `project.toml` needs `discard_files`.
+pub fn delete_project(
+    vault: &mut Vault,
+    slug: &ProjectSlug,
+    blocks_to: Option<&ProjectSlug>,
+    discard_files: bool,
+) -> Result<()> {
+    if vault.project(slug).is_none() {
+        return Err(EditError::UnknownProject(slug.clone()).into());
+    }
+    let (blocks, days) = vault.project_blocks(slug)?;
+    let blocks_text = format!("{} on {}", plural(blocks, "block"), plural(days, "day"));
+    if blocks > 0 && blocks_to.is_none() {
+        bail!(
+            "project {slug} has {blocks_text}; \
+             pass --move-blocks-to PROJECT to move them to another project"
+        );
+    }
+    let folder = vault.project_folder(slug);
+    let project_file = Project::path(vault.root(), slug);
+    let read_folder = || format!("cannot read {}", folder.display());
+    let has_files = fs::read_dir(&folder)
+        .with_context(read_folder)?
+        .any(|entry| entry.map_or(true, |entry| entry.path() != project_file));
+    if has_files && !discard_files {
+        bail!(
+            "project {slug} has notes, files or tasks; pass --discard-files to delete them \
+             for good, or delete the project in the app to move them to the trash"
+        );
+    }
+    vault.remove_project(slug, blocks_to)?;
+    fs::remove_dir_all(&folder).with_context(|| format!("cannot delete {}", folder.display()))?;
+    match blocks_to {
+        Some(to) if blocks > 0 => println!("Deleted project {slug}, moved {blocks_text} to {to}"),
+        _ => println!("Deleted project {slug}"),
+    }
     Ok(())
 }
 

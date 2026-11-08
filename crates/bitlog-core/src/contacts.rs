@@ -373,11 +373,12 @@ impl Vault {
         Ok((days, notes))
     }
 
-    /// Points the roles in the project `from` to the project `to`.
-    pub(crate) fn rename_roles(
+    /// Points the roles in the project `from` to the project `to`, or
+    /// removes them without one.
+    pub(crate) fn move_roles(
         &mut self,
         from: &ProjectSlug,
-        to: &ProjectSlug,
+        to: Option<&ProjectSlug>,
     ) -> Result<(), SaveError> {
         let slugs: Vec<ContactSlug> = self
             .contacts
@@ -387,10 +388,15 @@ impl Vault {
             .collect();
         for slug in slugs {
             self.update_contact(&slug, |contact| {
-                for (project, _) in &mut contact.roles {
-                    if project == from {
-                        *project = to.clone();
+                match to {
+                    Some(to) => {
+                        for (project, _) in &mut contact.roles {
+                            if project == from {
+                                *project = to.clone();
+                            }
+                        }
                     }
+                    None => contact.roles.retain(|(project, _)| project != from),
                 }
                 Ok(())
             })?;

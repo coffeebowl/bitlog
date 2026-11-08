@@ -15,6 +15,7 @@ use crate::alert::show_error;
 use crate::colors::color_dot;
 use crate::dialogs::note_dialogs::ask_note_name;
 use crate::dialogs::project_dialog::ProjectDialog;
+use crate::dialogs::trash_project_dialog::ask_trash_project;
 use crate::format::{
     format_duration, format_recent_date, project_category_name, project_status_name,
 };
@@ -22,6 +23,7 @@ use crate::note_actions::{self, NoteHost};
 use crate::note_view::NoteView;
 use crate::project_view::ProjectView;
 use crate::search_index::{ProjectsData, SearchIndex};
+use crate::trash::trash;
 use crate::widgets::{drag_handle, make_movable, param};
 
 mod imp {
@@ -95,6 +97,9 @@ mod imp {
                     page.open_project(&param(slug, "projects"));
                 },
             );
+            klass.install_action_async("projects.trash", None, |page, _, _| async move {
+                page.trash_project().await;
+            });
             klass.install_action_async(
                 "notes.new",
                 Some(glib::VariantTy::STRING),
@@ -580,6 +585,45 @@ impl ProjectsPage {
         if let Err(err) = repos_saved {
             show_error(self, &gettext("Cannot Save Repositories"), &err.to_string());
         }
+    }
+
+    /// Moves the project shown to the trash with its notes, files and
+    /// tasks, after asking which project its blocks move to.
+    async fn trash_project(&self) {
+        let vault = self.vault();
+        let Some(project) = self
+            .imp()
+            .project_view
+            .slug()
+            .and_then(|slug| vault.project(&slug).cloned())
+        else {
+            return;
+        };
+        let heading = gettext("Cannot Move Project to Trash");
+        let blocks = match vault.project_blocks(&project.slug) {
+            Ok((blocks, _)) => blocks,
+            Err(err) => {
+                show_error(self, &heading, &err.to_string());
+                return;
+            }
+        };
+        let Some(blocks_to) = ask_trash_project(self, &vault, &project, blocks).await else {
+            return;
+        };
+        // As it is now, since a change elsewhere may have been read while
+        // asking. A copy shares the record of own writes, so watching the
+        // vault goes on as before.
+        let mut vault = Vault::clone(&self.vault());
+        if let Err(err) = vault.remove_project(&project.slug, blocks_to.as_ref()) {
+            show_error(self, &heading, &err.to_string());
+            return;
+        }
+        // Should this fail, the project is back with the next start, without
+        // its blocks.
+        let folder = vault.project_folder(&project.slug);
+        trash(self, &folder, &gettext("Project moved to trash")).await;
+        self.set_vault(Rc::new(vault));
+        self.emit_by_name::<()>("vault-changed", &[]);
     }
 }
 

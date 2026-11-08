@@ -34,6 +34,7 @@ bitlog project edit side-project --category private   # work, private, duty or b
 bitlog project edit client-portal --repo ~/code/client-portal --repo ~/code/api   # only on this device
 bitlog project edit client-portal --no-repo ~/code/api
 bitlog project rename client-portal portal   # also in all days and notes
+bitlog project delete client-portal --move-blocks-to company   # for good, the app uses the trash
 bitlog log client-portal --limit 5   # latest commits of each of its repositories
 
 bitlog contact list --all # contacts with their projects, archived ones too

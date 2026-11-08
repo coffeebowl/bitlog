@@ -10,4 +10,5 @@ pub mod project_dialog;
 pub mod search_dialog;
 pub mod standup_dialog;
 pub mod sync_conflict_dialog;
+pub mod trash_project_dialog;
 pub mod vault_check_dialog;

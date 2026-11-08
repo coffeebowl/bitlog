@@ -36,6 +36,8 @@ pub enum EditError {
     MultilineTitle,
     #[error("the project {0} exists already")]
     ProjectExists(ProjectSlug),
+    #[error("the blocks of {0} have to move to another project")]
+    BlocksNeedProject(ProjectSlug),
     #[error("a color has to look like #3584e4, found {0:?}")]
     InvalidColor(String),
     #[error("unknown project status {0:?}, expected active, paused or archived")]

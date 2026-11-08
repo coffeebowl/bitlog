@@ -203,6 +203,20 @@ pub enum ProjectCommand {
         /// The new slug
         new_slug: ProjectSlug,
     },
+    /// Delete a project with its folder for good; the app moves it to the
+    /// trash instead.
+    Delete {
+        /// The slug of the project
+        slug: ProjectSlug,
+        /// Move the project's blocks to this project; needed while it has
+        /// blocks
+        #[arg(long, value_name = "PROJECT")]
+        move_blocks_to: Option<ProjectSlug>,
+        /// Also delete the project's notes, files and tasks; needed while it
+        /// has any
+        #[arg(long)]
+        discard_files: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -438,6 +452,9 @@ mod tests {
         parse("bitlog project rename docs documentation").unwrap();
         assert!(parse("bitlog project rename docs").is_err());
         assert!(parse("bitlog project rename docs Docs").is_err());
+        parse("bitlog project delete docs").unwrap();
+        parse("bitlog project delete docs --move-blocks-to company --discard-files").unwrap();
+        assert!(parse("bitlog project delete docs --move-blocks-to").is_err());
         parse("bitlog contact list --all").unwrap();
         parse("bitlog contact add kim --name Kim --role webshop=Owner --role infra=").unwrap();
         assert!(parse("bitlog contact add kim --role webshop").is_err());

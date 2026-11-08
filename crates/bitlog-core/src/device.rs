@@ -72,11 +72,12 @@ impl Vault {
     }
 
     /// Moves the repositories of the project `from` on this device to the
-    /// project `to`, as when the project is renamed.
-    pub(crate) fn rename_repo_paths(
+    /// project `to`, as when the project is renamed, or removes them without
+    /// one.
+    pub(crate) fn move_repo_paths(
         &self,
         from: &ProjectSlug,
-        to: &ProjectSlug,
+        to: Option<&ProjectSlug>,
     ) -> Result<(), SaveError> {
         let path = self.device_path();
         let Some(text) = read_optional(&path)? else {
@@ -87,7 +88,9 @@ impl Vault {
             return Ok(());
         };
         if let Some(repo) = repos.remove(from.as_str()) {
-            repos.insert(to.as_str(), repo);
+            if let Some(to) = to {
+                repos.insert(to.as_str(), repo);
+            }
             self.write(&path, &document.to_string())?;
         }
         Ok(())

@@ -10,6 +10,13 @@ template $BitLogProjectView: Adw.NavigationPage {
       title-widget: Adw.WindowTitle window_title {};
 
       [end]
+      MenuButton {
+        icon-name: "view-more-symbolic";
+        tooltip-text: _("Project Menu");
+        menu-model: project_menu;
+      }
+
+      [end]
       Button edit_button {
         icon-name: "document-edit-symbolic";
         tooltip-text: _("Edit Project");
@@ -284,6 +291,15 @@ template $BitLogProjectView: Adw.NavigationPage {
       }
     };
   };
+}
+
+menu project_menu {
+  section {
+    item {
+      label: _("Move to _Trash…");
+      action: "projects.trash";
+    }
+  }
 }
 
 menu people_menu {

@@ -211,6 +211,11 @@ fn project(mut vault: Vault, command: ProjectCommand, today: NaiveDate) -> Resul
         ProjectCommand::Rename { slug, new_slug } => {
             project::rename_project(&mut vault, &slug, &new_slug)
         }
+        ProjectCommand::Delete {
+            slug,
+            move_blocks_to,
+            discard_files,
+        } => project::delete_project(&mut vault, &slug, move_blocks_to.as_ref(), discard_files),
     }
 }
 

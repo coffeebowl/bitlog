@@ -24,6 +24,7 @@ app/src/dialogs/project_dialog.rs
 app/src/dialogs/search_dialog.rs
 app/src/dialogs/standup_dialog.rs
 app/src/dialogs/sync_conflict_dialog.rs
+app/src/dialogs/trash_project_dialog.rs
 app/src/dialogs/vault_check_dialog/mod.rs
 app/src/dialogs/vault_check_dialog/problems.rs
 app/src/format.rs

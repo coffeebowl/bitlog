@@ -316,34 +316,15 @@ impl Vault {
         if self.project(to).is_some() || new.exists() {
             return Err(EditError::ProjectExists(to.clone()).into());
         }
-        for date in self.all_days()? {
-            self.load_day(date)?;
-        }
+        // Fails while a day cannot be read, before anything is changed.
+        self.project_blocks(from)?;
         let target = |note: &NotePath| {
             (note.project() == from)
                 .then(|| NotePath::new(to.clone(), note.name()).expect("the name stays valid"))
         };
-        let days = self.change_days(|day| {
-            let mut changed = relink_day(day, &target);
-            for block in day.blocks.iter_mut().filter(|block| block.project == *from) {
-                block.project = to.clone();
-                changed = true;
-            }
-            changed
-        })?;
+        let days = self.change_days(|day| relink_day(day, &target) | move_blocks(day, from, to))?;
         let notes = self.relink_notes(&target)?;
-        if self.config.projects.order.contains(from) {
-            self.update_config(|config| {
-                for slug in &mut config.projects.order {
-                    if slug == from {
-                        *slug = to.clone();
-                    }
-                }
-                Ok(())
-            })?;
-        }
-        self.rename_roles(from, to)?;
-        self.rename_repo_paths(from, to)?;
+        self.move_references(from, Some(to))?;
         fs::rename(&old, &new).map_err(|source| SaveError::Write {
             path: new.clone(),
             source,
@@ -354,6 +335,87 @@ impl Vault {
         self.projects.push(project);
         self.sort_projects();
         Ok((days, notes))
+    }
+
+    /// Removes the project `slug` from the vault: moves its blocks on all
+    /// days to the project `blocks_to` and takes it out of the order of the
+    /// projects, the roles of contacts and the repositories on this device.
+    /// Its folder is left to the caller, to move to the trash or delete.
+    /// Returns the number of days changed.
+    ///
+    /// Nothing is changed while a day cannot be read, or while the project
+    /// has blocks and `blocks_to` is not another project.
+    pub fn remove_project(
+        &mut self,
+        slug: &ProjectSlug,
+        blocks_to: Option<&ProjectSlug>,
+    ) -> Result<usize, SaveError> {
+        if self.project(slug).is_none() {
+            return Err(EditError::UnknownProject(slug.clone()).into());
+        }
+        let (blocks, _) = self.project_blocks(slug)?;
+        let days = if blocks == 0 {
+            0
+        } else {
+            let to = blocks_to
+                .filter(|to| *to != slug)
+                .ok_or_else(|| EditError::BlocksNeedProject(slug.clone()))?;
+            if self.project(to).is_none() {
+                return Err(EditError::UnknownProject(to.clone()).into());
+            }
+            self.change_days(|day| move_blocks(day, slug, to))?
+        };
+        self.move_references(slug, None)?;
+        self.projects.retain(|project| project.slug != *slug);
+        Ok(days)
+    }
+
+    /// The number of blocks of the project `slug` on all days, and of the
+    /// days they lie on. Fails while a day cannot be read.
+    pub fn project_blocks(&self, slug: &ProjectSlug) -> Result<(usize, usize), ReadError> {
+        let (mut blocks, mut days) = (0, 0);
+        for date in self.all_days()? {
+            let Some(file) = self.load_day(date)? else {
+                continue;
+            };
+            let count = file
+                .day
+                .blocks
+                .iter()
+                .filter(|block| block.project == *slug)
+                .count();
+            blocks += count;
+            days += usize::from(count > 0);
+        }
+        Ok((blocks, days))
+    }
+
+    /// Where the project `slug` keeps its files.
+    pub fn project_folder(&self, slug: &ProjectSlug) -> PathBuf {
+        project_folder(&self.root, slug)
+    }
+
+    /// Points the order of the projects, the roles of contacts and the
+    /// repositories on this device from the project `from` to `to`, or
+    /// removes `from` there without one.
+    fn move_references(
+        &mut self,
+        from: &ProjectSlug,
+        to: Option<&ProjectSlug>,
+    ) -> Result<(), SaveError> {
+        if self.config.projects.order.contains(from) {
+            self.update_config(|config| {
+                let order = &mut config.projects.order;
+                *order = order
+                    .iter()
+                    .filter_map(|slug| if slug == from { to } else { Some(slug) })
+                    .cloned()
+                    .collect();
+                Ok(())
+            })?;
+        }
+        self.move_roles(from, to)?;
+        self.move_repo_paths(from, to)
     }
 
     /// Where exports go. BitLog may overwrite anything in there.
@@ -571,6 +633,17 @@ impl Vault {
         dates.sort();
         Ok(dates)
     }
+}
+
+/// Points the blocks of the project `from` in `day` to `to`. Returns
+/// whether it had any.
+fn move_blocks(day: &mut Day, from: &ProjectSlug, to: &ProjectSlug) -> bool {
+    let mut moved = false;
+    for block in day.blocks.iter_mut().filter(|block| block.project == *from) {
+        block.project = to.clone();
+        moved = true;
+    }
+    moved
 }
 
 /// Where the file of the day `date` lies, relative to the vault.
@@ -1239,6 +1312,52 @@ mod tests {
         assert!(vault.project(&infra).is_some());
         let day = vault.load_day(date(2026, 9, 21)).unwrap().unwrap().day;
         assert!(day.blocks.iter().any(|block| block.project == infra));
+    }
+
+    #[test]
+    fn remove_project() {
+        let (_dir, mut vault) = sample_copy();
+        let infra: ProjectSlug = "infra".parse().unwrap();
+        let meetings: ProjectSlug = "meetings".parse().unwrap();
+        let repo = vault.root().join("code");
+        fs::create_dir_all(repo.join(".git")).unwrap();
+        vault
+            .set_repo_paths(&infra, slice::from_ref(&repo))
+            .unwrap();
+        assert_eq!(vault.project_blocks(&infra).unwrap(), (4, 3));
+        let meetings_before = vault.project_blocks(&meetings).unwrap().0;
+
+        for blocks_to in [None, Some(&infra)] {
+            assert!(matches!(
+                vault.remove_project(&infra, blocks_to),
+                Err(SaveError::Edit(EditError::BlocksNeedProject(_)))
+            ));
+        }
+        assert!(matches!(
+            vault.remove_project(&infra, Some(&"nope".parse().unwrap())),
+            Err(SaveError::Edit(EditError::UnknownProject(_)))
+        ));
+        assert!(vault.project(&infra).is_some());
+
+        assert_eq!(vault.remove_project(&infra, Some(&meetings)).unwrap(), 3);
+        assert_eq!(slugs(&vault), ["webshop", "meetings", "filler", "pause"]);
+        assert_eq!(vault.project_blocks(&infra).unwrap(), (0, 0));
+        assert_eq!(
+            vault.project_blocks(&meetings).unwrap().0,
+            meetings_before + 4
+        );
+        assert!(vault.repo_paths().unwrap().is_empty());
+        let alex = vault.contact(&"alex".parse().unwrap()).unwrap();
+        assert_eq!(alex.role(&infra), None);
+        assert!(!vault.config().projects.order.contains(&infra));
+        // The caller removes the folder.
+        assert!(vault.project_folder(&infra).join("project.toml").is_file());
+
+        let empty = Project::new("empty".parse().unwrap(), "Empty", date(2026, 11, 8));
+        vault.add_project(empty).unwrap();
+        let empty = "empty".parse().unwrap();
+        assert_eq!(vault.remove_project(&empty, None).unwrap(), 0);
+        assert!(vault.project(&empty).is_none());
     }
 
     #[test]
