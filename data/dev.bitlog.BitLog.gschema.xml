@@ -32,11 +32,15 @@
       <choices>
         <choice value="recent"/>
         <choice value="name"/>
-        <choice value="project"/>
       </choices>
       <default>"recent"</default>
       <summary>Order of the notes</summary>
-      <description>Whether the notes page lists the notes by when they were last edited, by name or by project.</description>
+      <description>Whether notes are listed by when they were last edited or by name.</description>
+    </key>
+    <key name="notes-group-by-project" type="b">
+      <default>false</default>
+      <summary>Group the notes by project</summary>
+      <description>Whether the notes page shows the notes of all projects under a heading per project.</description>
     </key>
     <key name="assets-sort" type="s">
       <choices>

@@ -12,14 +12,7 @@ template $BitLogNotesPage: Adw.NavigationPage {
 
       child: Adw.ToolbarView {
         [top]
-        Adw.HeaderBar {
-          [end]
-          MenuButton {
-            icon-name: "view-sort-descending-symbolic";
-            tooltip-text: _("Sort");
-            menu-model: sort_menu;
-          }
-        }
+        Adw.HeaderBar {}
 
         [top]
         Adw.Clamp {
@@ -38,6 +31,12 @@ template $BitLogNotesPage: Adw.NavigationPage {
 
             DropDown project_dropdown {
               tooltip-text: _("Project");
+            }
+
+            MenuButton {
+              icon-name: "view-sort-descending-symbolic";
+              tooltip-text: _("Sort");
+              menu-model: sort_menu;
             }
           };
         }
@@ -95,21 +94,23 @@ menu sort_menu {
     label: _("Sort By");
 
     item {
-      label: _("_Recently Edited");
-      action: "notes.sort";
-      target: "recent";
-    }
-
-    item {
       label: _("_Name");
       action: "notes.sort";
       target: "name";
     }
 
     item {
-      label: _("_Project");
+      label: _("_Recently Edited");
       action: "notes.sort";
-      target: "project";
+      target: "recent";
+    }
+
+  }
+
+  section {
+    item {
+      label: _("_Group by Project");
+      action: "notes.group-by-project";
     }
   }
 }

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -45,18 +45,12 @@ impl Listed {
     }
 }
 
-/// Orders `notes` as the setting `sort` says: by "name", by "project" in
-/// the order of `position`, or by "recent", newest first and those without
-/// a time last.
-pub fn sort_notes(notes: &mut [&Listed], sort: &str, position: impl Fn(&ProjectSlug) -> usize) {
+/// Orders `notes` as the setting `sort` says: by "name", or by "recent",
+/// newest first and those without a time last.
+pub fn sort_notes(notes: &mut [&Listed], sort: &str) {
     let name = |listed: &Listed| listed.note.name().to_lowercase();
     match sort {
-        "name" => {
-            notes.sort_by_cached_key(|listed| (name(listed), position(listed.note.project())))
-        }
-        "project" => {
-            notes.sort_by_cached_key(|listed| (position(listed.note.project()), name(listed)))
-        }
+        "name" => notes.sort_by_cached_key(|listed| name(listed)),
         _ => notes.sort_by_cached_key(|listed| (std::cmp::Reverse(listed.modified), name(listed))),
     }
 }
@@ -78,9 +72,13 @@ mod imp {
     #[template(resource = "/dev/bitlog/BitLog/notes_page.ui")]
     #[properties(wrapper_type = super::NotesPage)]
     pub struct NotesPage {
-        /// How the list is ordered: "recent", "name" or "project".
+        /// How the list is ordered: "recent" or "name".
         #[property(get, set)]
         pub sort: RefCell<String>,
+        /// Whether the notes of all projects are shown under a heading per
+        /// project.
+        #[property(get, set)]
+        pub group_by_project: Cell<bool>,
         pub settings: gio::Settings,
         pub vault: RefCell<Option<Rc<Vault>>>,
         /// Where the links to a note lie, before it is renamed.
@@ -112,6 +110,7 @@ mod imp {
         fn default() -> Self {
             Self {
                 sort: RefCell::default(),
+                group_by_project: Cell::default(),
                 settings: gio::Settings::new(config::app_id()),
                 vault: RefCell::default(),
                 index: RefCell::default(),
@@ -138,6 +137,7 @@ mod imp {
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
             klass.install_property_action("notes.sort", "sort");
+            klass.install_property_action("notes.group-by-project", "group-by-project");
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -153,6 +153,10 @@ mod imp {
             note_actions::add(&*page);
             self.settings.bind("notes-sort", &*page, "sort").build();
             page.connect_sort_notify(|page| page.show_list());
+            self.settings
+                .bind("notes-group-by-project", &*page, "group-by-project")
+                .build();
+            page.connect_group_by_project_notify(|page| page.show_list());
             self.search_entry.connect_search_changed(glib::clone!(
                 #[weak]
                 page,
@@ -356,15 +360,20 @@ impl NotesPage {
             .filter(|listed| chosen.is_none() || Some(listed.note.project()) == chosen.as_ref())
             .filter(|listed| listed.note.name().to_lowercase().contains(&search))
             .collect();
-        let order = projects_in_order(&vault);
-        let position = |slug: &ProjectSlug| {
-            order
-                .iter()
-                .position(|project| project.slug == *slug)
-                .unwrap_or(usize::MAX)
-        };
-        let by_project = imp.sort.borrow().as_str() == "project";
-        sort_notes(&mut shown, &imp.sort.borrow(), position);
+        sort_notes(&mut shown, &imp.sort.borrow());
+        // Headings only help with more than one project shown.
+        self.action_set_enabled("notes.group-by-project", chosen.is_none());
+        let by_project = self.group_by_project() && chosen.is_none();
+        if by_project {
+            let order = projects_in_order(&vault);
+            // Stable, so the notes keep their order within a project.
+            shown.sort_by_key(|listed| {
+                order
+                    .iter()
+                    .position(|project| project.slug == *listed.note.project())
+                    .unwrap_or(usize::MAX)
+            });
+        }
 
         let today = Local::now().date_naive();
         let cards = imp.cards.borrow();

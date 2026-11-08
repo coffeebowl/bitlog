@@ -311,7 +311,7 @@ impl ProjectView {
                 .map(|note| Listed::read(&vault, note))
                 .collect();
             let mut sorted: Vec<&Listed> = listed.iter().collect();
-            sort_notes(&mut sorted, &self.notes_sort(), |_| 0);
+            sort_notes(&mut sorted, &self.notes_sort());
             sorted
                 .into_iter()
                 .map(|listed| listed.note.clone())
