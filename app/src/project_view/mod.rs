@@ -14,16 +14,18 @@ use bitlog_index::{Found, ProjectBlock};
 use chrono::{Local, NaiveDate, TimeDelta};
 use gettextrs::{gettext, ngettext};
 use glib::subclass::Signal;
-use gtk::glib;
+use gtk::{gio, glib};
 
 use crate::assets_view::AssetsView;
 use crate::colors;
+use crate::config;
 use crate::format::{
     format_duration, format_full_date, format_range, format_share, format_weekday_date,
     project_category_name, title_markup,
 };
 use crate::git_page::GitPage;
 use crate::markdown_view::MarkdownView;
+use crate::notes_page::{Listed, sort_notes};
 use crate::search_index::{ProjectData, SearchIndex};
 use crate::task_list_view::TaskListView;
 use crate::widgets::cards::{note_card, note_preview, show_preview};
@@ -42,9 +44,13 @@ const ACTIVITY_DAYS: u64 = 30;
 mod imp {
     use super::*;
 
-    #[derive(Debug, Default, gtk::CompositeTemplate)]
+    #[derive(Debug, Default, gtk::CompositeTemplate, glib::Properties)]
     #[template(resource = "/dev/bitlog/BitLog/project_view.ui")]
+    #[properties(wrapper_type = super::ProjectView)]
     pub struct ProjectView {
+        /// How the notes are ordered, the setting of the notes page.
+        #[property(get, set)]
+        pub notes_sort: RefCell<String>,
         /// The project shown.
         pub slug: RefCell<Option<ProjectSlug>>,
         /// The notes in the grid, in its order, with their previews.
@@ -58,6 +64,8 @@ mod imp {
         pub blocks_shown: Cell<u32>,
         #[template_child]
         pub window_title: TemplateChild<adw::WindowTitle>,
+        #[template_child]
+        pub notes_sort_button: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub new_note_button: TemplateChild<gtk::Button>,
         #[template_child]
@@ -114,6 +122,7 @@ mod imp {
             Heatmap::ensure_type();
             TaskListView::ensure_type();
             klass.bind_template();
+            klass.install_property_action("notes.sort", "notes-sort");
             klass.install_action_async("people.add", None, |view, _, _| async move {
                 view.add_person().await;
             });
@@ -137,6 +146,7 @@ mod imp {
         }
     }
 
+    #[glib::derived_properties]
     impl ObjectImpl for ProjectView {
         fn signals() -> &'static [Signal] {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
@@ -149,6 +159,11 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+            let obj = self.obj();
+            gio::Settings::new(config::app_id())
+                .bind("notes-sort", &*obj, "notes-sort")
+                .build();
+            obj.connect_notes_sort_notify(|view| view.show_notes());
             self.more_button.connect_clicked(glib::clone!(
                 #[weak(rename_to = view)]
                 self.obj(),
@@ -270,31 +285,7 @@ impl ProjectView {
         imp.tasks.reload();
         imp.assets_view.show(vault, &project.slug);
         self.show_people(vault, &project.slug);
-
-        imp.notes_grid.remove_all();
-        imp.notes.take();
-        let notes = match vault.notes(&project.slug) {
-            Ok(notes) => notes,
-            Err(err) => {
-                imp.notes_error_row.set_subtitle(&err.to_string());
-                imp.notes_stack.set_visible_child_name("error");
-                imp.new_note_button.set_visible(true);
-                return;
-            }
-        };
-        let notes: Vec<_> = notes
-            .into_iter()
-            .map(|note| {
-                let preview = note_preview();
-                show_preview(&preview, vault, &note);
-                imp.notes_grid.append(&note_card(&note, &preview, None));
-                (note, preview)
-            })
-            .collect();
-        imp.notes_stack
-            .set_visible_child_name(if notes.is_empty() { "empty" } else { "list" });
-        imp.new_note_button.set_visible(!notes.is_empty());
-        imp.notes.replace(notes);
+        self.show_notes();
     }
 
     /// Shows the assets of the project as they are now.
@@ -307,15 +298,66 @@ impl ProjectView {
         self.imp().tasks.reload();
     }
 
-    /// Shows the notes in the grid as they are now, as after editing one.
-    pub fn update_previews(&self) {
+    /// Shows the notes of the project as they are now, in the order chosen.
+    /// The cards stay while the order does, as after editing a note.
+    pub fn show_notes(&self) {
         let imp = self.imp();
-        let Some(vault) = imp.vault.borrow().clone() else {
+        let (Some(slug), Some(vault)) = (self.slug(), imp.vault.borrow().clone()) else {
             return;
         };
-        for (note, preview) in &*imp.notes.borrow() {
-            show_preview(preview, &vault, note);
+        let notes = vault.notes(&slug).map(|notes| {
+            let listed: Vec<Listed> = notes
+                .into_iter()
+                .map(|note| Listed::read(&vault, note))
+                .collect();
+            let mut sorted: Vec<&Listed> = listed.iter().collect();
+            sort_notes(&mut sorted, &self.notes_sort(), |_| 0);
+            sorted
+                .into_iter()
+                .map(|listed| listed.note.clone())
+                .collect::<Vec<_>>()
+        });
+        let shown = notes.as_deref().unwrap_or_default();
+        let same = shown
+            .iter()
+            .eq(imp.notes.borrow().iter().map(|(note, _)| note));
+        if same {
+            for (note, preview) in &*imp.notes.borrow() {
+                show_preview(preview, &vault, note);
+            }
+        } else {
+            // The window would keep the focus on a removed card, see
+            // `TaskListView::show`.
+            let focused = imp.notes_grid.focus_child().is_some();
+            if focused && let Some(root) = self.root() {
+                root.set_focus(None::<&gtk::Widget>);
+            }
+            imp.notes_grid.remove_all();
+            let cards = shown
+                .iter()
+                .map(|note| {
+                    let preview = note_preview();
+                    show_preview(&preview, &vault, note);
+                    imp.notes_grid.append(&note_card(note, &preview, None));
+                    (note.clone(), preview)
+                })
+                .collect();
+            imp.notes.replace(cards);
+            if focused && let Some(card) = imp.notes_grid.child_at_index(0) {
+                card.grab_focus();
+            }
         }
+        let page = match &notes {
+            Ok(notes) if notes.is_empty() => "empty",
+            Ok(_) => "list",
+            Err(err) => {
+                imp.notes_error_row.set_subtitle(&err.to_string());
+                "error"
+            }
+        };
+        imp.notes_stack.set_visible_child_name(page);
+        imp.notes_sort_button.set_visible(page == "list");
+        imp.new_note_button.set_visible(page != "empty");
     }
 }
 

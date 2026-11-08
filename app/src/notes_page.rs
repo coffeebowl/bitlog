@@ -26,9 +26,39 @@ use crate::widgets::cards::{note_card, note_preview, show_preview};
 /// A note in the list.
 #[derive(Debug)]
 pub struct Listed {
-    note: NotePath,
+    pub note: NotePath,
     /// When it was last edited, unless that cannot be read.
     modified: Option<DateTime<Local>>,
+}
+
+impl Listed {
+    /// `note` with when it was last edited in `vault`.
+    pub fn read(vault: &Vault, note: NotePath) -> Self {
+        let modified = vault.note_modified(&note).map_or_else(
+            |err| {
+                glib::g_warning!("bitlog", "{err}");
+                None
+            },
+            |modified| Some(DateTime::from(modified)),
+        );
+        Self { note, modified }
+    }
+}
+
+/// Orders `notes` as the setting `sort` says: by "name", by "project" in
+/// the order of `position`, or by "recent", newest first and those without
+/// a time last.
+pub fn sort_notes(notes: &mut [&Listed], sort: &str, position: impl Fn(&ProjectSlug) -> usize) {
+    let name = |listed: &Listed| listed.note.name().to_lowercase();
+    match sort {
+        "name" => {
+            notes.sort_by_cached_key(|listed| (name(listed), position(listed.note.project())))
+        }
+        "project" => {
+            notes.sort_by_cached_key(|listed| (position(listed.note.project()), name(listed)))
+        }
+        _ => notes.sort_by_cached_key(|listed| (std::cmp::Reverse(listed.modified), name(listed))),
+    }
 }
 
 /// The card of a note in the grid, kept while the note is there, so that
@@ -236,16 +266,7 @@ impl NotesPage {
                 note.inspect_err(|err| glib::g_warning!("bitlog", "{err}"))
                     .ok()
             })
-            .map(|note| {
-                let modified = vault.note_modified(&note).map_or_else(
-                    |err| {
-                        glib::g_warning!("bitlog", "{err}");
-                        None
-                    },
-                    |modified| Some(DateTime::from(modified)),
-                );
-                Listed { note, modified }
-            })
+            .map(|note| Listed::read(&vault, note))
             .collect();
         self.update_cards(&vault, &notes);
         self.imp().notes.replace(notes);
@@ -342,19 +363,8 @@ impl NotesPage {
                 .position(|project| project.slug == *slug)
                 .unwrap_or(usize::MAX)
         };
-        let name = |listed: &Listed| listed.note.name().to_lowercase();
         let by_project = imp.sort.borrow().as_str() == "project";
-        match imp.sort.borrow().as_str() {
-            "name" => {
-                shown.sort_by_cached_key(|listed| (name(listed), position(listed.note.project())))
-            }
-            "project" => {
-                shown.sort_by_cached_key(|listed| (position(listed.note.project()), name(listed)))
-            }
-            // Newest first, those without a time last.
-            _ => shown
-                .sort_by_cached_key(|listed| (std::cmp::Reverse(listed.modified), name(listed))),
-        }
+        sort_notes(&mut shown, &imp.sort.borrow(), position);
 
         let today = Local::now().date_naive();
         let cards = imp.cards.borrow();

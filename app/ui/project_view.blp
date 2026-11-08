@@ -104,15 +104,28 @@ template $BitLogProjectView: Adw.NavigationPage {
                 title: _("Notes");
 
                 // Without notes, the row in their place adds one.
-                header-suffix: Button new_note_button {
-                  icon-name: "list-add-symbolic";
-                  tooltip-text: _("New Note");
-                  action-name: "notes.new";
+                header-suffix: Box {
                   valign: center;
 
-                  styles [
-                    "flat",
-                  ]
+                  MenuButton notes_sort_button {
+                    icon-name: "view-sort-descending-symbolic";
+                    tooltip-text: _("Sort");
+                    menu-model: notes_sort_menu;
+
+                    styles [
+                      "flat",
+                    ]
+                  }
+
+                  Button new_note_button {
+                    icon-name: "list-add-symbolic";
+                    tooltip-text: _("New Note");
+                    action-name: "notes.new";
+
+                    styles [
+                      "flat",
+                    ]
+                  }
                 };
 
                 Stack notes_stack {
@@ -283,6 +296,25 @@ menu people_menu {
     item {
       label: _("_New Contact…");
       action: "people.new";
+    }
+  }
+}
+
+// "Project" of the notes page sorts by name here.
+menu notes_sort_menu {
+  section {
+    label: _("Sort By");
+
+    item {
+      label: _("_Name");
+      action: "notes.sort";
+      target: "name";
+    }
+
+    item {
+      label: _("_Recently Edited");
+      action: "notes.sort";
+      target: "recent";
     }
   }
 }

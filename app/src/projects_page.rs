@@ -119,13 +119,13 @@ mod imp {
                     page.emit_by_name::<()>("vault-changed", &[]);
                 }
             ));
-            // Back from a note, the previews show it as just typed.
+            // Back from a note, the notes show it as just typed, in their order.
             self.project_view.connect_showing(glib::clone!(
                 #[weak(rename_to = note_view)]
                 self.note_view,
                 move |project_view| {
                     note_view.save_now();
-                    project_view.update_previews();
+                    project_view.show_notes();
                 }
             ));
             // Back on the list, it shows the time and notes as they are now.

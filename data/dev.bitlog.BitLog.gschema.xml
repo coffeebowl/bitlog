@@ -38,6 +38,16 @@
       <summary>Order of the notes</summary>
       <description>Whether the notes page lists the notes by when they were last edited, by name or by project.</description>
     </key>
+    <key name="assets-sort" type="s">
+      <choices>
+        <choice value="name"/>
+        <choice value="recent"/>
+        <choice value="added"/>
+      </choices>
+      <default>"name"</default>
+      <summary>Order of the project files</summary>
+      <description>Whether the files of a project are listed by name, by when they were last edited or by when they were added. Folders always come first.</description>
+    </key>
     <key name="block-panel-width" type="i">
       <default>440</default>
       <summary>Width of the block panel</summary>

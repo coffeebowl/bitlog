@@ -44,6 +44,16 @@ template $BitLogAssetsView: Adw.PreferencesGroup {
       ]
     }
 
+    MenuButton {
+      icon-name: "view-sort-descending-symbolic";
+      tooltip-text: _("Sort");
+      menu-model: sort_menu;
+
+      styles [
+        "flat",
+      ]
+    }
+
     Button {
       icon-name: "folder-new-symbolic";
       tooltip-text: _("New Folder");
@@ -137,5 +147,29 @@ template $BitLogAssetsView: Adw.PreferencesGroup {
     styles [
       "assets-drop",
     ]
+  }
+}
+
+menu sort_menu {
+  section {
+    label: _("Sort By");
+
+    item {
+      label: _("_Name");
+      action: "assets.sort";
+      target: "name";
+    }
+
+    item {
+      label: _("_Recently Edited");
+      action: "assets.sort";
+      target: "recent";
+    }
+
+    item {
+      label: _("Recently _Added");
+      action: "assets.sort";
+      target: "added";
+    }
   }
 }

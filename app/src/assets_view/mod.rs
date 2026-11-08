@@ -1,12 +1,14 @@
 use std::cell::RefCell;
+use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{Asset, AssetPath, ProjectSlug, Vault};
-use gtk::{gdk, glib};
+use gtk::{gdk, gio, glib};
 
+use crate::config;
 use crate::widgets::cards::{asset_card, folder_card};
 use crate::widgets::param;
 
@@ -24,9 +26,13 @@ const FOLDERS_ON_THE_WAY: usize = 2;
 mod imp {
     use super::*;
 
-    #[derive(Debug, Default, gtk::CompositeTemplate)]
+    #[derive(Debug, Default, gtk::CompositeTemplate, glib::Properties)]
     #[template(resource = "/dev/bitlog/BitLog/assets_view.ui")]
+    #[properties(wrapper_type = super::AssetsView)]
     pub struct AssetsView {
+        /// How the files are ordered: "name", "recent" or "added".
+        #[property(get, set)]
+        pub sort: RefCell<String>,
         pub vault: RefCell<Option<Rc<Vault>>>,
         /// The project whose assets are shown.
         pub slug: RefCell<Option<ProjectSlug>>,
@@ -58,6 +64,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             klass.bind_template();
+            klass.install_property_action("assets.sort", "sort");
             klass.install_action("assets.up", None, |view, _, _| view.show_parent());
             klass.install_action_async("assets.add", None, |view, _, _| async move {
                 view.choose_assets().await;
@@ -104,10 +111,15 @@ mod imp {
         }
     }
 
+    #[glib::derived_properties]
     impl ObjectImpl for AssetsView {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
+            gio::Settings::new(config::app_id())
+                .bind("assets-sort", &*obj, "sort")
+                .build();
+            obj.connect_sort_notify(|view| view.reload());
             obj.accept_drops(&*self.stack, |view| view.folder());
             obj.accept_drops(&*self.files_button, |_| None);
             obj.accept_drops(&*self.back_button, |view| {
@@ -211,7 +223,13 @@ impl AssetsView {
             .map(|(asset, card)| (asset.path.clone(), (asset, card)))
             .collect();
         match vault.asset_folder(&slug, folder.as_ref()) {
-            Ok(found) => {
+            Ok(mut found) => {
+                // Newest first; ties stay in the order by name.
+                match self.sort().as_str() {
+                    "recent" => found.files.sort_by_key(|asset| Reverse(asset.modified)),
+                    "added" => found.files.sort_by_key(|asset| Reverse(asset.added)),
+                    _ => {}
+                }
                 for folder in &found.folders {
                     let card = folder_card(folder);
                     self.make_draggable(&card, folder);

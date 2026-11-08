@@ -18,6 +18,10 @@ pub struct Asset {
     /// In bytes.
     pub size: u64,
     pub modified: SystemTime,
+    /// When the file was created here: added, synced, or saved anew by an
+    /// app that writes a new file. Its modification time where the file
+    /// system keeps no creation time.
+    pub added: SystemTime,
 }
 
 /// What a folder of the assets of a project holds.
@@ -90,10 +94,12 @@ impl Vault {
                 continue;
             };
             if metadata.is_file() {
+                let modified = metadata.modified().map_err(io_error)?;
                 found.files.push(Asset {
                     path: asset,
                     size: metadata.len(),
-                    modified: metadata.modified().map_err(io_error)?,
+                    modified,
+                    added: metadata.created().unwrap_or(modified),
                 });
             }
         }
