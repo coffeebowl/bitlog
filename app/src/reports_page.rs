@@ -12,6 +12,7 @@ use gtk::{gdk, glib};
 
 use crate::alert::{show_error, toast_overlay};
 use crate::colors::{color_dot, lightness, mix, parse, project_color, project_hex, sea_green};
+use crate::dialogs::search_dialog::Command;
 use crate::format::{
     format_duration, format_month, format_range, format_share, format_short_date,
     project_category_name,
@@ -152,6 +153,26 @@ impl ReportsPage {
     pub fn step(&self, steps: i32) {
         let moved = self.period().step(self.date(), steps);
         self.show(moved.expect("nobody steps this way to the end of the calendar"));
+    }
+
+    /// What the search offers for the period shown: its exports.
+    pub fn commands(&self) -> Vec<Command> {
+        let export = |title, action| Command::new(title, "document-save-symbolic", action);
+        let mut commands = vec![export(
+            gettext("Export Blocks as CSV"),
+            "reports.export-blocks",
+        )];
+        if self.period() == Period::Week {
+            commands.push(export(
+                gettext("Export Week Report as Markdown"),
+                "reports.export-week",
+            ));
+        }
+        commands.push(export(
+            gettext("Export Remote Work Days as CSV"),
+            "reports.export-remote",
+        ));
+        commands
     }
 
     /// Looks up the period shown again and shows it.

@@ -550,14 +550,21 @@ impl Timeline {
         self.emit_by_name::<()>("block-activated", &[&index]);
     }
 
-    /// Marks one slot of free time from `minute` on for a new block, if it
-    /// is free, and returns it.
-    pub fn select_free_span(&self, minute: u32) -> Option<(u32, u32)> {
+    /// The free time from `anchor` to `minute` in whole slots, one slot if
+    /// they are the same, if `anchor` is free.
+    pub fn free_span(&self, anchor: u32, minute: u32) -> Option<(u32, u32)> {
         let imp = self.imp();
-        if !imp.is_free(minute) || imp.popover.borrow().is_some() {
+        imp.is_free(anchor).then(|| imp.free_span(anchor, minute))
+    }
+
+    /// Marks the free time from `anchor` to `minute` for a new block, like
+    /// `free_span`, and returns it.
+    pub fn select_free_span(&self, anchor: u32, minute: u32) -> Option<(u32, u32)> {
+        let imp = self.imp();
+        if imp.popover.borrow().is_some() {
             return None;
         }
-        let span = imp.free_span(minute, minute);
+        let span = self.free_span(anchor, minute)?;
         imp.set_pending(Some(span));
         Some(span)
     }

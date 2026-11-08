@@ -34,19 +34,24 @@ pub fn add_to(button: &gtk::MenuButton) {
     popover.add_child(&switcher(), MENU_ITEM);
 }
 
+/// The color schemes `app.color-scheme` takes, each with the style class of
+/// its button and its name. The search offers them as commands.
+pub fn choices() -> [(&'static str, &'static str, String); 3] {
+    [
+        ("default", "follow", gettext("Follow System Style")),
+        ("light", "light", gettext("Light Style")),
+        ("dark", "dark", gettext("Dark Style")),
+    ]
+}
+
 fn switcher() -> gtk::Box {
     let switcher = gtk::Box::builder()
         .spacing(18)
         .halign(gtk::Align::Center)
         .css_classes(["style-switcher"])
         .build();
-    let choices = [
-        ("default", "follow", gettext("Follow System Style")),
-        ("light", "light", gettext("Light Style")),
-        ("dark", "dark", gettext("Dark Style")),
-    ];
     let mut group: Option<gtk::CheckButton> = None;
-    for (scheme, class, label) in choices {
+    for (scheme, class, label) in choices() {
         let button = gtk::CheckButton::builder()
             .action_name("app.color-scheme")
             .action_target(&scheme.to_variant())

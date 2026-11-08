@@ -8,6 +8,7 @@ mod contacts;
 mod day;
 mod markdown;
 mod projects;
+mod search;
 mod tasks;
 mod week;
 
@@ -30,6 +31,7 @@ pub enum Kind {
     Contacts,
     Tasks,
     Week,
+    Search,
     Markdown,
 }
 
@@ -42,6 +44,7 @@ impl Kind {
             Self::Contacts => contacts::HEIGHT,
             Self::Tasks => tasks::HEIGHT,
             Self::Week => week::HEIGHT,
+            Self::Search => search::HEIGHT,
             Self::Markdown => markdown::HEIGHT,
         }
     }
@@ -63,6 +66,9 @@ impl Kind {
             }
             Self::Tasks => gettext("A task list with an overdue task and a finished one"),
             Self::Week => gettext("A week of working time per day and project, with the target"),
+            Self::Search => gettext(
+                "The search with the start of a project name typed: a command to add a block for the project, the project and a block that mentions it",
+            ),
             Self::Markdown => gettext(
                 "A note formatted as it is typed, with the markers shown only where the cursor is",
             ),
@@ -113,6 +119,7 @@ mod imp {
                 Kind::Contacts => contacts::snapshot(widget, snapshot),
                 Kind::Tasks => tasks::snapshot(widget, snapshot),
                 Kind::Week => week::snapshot(widget, snapshot),
+                Kind::Search => search::snapshot(widget, snapshot),
                 Kind::Markdown => markdown::snapshot(widget, snapshot),
             }
         }

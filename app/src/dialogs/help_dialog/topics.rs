@@ -68,6 +68,7 @@ pub(super) fn all() -> Vec<Topic> {
         contacts(),
         tasks(),
         reports(),
+        search(),
         markdown(),
         vault(),
     ]
@@ -201,6 +202,39 @@ fn reports() -> Topic {
             Block::Text(gettext(
                 "From the reports, you can export your blocks or your remote work days as CSV, for a timesheet for example, or a week as a Markdown report. Exports are saved in the exports folder of the vault.",
             )),
+        ],
+    }
+}
+
+fn search() -> Topic {
+    Topic {
+        tag: "search",
+        title: gettext("Search"),
+        blocks: vec![
+            Block::Figure(Kind::Search),
+            Block::Text(gettext(
+                "Press <b>Ctrl+K</b> to find anything in the vault or to run a command. The search looks through the texts of blocks, day notes, notes and tasks, and through the names of projects and contacts. For names and commands, a few of their letters in order are enough. In texts, it looks for parts of words as typed and skips those shorter than three letters.",
+            )),
+            Block::Heading(gettext("Commands")),
+            Block::Text(gettext(
+                "Before you type, the search lists what you can do, with the shortcuts: show a page, add a project, switch the style and more. The page shown adds its own, like <b>Block Until Now</b> on today’s page, which fills the time since your last block, or the exports on the reports. Commands that add a block show the time it takes up.",
+            )),
+            Block::Text(gettext(
+                "More commands appear as you type. The name of a project offers a new note in it, and on a day a new block, on today’s page until now. On a day, a kind of day or location like <i>Vacation</i> or <i>Remote</i> sets it. Type a date like <tt>2026-10-06</tt> to open that day.",
+            )),
+            Block::Text(gettext(
+                "What you choose often moves up the list. What you no longer use slowly moves back down.",
+            )),
+            Block::Heading(gettext("Searching for One Kind")),
+            Block::Text(gettext(
+                "Start with a sign to search for only one kind of thing, or to add a task:",
+            )),
+            Block::Rows(vec![
+                row(gettext("Commands")).example(">"),
+                row(gettext("Projects and contacts by name")).example("@"),
+                row(gettext("Notes by name")).example("/"),
+                row(gettext("New task, due today")).example("+"),
+            ]),
         ],
     }
 }

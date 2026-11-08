@@ -57,5 +57,10 @@
       <summary>Width of the block panel</summary>
       <description>How wide the panel with the block shown in the day view is at most, as dragged at its edge.</description>
     </key>
+    <key name="search-usage" type="a{s(dx)}">
+      <default>{}</default>
+      <summary>What was chosen in the search</summary>
+      <description>For each command or result chosen in the search, a score that fades with time and when it was last chosen. Of matches equally good, the search lists those with the highest score first.</description>
+    </key>
   </schema>
 </schemalist>

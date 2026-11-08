@@ -7,8 +7,7 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    BlockId, Day, DayFile, EditError, LocationKey, ProjectSlug, SaveError, Vault, minute_of_day,
-    time_at_minute,
+    BlockId, Day, DayFile, EditError, LocationKey, SaveError, Vault, time_at_minute,
 };
 use chrono::{Local, NaiveDate, NaiveTime};
 use gettextrs::gettext;
@@ -23,12 +22,12 @@ use crate::task_list_view::TaskListView;
 use crate::timeline::Timeline;
 use crate::trash::trash;
 use crate::widgets::cross_fade::CrossFade;
-use crate::widgets::project_picker::project_popover;
 use crate::widgets::{SaveTimer, param};
 use block_panel::spin_time;
 
 mod block_panel;
 mod editing;
+mod new_blocks;
 
 mod imp {
     use super::*;
@@ -117,6 +116,14 @@ mod imp {
             });
             klass.install_action("day.create", None, |view, _, _| view.create_day());
             klass.install_action("day.new-block", None, |view, _, _| view.new_block());
+            klass.install_action("day.block-until-now", None, |view, _, _| {
+                view.block_until_now();
+            });
+            klass.install_action(
+                "day.new-block-for",
+                Some(glib::VariantTy::STRING),
+                |view, _, project| view.new_block_for(param(project, "projects")),
+            );
             klass.install_action("day.standup", None, |view, _, _| view.show_standup());
             klass.install_action_async(
                 "day.follow",
@@ -324,7 +331,12 @@ impl DayView {
         for action in ["day.open-file", "day.show-file"] {
             self.action_set_enabled(action, exists);
         }
-        for action in ["day.new-block", "day.trash"] {
+        for action in [
+            "day.new-block",
+            "day.block-until-now",
+            "day.new-block-for",
+            "day.trash",
+        ] {
             self.action_set_enabled(action, readable);
         }
     }
@@ -434,26 +446,6 @@ impl DayView {
         }
     }
 
-    /// Adds a block of `project` from `start` to `end`, in minutes of the
-    /// day, and shows it in the panel.
-    fn add_block(&self, start: u32, end: u32, project: ProjectSlug) {
-        let vault = self.vault();
-        let mut id = None;
-        self.update(|day| {
-            id = Some(day.add_block(
-                time_at_minute(start),
-                time_at_minute(end),
-                project,
-                "",
-                vault.projects(),
-            )?);
-            Ok(())
-        });
-        if let Some(id) = id {
-            self.show_block_by_id(&id);
-        }
-    }
-
     /// Lets the block `index` take the place of the block `place`, offering
     /// to undo it.
     fn reorder_block(&self, index: usize, place: usize) {
@@ -492,20 +484,6 @@ impl DayView {
             .collect()
     }
 
-    /// Asks for the project of a new block from `start` to `end`, in minutes
-    /// of the day.
-    fn choose_project(&self, start: u32, end: u32) {
-        let popover = project_popover(
-            &self.vault(),
-            glib::clone!(
-                #[weak(rename_to = view)]
-                self,
-                move |project| view.add_block(start, end, project)
-            ),
-        );
-        self.imp().timeline.show_popover(&popover);
-    }
-
     /// Shows the standup summary for the day shown.
     fn show_standup(&self) {
         // The summary is read from the files.
@@ -524,50 +502,6 @@ impl DayView {
                     Ok(text) => StandupDialog::new(&text).present(Some(&view)),
                     Err(err) => show_error(&view, &gettext("Cannot Summarize"), &err.to_string()),
                 }
-            }
-        ));
-    }
-
-    /// Offers one slot for a new block after the last one, or at the start
-    /// of the grid.
-    fn new_block(&self) {
-        let imp = self.imp();
-        let anchor = {
-            let file = imp.file.borrow();
-            let day = &file
-                .as_ref()
-                .expect("new blocks need a day with a file")
-                .day;
-            let start = self.vault().config().grid.day_start;
-            // A block into the next day leaves no room after it.
-            day.blocks
-                .iter()
-                .map(|block| block.span().1)
-                .filter(|&end| end < 24 * 60)
-                .max()
-                .unwrap_or(minute_of_day(start))
-        };
-        let Some((start, end)) = imp.timeline.select_free_span(anchor) else {
-            self.error_bell();
-            return;
-        };
-        // Once the grid has its size, scroll to the span and ask there.
-        glib::idle_add_local_once(glib::clone!(
-            #[weak(rename_to = view)]
-            self,
-            move || {
-                let imp = view.imp();
-                let area = imp
-                    .timeline
-                    .pending_area()
-                    .expect("the span is still marked");
-                let point = gtk::graphene::Point::new(area.x(), area.y());
-                if let Some(point) = imp.timeline.compute_point(&*imp.day_scroll, &point) {
-                    let adjustment = imp.day_scroll.vadjustment();
-                    let top = adjustment.value() + f64::from(point.y());
-                    adjustment.clamp_page(top, top + f64::from(area.height()));
-                }
-                view.choose_project(start, end);
             }
         ));
     }
@@ -660,17 +594,22 @@ fn kind_menu(current: &str) -> gio::Menu {
 /// The locations of `vault` to choose from, and none.
 fn location_menu(vault: &Vault) -> gio::Menu {
     let menu = gio::Menu::new();
-    let none = gettext("None");
-    let locations = vault.config().locations.iter();
-    let items = [("", none.as_str())]
-        .into_iter()
-        .chain(locations.map(|(key, name)| (key.as_str(), name.as_str())));
-    for (key, name) in items {
-        let item = gio::MenuItem::new(Some(name), None);
+    for (key, name) in location_choices(vault) {
+        let item = gio::MenuItem::new(Some(&name), None);
         item.set_action_and_target_value(Some("day.location"), Some(&key.to_variant()));
         menu.append_item(&item);
     }
     menu
+}
+
+/// The locations a day can have, each with its key and name, after "None"
+/// with an empty key.
+fn location_choices(vault: &Vault) -> Vec<(String, String)> {
+    let locations = vault.config().locations.iter();
+    [(String::new(), gettext("None"))]
+        .into_iter()
+        .chain(locations.map(|(key, name)| (key.to_string(), name.clone())))
+        .collect()
 }
 
 fn variant_string(value: Option<&glib::Variant>) -> String {

@@ -128,7 +128,7 @@ impl Timeline {
             self,
             move |_, _, y| {
                 let minute = timeline.imp().minute_at(y as f32);
-                if let Some((start, end)) = timeline.select_free_span(minute) {
+                if let Some((start, end)) = timeline.select_free_span(minute, minute) {
                     timeline.emit_by_name::<()>("span-selected", &[&start, &end]);
                 }
             }

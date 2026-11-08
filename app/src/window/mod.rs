@@ -8,13 +8,15 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use bitlog_core::{
-    BlockId, ContactSlug, NotePath, ProjectSlug, SaveError, TaskId, Vault, VaultConfig,
-    VaultWatcher,
+    BlockId, ContactSlug, NotePath, ProjectSlug, SaveError, TaskId, Vault, VaultChange,
+    VaultConfig, VaultWatcher,
 };
 use bitlog_index::Found;
 use chrono::{Local, NaiveDate, TimeDelta};
+use gettextrs::gettext;
 use gtk::{gio, glib};
 
+use crate::alert::show_error;
 use crate::calendar_view::CalendarView;
 use crate::config;
 use crate::contacts_page::ContactsPage;
@@ -34,7 +36,7 @@ use crate::widgets::style_switcher;
 pub use sidebar::pages;
 
 /// Actions that need an open vault.
-const VAULT_ACTIONS: [&str; 23] = [
+const VAULT_ACTIONS: [&str; 26] = [
     "win.preferences",
     "win.check-vault",
     "win.previous",
@@ -58,6 +60,9 @@ const VAULT_ACTIONS: [&str; 23] = [
     "win.new-contact",
     "win.search",
     "win.resolve-conflict",
+    "win.new-task",
+    "win.add-task",
+    "win.new-note",
 ];
 
 /// The window action that shows `found`, with its target, as the actions
@@ -234,6 +239,30 @@ mod imp {
                     .expect("the contact page adds contacts");
             });
             klass.install_action("win.search", None, |window, _, _| window.search());
+            klass.install_action(
+                "win.new-note",
+                Some(glib::VariantTy::STRING),
+                |window, _, slug| {
+                    let slug: ProjectSlug = param(slug, "projects");
+                    window.show_project(&slug);
+                    let target = slug.to_string().to_variant();
+                    WidgetExt::activate_action(
+                        &window.imp().projects_page,
+                        "notes.new",
+                        Some(&target),
+                    )
+                    .expect("the project page adds notes");
+                },
+            );
+            klass.install_action("win.new-task", None, |window, _, _| {
+                window.show_tasks();
+                window.imp().tasks_page.focus_new_task();
+            });
+            klass.install_action(
+                "win.add-task",
+                Some(glib::VariantTy::STRING),
+                |window, _, title| window.add_task(&param::<String>(title, "tasks")),
+            );
             klass.install_action("win.preferences", None, |window, _, _| {
                 window.show_preferences();
             });
@@ -547,6 +576,26 @@ impl Window {
         }
     }
 
+    /// Adds `title` to the global task list, due today, as the search does.
+    fn add_task(&self, title: &str) {
+        let vault = self.vault();
+        let today = Local::now().date_naive();
+        // A list that cannot be read is read again when saving.
+        let tasks = vault.load_tasks(None).unwrap_or_default();
+        let saved = vault.update_tasks(None, &tasks, |tasks| {
+            let id = tasks.add(title, today)?;
+            tasks.set_due(&id, Some(today))
+        });
+        match saved {
+            Ok(_) => {
+                self.show_changes(&[VaultChange::Tasks(None)]);
+                let toast = adw::Toast::new(&gettext("Task added"));
+                self.imp().toast_overlay.add_toast(toast);
+            }
+            Err(err) => show_error(self, &gettext("Cannot Save Tasks"), &err.to_string()),
+        }
+    }
+
     /// Opens the search, which also offers commands.
     fn search(&self) {
         let imp = self.imp();
@@ -556,11 +605,15 @@ impl Window {
         }
         // So that the search finds what was just typed.
         self.save_texts_now();
-        let dialog = SearchDialog::new(
-            self.vault(),
-            imp.index.borrow().clone(),
-            self.shows(&imp.day_view),
-        );
+        let commands = if self.shows(&imp.day_view) {
+            imp.day_view.commands()
+        } else if self.shows(&imp.reports_page) {
+            imp.reports_page.commands()
+        } else {
+            Vec::new()
+        };
+        let page = imp.split_view.content().expect("a page is always shown");
+        let dialog = SearchDialog::new(self.vault(), imp.index.borrow().clone(), &page, commands);
         dialog.present(Some(self));
     }
 

@@ -6,6 +6,7 @@ app/src/contacts_page/mod.rs
 app/src/contacts_page/pictures.rs
 app/src/day_view/block_panel.rs
 app/src/day_view/mod.rs
+app/src/day_view/new_blocks.rs
 app/src/dialogs/commit_dialog.rs
 app/src/dialogs/compare_dialog.rs
 app/src/dialogs/contact_dialog/labeled.rs
@@ -16,12 +17,14 @@ app/src/dialogs/help_dialog/figures/day.rs
 app/src/dialogs/help_dialog/figures/markdown.rs
 app/src/dialogs/help_dialog/figures/mod.rs
 app/src/dialogs/help_dialog/figures/projects.rs
+app/src/dialogs/help_dialog/figures/search.rs
 app/src/dialogs/help_dialog/figures/tasks.rs
 app/src/dialogs/help_dialog/topics.rs
 app/src/dialogs/note_dialogs.rs
 app/src/dialogs/preferences_dialog.rs
 app/src/dialogs/project_dialog.rs
-app/src/dialogs/search_dialog.rs
+app/src/dialogs/search_dialog/commands.rs
+app/src/dialogs/search_dialog/mod.rs
 app/src/dialogs/standup_dialog.rs
 app/src/dialogs/sync_conflict_dialog.rs
 app/src/dialogs/trash_project_dialog.rs
@@ -51,6 +54,7 @@ app/src/widgets/heatmap.rs
 app/src/widgets/mod.rs
 app/src/widgets/style_switcher.rs
 app/src/widgets/week_chart.rs
+app/src/window/mod.rs
 app/src/window/sidebar.rs
 app/src/window/vault.rs
 app/ui/assets_view.blp

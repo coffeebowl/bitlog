@@ -325,7 +325,7 @@ impl Window {
     }
 
     /// Shows the files of `changes` as they are now.
-    fn show_changes(&self, changes: &[VaultChange]) {
+    pub(super) fn show_changes(&self, changes: &[VaultChange]) {
         let imp = self.imp();
         let changes_vault = |change: &VaultChange| {
             matches!(

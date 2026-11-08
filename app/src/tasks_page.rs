@@ -59,6 +59,11 @@ impl TasksPage {
         self.imp().lists.reload();
     }
 
+    /// Moves the focus to the entry for a new task of the global list.
+    pub fn focus_new_task(&self) {
+        self.imp().lists.focus_new_task();
+    }
+
     /// Moves the focus to the open task `id` of `project`, or of the global
     /// list, or shows the finished tasks if it is one of them.
     pub fn show_task(&self, project: Option<&ProjectSlug>, id: &TaskId) {

@@ -347,6 +347,11 @@ impl TaskListView {
         self.update_visibility();
     }
 
+    /// Moves the focus to the entry for a new task.
+    pub fn focus_new_task(&self) {
+        self.imp().new_task.grab_focus();
+    }
+
     /// Moves the focus to the row of the open task `id`, unless it is in
     /// there already. Returns whether there is such a row. For the tasks of
     /// one list only, where ids are unique.

@@ -6,6 +6,15 @@ use gtk::glib;
 
 use crate::colors::dot_markup;
 
+/// The projects of `vault` to choose from for something new, a block or a
+/// note: all but the archived ones, in their order.
+pub fn choosable_projects(vault: &Vault) -> impl Iterator<Item = &Project> {
+    vault
+        .projects()
+        .iter()
+        .filter(|project| project.status() != ProjectStatus::Archived)
+}
+
 /// A popover with the projects of `vault` that are not archived, in their
 /// order. Choosing one closes it and calls `on_chosen`.
 pub fn project_popover(vault: &Vault, on_chosen: impl Fn(ProjectSlug) + 'static) -> gtk::Popover {
@@ -29,10 +38,7 @@ fn popover(
     none: Option<&str>,
     on_chosen: impl Fn(Option<ProjectSlug>) + 'static,
 ) -> gtk::Popover {
-    let projects = vault
-        .projects()
-        .iter()
-        .filter(|project| project.status() != ProjectStatus::Archived);
+    let projects = choosable_projects(vault);
     let mut choices: Vec<(String, Option<ProjectSlug>)> = none
         .map(|none| (none_markup(none), None))
         .into_iter()

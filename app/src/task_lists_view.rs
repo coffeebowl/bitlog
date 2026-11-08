@@ -136,6 +136,11 @@ impl TaskListsView {
         view
     }
 
+    /// Moves the focus to the entry for a new task of the global list.
+    pub fn focus_new_task(&self) {
+        self.imp().global.focus_new_task();
+    }
+
     /// Moves the focus to the open task `id` of the list of `project`, or of
     /// the global one. Returns whether it is shown.
     pub fn focus_task(&self, project: Option<&ProjectSlug>, id: &TaskId) -> bool {
