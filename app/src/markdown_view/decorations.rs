@@ -176,6 +176,9 @@ impl Decorations {
         }
         let chip_color = with_alpha(&color, CODE_ALPHA);
         for range in &self.chips {
+            if line_span(view, range, &visible).is_none() {
+                continue;
+            }
             for rect in text_rects(view, range, &visible) {
                 fill_rounded(snapshot, rect, CHIP_RADIUS, &chip_color);
             }
@@ -197,7 +200,7 @@ impl Decorations {
             dashes.snapshot(view, snapshot, &visible);
         }
         for check_box in &self.check_boxes {
-            check_box.snapshot(view, snapshot);
+            check_box.snapshot(view, snapshot, &visible);
         }
     }
 
@@ -209,12 +212,10 @@ impl Decorations {
         let markers = (lists::MARKER_WIDTH - lists::MARKER_GAP) as f32;
         let color = with_alpha(&view.color(), BULLET_ALPHA);
         for &(offset, depth) in &self.bullets {
-            let marker = char_location(view, offset);
-            if marker.y() + marker.height() < visible.y()
-                || marker.y() > visible.y() + visible.height()
-            {
+            if !is_line_visible(view, offset, &visible) {
                 continue;
             }
+            let marker = char_location(view, offset);
             let bullet = BULLETS[usize::from(depth.max(1) - 1) % BULLETS.len()];
             let layout = drawing::layout(view, bullet, BULLET_SCALE, false);
             let center = (
@@ -261,6 +262,13 @@ pub(super) fn line_span(
     let bottom = y + height;
     (bottom >= visible.y() && top <= visible.y() + visible.height())
         .then_some((top as f32, bottom as f32))
+}
+
+/// Whether the line of the character at `offset` in `view` is in sight.
+/// Asked before where a character is: that lays out its line, which takes
+/// long for all of a long text.
+pub(super) fn is_line_visible(view: &gtk::TextView, offset: i32, visible: &gdk::Rectangle) -> bool {
+    line_span(view, &(offset..offset), visible).is_some()
 }
 
 /// Where the text of `range` in `view` is, one rectangle for each line it

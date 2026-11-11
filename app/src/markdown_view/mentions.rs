@@ -9,7 +9,7 @@ use bitlog_core::{Formatting, mentions};
 use gtk::gdk;
 use gtk::prelude::*;
 
-use super::decorations::Decorations;
+use super::decorations::{Decorations, is_line_visible};
 use super::links::Target;
 use super::styling::Styling;
 use super::{Contacts, tags};
@@ -106,14 +106,12 @@ impl MentionName {
         snapshot: &gtk::Snapshot,
         visible: &gdk::Rectangle,
     ) {
+        if !is_line_visible(view, self.at, visible) {
+            return;
+        }
         let iter = view.buffer().iter_at_offset(self.at);
         // As high as the font, without the space between lines.
         let (location, _) = view.cursor_locations(Some(&iter));
-        if location.y() + location.height() < visible.y()
-            || location.y() > visible.y() + visible.height()
-        {
-            return;
-        }
         let layout = view.create_pango_layout(Some(&self.name));
         let start = (location.x() as f32, location.y() as f32);
         append_layout(snapshot, &layout, start, (0.0, 0.0), &view.color());

@@ -3,10 +3,10 @@
 
 use std::ops::Range;
 
-use gtk::graphene;
 use gtk::prelude::*;
+use gtk::{gdk, graphene};
 
-use super::decorations::char_location;
+use super::decorations::{char_location, is_line_visible};
 use super::styling::Styling;
 use super::tags;
 use crate::drawing::append_check_box;
@@ -75,7 +75,15 @@ impl CheckBox {
         self.toggle.clone()
     }
 
-    pub(super) fn snapshot(&self, view: &gtk::TextView, snapshot: &gtk::Snapshot) {
+    pub(super) fn snapshot(
+        &self,
+        view: &gtk::TextView,
+        snapshot: &gtk::Snapshot,
+        visible: &gdk::Rectangle,
+    ) {
+        if !is_line_visible(view, self.at, visible) {
+            return;
+        }
         append_check_box(snapshot, self.bounds(view), self.checked, &view.color());
     }
 }
