@@ -114,12 +114,15 @@ fn filled_delimiter_row(
         let Some(longest) = longest(column) else {
             continue;
         };
-        let dashes = text[cell.clone()].trim().trim_matches(':');
-        let around = text[cell.clone()].chars().count() - dashes.len();
         let dashes_start = cell.start + text[cell.clone()].find('-')?;
+        let dashes = text[dashes_start..cell.end]
+            .chars()
+            .take_while(|c| *c == '-')
+            .count();
+        let around = text[cell.clone()].chars().count() - dashes;
         filled.push_str(&text[start..dashes_start]);
         filled.push_str(&"-".repeat(longest.saturating_sub(around).max(3)));
-        start = dashes_start + dashes.len();
+        start = dashes_start + dashes;
     }
     filled.push_str(&text[start..line.range.end]);
     Some(filled)
@@ -198,6 +201,11 @@ mod tests {
             Some("Name | Status\n---------------- | ------\nPayment provider | open\n")
         );
         assert_eq!(tidied("| Name |\n|------|\n| x |\n"), None);
+        // A space after the colon stays, too.
+        assert_eq!(
+            tidied("| a | b |\n| - |: - |").as_deref(),
+            Some("| a | b |\n| --- |: --- |")
+        );
     }
 
     #[test]

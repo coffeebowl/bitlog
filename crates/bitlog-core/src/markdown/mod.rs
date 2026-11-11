@@ -157,6 +157,12 @@ pub fn markdown_formatting(text: &str, mode: MarkdownMode) -> Formatting {
     for (event, range) in Parser::new_ext(text, options(mode)).into_offset_iter() {
         match event {
             Event::Start(tag) => {
+                let range = match tag {
+                    // The parser starts an item indented with a tab before
+                    // its indent.
+                    Tag::Item => range.end - text[range.clone()].trim_start().len()..range.end,
+                    _ => range,
+                };
                 stack.push(Frame {
                     tag,
                     range,

@@ -150,6 +150,11 @@ mod tests {
                 ("     ", 2, Some("1. ")),
             ]
         );
+        // Indented with a tab.
+        let formatting = markdown_formatting("- a\n\t- [ ] b", MarkdownMode::Block);
+        assert_eq!(formatting.list_markers, [5..7, 0..2]);
+        assert_eq!(formatting.tasks[0].marker, 5..6);
+        assert_eq!(formatting.list_indents[0].marker, None);
     }
 
     #[test]

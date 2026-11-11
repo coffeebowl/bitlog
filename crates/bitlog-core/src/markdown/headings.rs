@@ -12,7 +12,7 @@ pub fn heading_lines(text: &str) -> Vec<Range<usize>> {
     headings(text)
         .map(|range| {
             let line_end = text[range.clone()]
-                .find('\n')
+                .find(['\n', '\r'])
                 .map_or(range.end, |end| range.start + end);
             range.start..line_end
         })
@@ -27,7 +27,7 @@ pub fn escape_headings(text: &str) -> String {
         .map(|range| {
             let heading = &text[range.clone()];
             // Setext headings span two lines, ATX headings one.
-            let (offset, marks) = match heading.trim_end().rfind('\n') {
+            let (offset, marks) = match heading.trim_end().rfind(['\n', '\r']) {
                 Some(line_start) => (line_start, ['-', '=']),
                 None => (0, ['#', '#']),
             };
@@ -89,5 +89,8 @@ mod tests {
         );
         assert!(heading_lines(&escaped).is_empty());
         assert_eq!(escape_headings(&escaped), escaped);
+        // Lines may end with a carriage return alone.
+        assert_eq!(escape_headings("Setext\r---\r"), "Setext\r\\---\r");
+        assert_eq!(heading_lines("Setext\r---\r").first(), Some(&(0..6)));
     }
 }

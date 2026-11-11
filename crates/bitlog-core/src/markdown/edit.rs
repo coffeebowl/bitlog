@@ -2,6 +2,7 @@
 //! opening fence of a code block, a web address pasted over a selection and
 //! toggling tasks, as edits of the text, and which wiki link is being typed.
 
+use std::cmp::Ordering;
 use std::ops::Range;
 
 use super::lists::{ListItem, innermost_item};
@@ -142,7 +143,8 @@ pub fn continue_table(text: &str, mode: MarkdownMode, at: usize) -> Option<Conti
         .pipes
         .last()
         .is_some_and(|&pipe| text[pipe + 1..header.range.end].trim().is_empty());
-    let below = &lines[index.max(1)];
+    // A table whose lines end with carriage returns alone is one line.
+    let below = lines.get(index.max(1))?;
     let open = if opens { "| " } else { "" };
     let close = if closes { " |" } else { "" };
     Some(Continuation::Replace {
@@ -172,6 +174,11 @@ pub fn nest_list_item(
         return Some(Vec::new());
     }
     let column = indent.len();
+    let wanted = if deeper {
+        Ordering::Greater
+    } else {
+        Ordering::Less
+    };
     let target = if deeper {
         items
             .iter()
@@ -191,7 +198,8 @@ pub fn nest_list_item(
             .map(|outer| outer.range.start - outer.line_start)
             .next()
     };
-    let Some(target) = target.filter(|&target| target != column) else {
+    // The item before may start its text further left, after a tab.
+    let Some(target) = target.filter(|&target| target.cmp(&column) == wanted) else {
         return Some(Vec::new());
     };
     let mut edits: Vec<(Range<usize>, String)> = lines(text)
@@ -279,8 +287,13 @@ fn list_of<'a>(text: &str, items: &'a [ListItem], item: &'a ListItem) -> Vec<&'a
         .iter()
         .position(|other| other == item)
         .expect("the item is one of the items");
+    // Items being typed come after all others, whatever their place in the
+    // text, and may be inside another: those have nothing between them.
     let joins = |before: &ListItem, after: &ListItem| {
-        kind(before) == kind(after) && text[before.range.end..after.range.start].trim().is_empty()
+        kind(before) == kind(after)
+            && text
+                .get(before.range.end..after.range.start)
+                .is_some_and(|between| between.trim().is_empty())
     };
     let mut list = vec![item];
     for before in items[..index]
@@ -623,6 +636,9 @@ mod tests {
         );
         assert_eq!(renumbered("1. a^\n1) b"), "1. a\n1) b");
         assert_eq!(renumbered("text^\n\n1. a\n1. b"), "text\n\n1. a\n1. b");
+        // A bullet being typed below a paragraph is an item, but not in
+        // the order of the text.
+        assert_eq!(renumbered("text\n- \n\n- a\n- b^"), "text\n- \n\n- a\n- b");
     }
 
     /// What Enter does at the end of the line with `at` in `text`.
@@ -685,6 +701,7 @@ mod tests {
             enter(empty, "|  |").as_deref(),
             Some("| a | b |\n|---|---|\n\n^")
         );
+        assert_eq!(enter("|a|\r|-|", "a"), None);
         // Without outer pipes, and indented in a list item.
         assert_eq!(
             enter("a | b\n--|--\nc | d\n", "c").as_deref(),
@@ -755,5 +772,8 @@ mod tests {
         assert_eq!(nested(text, "a", true).as_deref(), Some(text));
         assert_eq!(nested(text, "d", false).as_deref(), Some(text));
         assert_eq!(nested("Text\n", "Text", true), None);
+        // Not left of where it is.
+        let text = "1. a\n\t- b\n   - c";
+        assert_eq!(nested(text, "c", true).as_deref(), Some(text));
     }
 }

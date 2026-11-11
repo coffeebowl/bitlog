@@ -47,11 +47,13 @@ pub(super) fn code_block(text: &str, frame: &Frame, info: Option<&str>) -> CodeB
         _ => opening_end..opening_end,
     };
     let opening = line_start(text, range.start)..opening_end;
-    let last = line_start(text, range.end - 1);
+    // Its last line, before the line break the block may end with.
+    let end = range.end - usize::from(text[..range.end].ends_with('\n'));
+    let last = line_start(text, end);
     let last_line = text[last..range.end].trim_start_matches([' ', '>']);
     let closing = (last >= opening_end
         && (last_line.starts_with("```") || last_line.starts_with("~~~")))
-    .then(|| last..next_line_start(text, range.end - 1));
+    .then(|| last..next_line_start(text, end));
     let fences = std::iter::once(opening).chain(closing).collect();
     CodeBlock {
         range,
@@ -94,5 +96,9 @@ mod tests {
                 ("sh", "open", vec!["```sh\n"]),
             ]
         );
+        // The text may end in the middle of a line, with any character.
+        let blocks = markdown_formatting("```sh\nä", MarkdownMode::Block).code_blocks;
+        assert_eq!(blocks[0].fences.first(), Some(&(0..6)));
+        assert_eq!(blocks[0].fences.len(), 1);
     }
 }
