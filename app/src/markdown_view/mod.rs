@@ -561,6 +561,13 @@ impl MarkdownView {
         if self.imp().restyle_queued.replace(true) {
             return;
         }
+        // GTK may draw a frame before the idle runs, with what the view
+        // draws itself still where it was before the change. A view that is
+        // not shown has no frames, so the idle stays.
+        self.add_tick_callback(|view, _| {
+            view.restyle_if_queued();
+            glib::ControlFlow::Break
+        });
         glib::idle_add_local_full(
             glib::Priority::HIGH_IDLE,
             glib::clone!(
