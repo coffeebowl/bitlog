@@ -342,9 +342,10 @@ pub fn pairs_bracket(text: &str, at: usize) -> bool {
 
 /// The closing fence for the opening fence of a code block just typed in
 /// `text`, up to `at`: to insert at `at`, with the indent of the opening
-/// one. Only if nothing follows on the line and the code block would run to
-/// the end of the text otherwise, so that a fence typed to close a code
-/// block stays alone.
+/// one. Only if nothing follows on the line and the line was not in a code
+/// block before, so that a fence typed to close or split a code block
+/// stays alone, and one typed above another code block does not take that
+/// block's opening fence for its closing one.
 pub fn closing_fence(text: &str, mode: MarkdownMode, at: usize) -> Option<String> {
     let line = line_start(text, at);
     let fence = text[line..at].trim_start_matches(' ');
@@ -352,12 +353,18 @@ pub fn closing_fence(text: &str, mode: MarkdownMode, at: usize) -> Option<String
     if !matches!(fence, "```" | "~~~") || !rest_of_line.trim().is_empty() {
         return None;
     }
-    let opens_unclosed_block = markdown_formatting(text, mode)
+    let fence_start = at - fence.len();
+    let before = format!("{}{}", &text[..fence_start], &text[at..]);
+    let in_code_block = markdown_formatting(&before, mode)
         .code_blocks
         .iter()
-        .any(|block| matches!(block.fences.as_slice(), [opening] if opening.start == line));
-    let indent = &text[line..at - fence.len()];
-    opens_unclosed_block.then(|| format!("\n{indent}{fence}"))
+        .any(|block| match block.fences.as_slice() {
+            [opening] => opening.end <= line && line <= block.range.end,
+            [opening, closing] => opening.end <= line && line < closing.start,
+            _ => false,
+        });
+    let indent = &text[line..fence_start];
+    (!in_code_block).then(|| format!("\n{indent}{fence}"))
 }
 
 /// The link to put in place of the `selection` in `text` when `pasted` is
@@ -535,10 +542,19 @@ mod tests {
         assert_eq!(closing("```^").as_deref(), Some("\n```"));
         assert_eq!(closing("Text\n\n~~~^\nmore\n").as_deref(), Some("\n~~~"));
         assert_eq!(closing("- Item\n\n  ```^").as_deref(), Some("\n  ```"));
-        // Closes the code block before it.
+        // Closes the code block before it, or splits it.
         assert_eq!(closing("```\ncode\n```^"), None);
-        // Would close the code block after it.
-        assert_eq!(closing("```^\n\n```sh\ncode\n```"), None);
+        assert_eq!(closing("```\na\n```^\nb\n```"), None);
+        assert_eq!(closing("```\n~~~^\n```"), None);
+        // Opens a code block of its own, before or after others.
+        assert_eq!(
+            closing("```^\n\n```sh\ncode\n```").as_deref(),
+            Some("\n```")
+        );
+        assert_eq!(
+            closing("```\na\n```\n\n```^\n\n```\nb\n```").as_deref(),
+            Some("\n```")
+        );
         assert_eq!(closing("```^rust"), None);
         assert_eq!(closing("````^"), None);
         assert_eq!(closing("a ```^"), None);
