@@ -14,6 +14,7 @@ mod links;
 mod lists;
 mod mentions;
 mod menu;
+mod scrolling;
 mod styling;
 mod tables;
 mod tags;
@@ -110,6 +111,8 @@ mod imp {
         pub(super) links: RefCell<Vec<(Range<i32>, Target)>>,
         /// Connected to the style manager, which outlives the view.
         pub style_handlers: RefCell<Vec<SignalHandlerId>>,
+        /// Connected to the scrolled window around the view while mapped.
+        pub scroll_handler: RefCell<Option<(gtk::Adjustment, SignalHandlerId)>>,
         /// What is drawn beside the text as last styled.
         pub(super) decorations: RefCell<Decorations>,
         /// The starts of what shows its Markdown, as the cursor is at it.
@@ -271,7 +274,17 @@ mod imp {
     impl WidgetImpl for MarkdownView {
         fn map(&self) {
             self.parent_map();
-            tags::update(self.obj().upcast_ref());
+            let view = self.obj();
+            tags::update(view.upcast_ref());
+            self.scroll_handler
+                .replace(scrolling::redraw_on_scroll(view.upcast_ref()));
+        }
+
+        fn unmap(&self) {
+            if let Some((adjustment, handler)) = self.scroll_handler.take() {
+                adjustment.disconnect(handler);
+            }
+            self.parent_unmap();
         }
 
         /// Fits diagrams and tables to the new width.

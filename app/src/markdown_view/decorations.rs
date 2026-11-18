@@ -16,6 +16,7 @@ use super::code_blocks::CodeCard;
 use super::diagrams::DiagramCard;
 use super::images::ImageCard;
 use super::mentions::MentionName;
+use super::scrolling::in_sight;
 use super::styling::{Styling, holds};
 use super::tables::{DelimiterDashes, Fit, Grid, TidiedTable};
 use super::{CODE_ALPHA, GRID_ALPHA, MARKUP_ALPHA, lists, tags};
@@ -152,7 +153,7 @@ impl Decorations {
 
     /// Draws what goes below the text, in buffer coordinates.
     pub(super) fn snapshot_below(&self, view: &gtk::TextView, snapshot: &gtk::Snapshot) {
-        let visible = view.visible_rect();
+        let visible = in_sight(view);
         let color = view.color();
         let (left, right) = text_edges(view, &visible);
         for card in &self.code_blocks {
@@ -207,7 +208,7 @@ impl Decorations {
     /// Draws bullets over the hidden markers of bullet list items, in buffer
     /// coordinates.
     pub(super) fn snapshot_above(&self, view: &gtk::TextView, snapshot: &gtk::Snapshot) {
-        let visible = view.visible_rect();
+        let visible = in_sight(view);
         // In the middle of the room of markers.
         let markers = (lists::MARKER_WIDTH - lists::MARKER_GAP) as f32;
         let color = with_alpha(&view.color(), BULLET_ALPHA);
