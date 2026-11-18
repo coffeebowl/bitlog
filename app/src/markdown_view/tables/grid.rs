@@ -70,7 +70,7 @@ impl Grid {
                 } else {
                     i32::from(rest.starts_with('\n'))
                 };
-                tags::apply(buffer, DELIMITER_ROW_TAG, start..end + line_break);
+                styling.tag_chars(DELIMITER_ROW_TAG, start..end + line_break);
             }
             let pipes: Vec<i32> = line
                 .pipes
@@ -78,7 +78,7 @@ impl Grid {
                 .map(|&pipe| styling.offset(pipe))
                 .collect();
             for &pipe in &pipes {
-                tags::apply(buffer, tags::CONCEALED, pipe..pipe + 1);
+                styling.tag_chars(tags::CONCEALED, pipe..pipe + 1);
             }
             let outer_pipes = (
                 line.pipes

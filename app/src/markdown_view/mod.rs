@@ -1,4 +1,5 @@
 mod adding_images;
+mod applied_tags;
 mod callouts;
 mod check_boxes;
 mod code_blocks;
@@ -37,13 +38,14 @@ use gtk::{gdk, gio, glib};
 use sourceview5::prelude::*;
 use sourceview5::subclass::prelude::*;
 
+use self::applied_tags::AppliedTags;
 use self::code_highlight::CodeHighlighter;
 pub use self::code_highlight::{Highlighting, Themes, themes};
 use self::decorations::Decorations;
 use self::embeds::{Embed, Embeds};
 use self::images::Location;
 use self::links::Target;
-use self::styling::Styling;
+use self::styling::{Styling, Widths};
 use crate::colors::with_alpha;
 use crate::dialogs::help_dialog::{self, HelpDialog};
 use crate::drawing::append_layout;
@@ -132,6 +134,9 @@ mod imp {
         /// for the images of the last line.
         pub(super) room_below_text: Cell<i32>,
         pub highlighter: CodeHighlighter,
+        pub(super) applied_tags: RefCell<AppliedTags>,
+        /// Kept as long as the font of the view stays.
+        pub(super) widths: RefCell<Widths>,
     }
 
     #[glib::object_subclass]
@@ -213,6 +218,7 @@ mod imp {
             view.set_indent_width(2);
             view.add_css_class("markdown-view");
             tags::create(&view.buffer());
+            view.note_edits();
             code_highlight::preload();
             view.buffer().connect_changed(glib::clone!(
                 #[weak]
@@ -285,6 +291,12 @@ mod imp {
                 adjustment.disconnect(handler);
             }
             self.parent_unmap();
+        }
+
+        /// Measures text anew in another font, size or resolution.
+        fn system_setting_changed(&self, setting: &gtk::SystemSetting) {
+            self.parent_system_setting_changed(setting);
+            self.widths.borrow_mut().clear();
         }
 
         /// Fits diagrams and tables to the new width.
@@ -471,16 +483,20 @@ impl MarkdownView {
     }
 
     /// Formats the whole text again, after changes, and after notes that
-    /// wiki links point to were added or removed.
+    /// wiki links point to were added or removed. Only the tags that
+    /// changed change in the buffer, see `AppliedTags`.
     fn restyle(&self) {
-        self.imp().restyle_queued.set(false);
-        let buffer = self.buffer();
-        let (start, end) = buffer.bounds();
-        // The buffer has no other tags: it has no language and no search.
-        buffer.remove_all_tags(&start, &end);
+        let imp = self.imp();
+        imp.restyle_queued.set(false);
         let text = self.text();
         let offsets = char_offsets(&text);
-        let styling = Styling::new(self.upcast_ref(), &text, &offsets, self.editing_cursor());
+        let styling = Styling::new(
+            self.upcast_ref(),
+            &text,
+            &offsets,
+            self.editing_cursor(),
+            &imp.widths,
+        );
         let formatting = markdown_formatting(&text, self.mode());
         for (range, style) in &formatting.styles {
             styling.tag(&tags::name(*style), range);
@@ -488,7 +504,6 @@ impl MarkdownView {
         // The modules after it take away what they draw otherwise, like the
         // bullets of tasks.
         let mut decorations = Decorations::collect(&styling, &formatting);
-        let imp = self.imp();
         let missing = diagrams::style(&styling, &formatting, &mut decorations, &imp.diagrams);
         code_blocks::style(&styling, &formatting, &mut decorations);
         callouts::style(&styling, &formatting, &mut decorations);
@@ -538,6 +553,13 @@ impl MarkdownView {
         for link in &formatting.web_links {
             links.push((styling.chars(&link.range), Target::Web(link.url.clone())));
         }
+        imp.applied_tags
+            .borrow_mut()
+            .replace(&self.buffer(), styling.into_tags());
+        // GTK lays out changed lines when idle, after the frame, but those in
+        // sight right away when allocating: what the view draws itself would
+        // be drawn where the lines were before.
+        self.queue_allocate();
         imp.links.replace(links);
         self.queue_draw();
         for request in missing {
@@ -628,6 +650,30 @@ impl MarkdownView {
                 view.restyle();
             }
         });
+    }
+
+    /// Notes the changes to the text for `AppliedTags`, before GTK makes
+    /// them, while the iterators still tell where.
+    fn note_edits(&self) {
+        let buffer = self.buffer();
+        buffer.connect_insert_text(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_, at, text| {
+                let inserted = text.chars().count() as i32;
+                let applied_tags = &view.imp().applied_tags;
+                applied_tags.borrow_mut().edited(at.offset(), 0, inserted);
+            }
+        ));
+        buffer.connect_delete_range(glib::clone!(
+            #[weak(rename_to = view)]
+            self,
+            move |_, start, end| {
+                let removed = end.offset() - start.offset();
+                let applied_tags = &view.imp().applied_tags;
+                applied_tags.borrow_mut().edited(start.offset(), removed, 0);
+            }
+        ));
     }
 
     /// Where the cursor is, while the user may be editing.

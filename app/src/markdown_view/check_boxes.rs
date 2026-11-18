@@ -43,10 +43,10 @@ impl CheckBox {
         let width = styling.width(&styling.text[range.start..range.start + two]);
         let chars = styling.chars(range);
         let at = chars.start;
-        tags::apply(buffer, tags::CONCEALED, at..at + 2);
+        styling.tag_chars(tags::CONCEALED, at..at + 2);
         let spacing = tags::spacing(buffer, (size(styling.view) as i32).max(room) - width);
-        tags::apply(buffer, &spacing, at + 1..at + 2);
-        tags::apply(buffer, tags::HIDDEN, at + 2..chars.end);
+        styling.tag_chars(&spacing, at + 1..at + 2);
+        styling.tag_chars(tags::HIDDEN, at + 2..chars.end);
         Self {
             at,
             checked,

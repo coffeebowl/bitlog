@@ -171,11 +171,7 @@ impl CodeHighlighter {
             for (range, look) in self.highlight(&block.language, code).iter() {
                 let name = look.tag_name();
                 tags::get_or_add(&styling.buffer, &name, || look.tag());
-                tags::apply(
-                    &styling.buffer,
-                    &name,
-                    start + range.start..start + range.end,
-                );
+                styling.tag_chars(&name, start + range.start..start + range.end);
             }
         }
     }

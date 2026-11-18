@@ -6,8 +6,8 @@
 use std::ops::Range;
 
 use bitlog_core::{Formatting, mentions};
-use gtk::gdk;
 use gtk::prelude::*;
+use gtk::{gdk, pango};
 
 use super::decorations::{Decorations, is_line_visible};
 use super::links::Target;
@@ -65,8 +65,9 @@ fn show_name(
     // hidden. Slugs are ASCII, a byte each.
     let first = span.start + 1..span.start + 2;
     let last = (span.end - 1).max(first.end)..span.end;
-    let width = styling.layout(name).size().0;
-    let first_width = styling.layout(&styling.text[first.clone()]).size().0;
+    let plain = pango::AttrList::new();
+    let width = styling.text_width(name, &plain);
+    let first_width = styling.text_width(&styling.text[first.clone()], &plain);
     let spacing = tags::spacing_units(&styling.buffer, width - first_width);
     styling.tag(&spacing, &first);
     styling.tag(tags::CONCEALED, span);

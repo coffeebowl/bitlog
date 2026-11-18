@@ -216,18 +216,6 @@ pub(super) fn hanging(buffer: &gtk::TextBuffer, pixels: i32) -> String {
     name
 }
 
-/// Applies the tag named `name` to the whole lines of the characters of
-/// `range`, with their line breaks, as tags that format lines need.
-pub(super) fn apply_to_lines(buffer: &gtk::TextBuffer, name: &str, range: Range<i32>) {
-    let mut start = buffer.iter_at_offset(range.start);
-    start.set_line_offset(0);
-    let mut end = buffer.iter_at_offset(range.end);
-    if range.is_empty() || !end.starts_line() {
-        end.forward_line();
-    }
-    buffer.apply_tag_by_name(name, &start, &end);
-}
-
 /// Makes room `height` high above the line of `styling` that starts at
 /// `start`, for what is drawn there.
 pub(super) fn make_room(styling: &Styling, start: usize, height: i32) {
@@ -239,7 +227,7 @@ pub(super) fn make_room(styling: &Styling, start: usize, height: i32) {
             .build()
     });
     let line = styling.offset(start);
-    apply_to_lines(&styling.buffer, &name, line..line);
+    styling.tag_lines(&name, line..line);
 }
 
 /// Hides the text of the `line` of `styling`, with its line break, as
@@ -267,13 +255,4 @@ pub(super) fn hide_line(styling: &Styling, line: Range<usize>) {
         styling.tag(HIDDEN, &(line.start..text_end));
         styling.tag(SHRUNK_LINE_BREAK, &(text_end..line.end));
     }
-}
-
-/// Applies the tag named `name` to the characters of `range`.
-pub(super) fn apply(buffer: &gtk::TextBuffer, name: &str, range: Range<i32>) {
-    buffer.apply_tag_by_name(
-        name,
-        &buffer.iter_at_offset(range.start),
-        &buffer.iter_at_offset(range.end),
-    );
 }

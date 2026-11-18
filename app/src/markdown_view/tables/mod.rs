@@ -108,8 +108,8 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
                 .build()
         })
     };
-    let header_row = spacing_tag(HEADER_ROW_TAG, ROW_SPACING);
-    let row = spacing_tag(ROW_TAG, 2 * ROW_SPACING);
+    spacing_tag(HEADER_ROW_TAG, ROW_SPACING);
+    spacing_tag(ROW_TAG, 2 * ROW_SPACING);
     spacing_tag(AFTER_TAG, ROW_SPACING);
     tags::get_or_add(&styling.buffer, EDITED_TAG, || {
         gtk::TextTag::builder()
@@ -124,12 +124,6 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
             .build()
     });
     let room = room(styling.view);
-    let hidden = decorations.hidden.clone();
-    let markup = Markup {
-        styles: &formatting.styles,
-        hidden: &hidden,
-        monospace: false,
-    };
     for lines in &formatting.tables {
         let (Some(first), Some(last)) = (lines.first(), lines.last()) else {
             continue;
@@ -155,9 +149,24 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
         for &pipe in lines.iter().flat_map(|line| &line.pipes) {
             styling.tag(PIPE_TAG, &(pipe..pipe + 1));
         }
+        // Only what is in the table: its cells are measured many times.
+        let overlaps = |part: &Range<usize>| part.start < range.end && range.start < part.end;
+        let styles: Vec<_> = formatting
+            .styles
+            .iter()
+            .filter(|(part, _)| overlaps(part))
+            .cloned()
+            .collect();
+        let hidden: Vec<_> = decorations
+            .hidden
+            .iter()
+            .filter(|part| overlaps(part))
+            .cloned()
+            .collect();
         let markup = Markup {
+            styles: &styles,
+            hidden: &hidden,
             monospace: shown,
-            ..markup
         };
         let ghost_dashes = shown && lines.get(1).is_some_and(|line| !styling.is_at(&line.range));
         let mut cells = Cells::measure(styling, lines, ghost_dashes, markup);
@@ -177,20 +186,17 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
         if !shown {
             for (index, line) in lines.iter().enumerate() {
                 let tag = match index {
-                    0 => &header_row,
+                    0 => HEADER_ROW_TAG,
                     1 => continue,
-                    _ => &row,
+                    _ => ROW_TAG,
                 };
-                let chars = styling.chars(&line.range);
-                let start = styling.buffer.iter_at_offset(chars.start);
-                let end = styling.buffer.iter_at_offset(chars.end);
-                styling.buffer.apply_tag(tag, &start, &end);
+                styling.tag(tag, &line.range);
             }
             let mut after = styling
                 .buffer
                 .iter_at_offset(styling.offset(last.range.end));
             if after.forward_line() {
-                tags::apply_to_lines(&styling.buffer, AFTER_TAG, after.offset()..after.offset());
+                styling.tag_lines(AFTER_TAG, after.offset()..after.offset());
             }
         }
         if ghost_dashes {
@@ -390,7 +396,7 @@ impl Cells {
                 spaced_out += units;
                 let at = styling.offset(spaced);
                 let spacing = tags::spacing_units(&styling.buffer, units);
-                tags::apply(&styling.buffer, &spacing, at..at + 1);
+                styling.tag_chars(&spacing, at..at + 1);
             }
         }
     }
@@ -474,16 +480,8 @@ impl Cell {
             };
             cut.width = cut.shown_width(styling, &self.range, markup);
             if cut.width <= cap || head == 0 {
-                tags::apply(
-                    &styling.buffer,
-                    tags::CONCEALED,
-                    styling.chars(&(at..concealed)),
-                );
-                tags::apply(
-                    &styling.buffer,
-                    tags::HIDDEN,
-                    styling.chars(&(concealed..tail_start)),
-                );
+                styling.tag(tags::CONCEALED, &(at..concealed));
+                styling.tag(tags::HIDDEN, &(concealed..tail_start));
                 let shift = if tail_start < content.end {
                     (width(at..concealed) - ellipsis) as f32 / pango::SCALE as f32 / 2.0
                 } else {
@@ -524,13 +522,11 @@ fn cap(widths: &[i32], room: i32) -> i32 {
 
 /// How wide a pipe is shown, in Pango units, in a `monospace` font or not.
 fn pipe_width(styling: &Styling, monospace: bool) -> i32 {
-    let layout = styling.layout("|");
+    let attributes = pango::AttrList::new();
     if monospace {
-        let attributes = pango::AttrList::new();
         attributes.insert(pango::AttrString::new_family("monospace"));
-        layout.set_attributes(Some(&attributes));
     }
-    layout.size().0
+    styling.text_width("|", &attributes)
 }
 
 /// How wide `range` of the text is shown, in Pango units, with the styles
@@ -555,7 +551,6 @@ fn text_width(
         start = part.end;
     }
     shown.push_str(&text[start..range.end]);
-    let layout = styling.layout(&shown);
     let attributes = pango::AttrList::new();
     if markup.monospace {
         attributes.insert(pango::AttrString::new_family("monospace"));
@@ -587,8 +582,7 @@ fn text_width(
         attribute.set_end_index(index(end));
         attributes.insert(attribute);
     }
-    layout.set_attributes(Some(&attributes));
-    layout.size().0
+    styling.text_width(&shown, &attributes)
 }
 
 #[cfg(test)]

@@ -53,12 +53,8 @@ pub(super) fn style(styling: &Styling, formatting: &Formatting, decorations: &mu
             }
             // Space where the fences were, on the whole first and last line.
             let code = styling.chars(&block.code);
-            tags::apply_to_lines(&styling.buffer, tags::CODE_TOP, code.start..code.start);
-            tags::apply_to_lines(
-                &styling.buffer,
-                tags::CODE_BOTTOM,
-                code.end - 1..code.end - 1,
-            );
+            styling.tag_lines(tags::CODE_TOP, code.start..code.start);
+            styling.tag_lines(tags::CODE_BOTTOM, code.end - 1..code.end - 1);
             card.language = (!block.language.is_empty()).then(|| block.language.clone());
         }
         decorations.code_blocks.push(card);

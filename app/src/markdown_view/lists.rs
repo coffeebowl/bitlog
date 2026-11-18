@@ -15,7 +15,7 @@ use gtk::{glib, pango};
 use super::check_boxes::CheckBox;
 use super::decorations::Decorations;
 use super::editing::replace_range;
-use super::styling::Styling;
+use super::styling::{Styling, whole_pixels};
 use super::{char_offsets, tags};
 
 /// How much further each level of a list is indented than the one it is
@@ -49,9 +49,8 @@ fn indent(styling: &Styling, formatting: &Formatting) {
     let mut rooms = HashMap::new();
     for marker in &formatting.list_markers {
         if !is_bullet(text, marker) {
-            let layout = styling.layout(&text[marker.clone()]);
-            layout.set_attributes(Some(&bold));
-            rooms.insert(marker.start, layout.pixel_size().0);
+            let width = styling.text_width(&text[marker.clone()], &bold);
+            rooms.insert(marker.start, whole_pixels(width));
             continue;
         }
         rooms.insert(marker.start, MARKER_WIDTH);
@@ -63,7 +62,7 @@ fn indent(styling: &Styling, formatting: &Formatting) {
             let pixels = MARKER_WIDTH - styling.width(&text[marker.clone()]);
             let space = styling.offset(marker.end) - 1;
             let spacing = tags::spacing(&styling.buffer, pixels);
-            tags::apply(&styling.buffer, &spacing, space..space + 1);
+            styling.tag_chars(&spacing, space..space + 1);
         }
     }
     for indent in &formatting.list_indents {
@@ -83,11 +82,11 @@ fn indent(styling: &Styling, formatting: &Formatting) {
             // Wider than it should be, as spacing cannot be negative: only
             // the last space is left, which is then the first character of
             // its line, which Pango spaces out by half.
-            tags::apply(&styling.buffer, tags::HIDDEN, spaces.start..last);
+            styling.tag_chars(tags::HIDDEN, spaces.start..last);
             2 * (target - styling.width(" "))
         };
         let spacing = tags::spacing(&styling.buffer, pixels);
-        tags::apply(&styling.buffer, &spacing, last..last + 1);
+        styling.tag_chars(&spacing, last..last + 1);
         texts.insert(indent.spaces.start, target);
     }
     for marker in &formatting.list_markers {
@@ -102,7 +101,7 @@ fn indent(styling: &Styling, formatting: &Formatting) {
     for (line, pixels) in texts {
         let hanging = tags::hanging(&styling.buffer, pixels);
         let line = styling.offset(line);
-        tags::apply_to_lines(&styling.buffer, &hanging, line..line);
+        styling.tag_lines(&hanging, line..line);
     }
 }
 
