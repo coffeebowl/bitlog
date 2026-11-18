@@ -1,9 +1,10 @@
 //! Views in a scrolled window. One that does not scroll itself, like the
 //! note of a day, is as high as its text, of which the window shows only
-//! some: it draws only what is in sight, again as the window scrolls.
+//! some: it draws only what is in sight, again as the window scrolls, and
+//! keeps the cursor in sight, as views that scroll themselves do.
 
 use gtk::prelude::*;
-use gtk::{gdk, glib};
+use gtk::{gdk, glib, graphene};
 
 /// The scrolled window around `view`, if there is one.
 fn scrolled_window(view: &gtk::TextView) -> Option<gtk::ScrolledWindow> {
@@ -41,4 +42,29 @@ pub(super) fn in_sight(view: &gtk::TextView) -> gdk::Rectangle {
     visible
         .intersect(&shown)
         .unwrap_or_else(|| gdk::Rectangle::new(visible.x(), visible.y(), 0, 0))
+}
+
+/// Scrolls the window around `view` as little as it takes for the cursor
+/// to be in sight, unless the view scrolls itself.
+pub(super) fn follow_cursor(view: &gtk::TextView) {
+    let Some(scrolled) = scrolled_window(view) else {
+        return;
+    };
+    let adjustment = scrolled.vadjustment();
+    if view.vadjustment().as_ref() == Some(&adjustment) {
+        return;
+    }
+    let buffer = view.buffer();
+    let (cursor, _) = view.cursor_locations(Some(&buffer.iter_at_mark(&buffer.get_insert())));
+    let (x, y) = view.buffer_to_window_coords(gtk::TextWindowType::Widget, cursor.x(), cursor.y());
+    let Some(top) = view.compute_point(&scrolled, &graphene::Point::new(x as f32, y as f32)) else {
+        return;
+    };
+    let top = f64::from(top.y());
+    let below = top + f64::from(cursor.height()) - f64::from(scrolled.height());
+    if top < 0.0 {
+        adjustment.set_value(adjustment.value() + top);
+    } else if below > 0.0 {
+        adjustment.set_value(adjustment.value() + below);
+    }
 }

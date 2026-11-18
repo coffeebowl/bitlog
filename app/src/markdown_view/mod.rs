@@ -121,6 +121,9 @@ mod imp {
         pub revealed: RefCell<Vec<i32>>,
         /// Whether `MarkdownView::queue_reveal` is waiting to run.
         pub reveal_queued: Cell<bool>,
+        /// Whether the cursor moved while the view had the focus, for
+        /// `scrolling::follow_cursor` once the view is laid out.
+        pub follow_cursor: Cell<bool>,
         /// Whether the text is to be formatted again when idle, as it
         /// changed or the view changed its width.
         pub restyle_queued: Cell<bool>,
@@ -209,7 +212,13 @@ mod imp {
             view.buffer().connect_cursor_position_notify(glib::clone!(
                 #[weak]
                 view,
-                move |_| view.queue_reveal()
+                move |_| {
+                    view.queue_reveal();
+                    if view.has_focus() && !view.imp().loading.get() {
+                        view.imp().follow_cursor.set(true);
+                        view.queue_allocate();
+                    }
+                }
             ));
             view.set_wrap_mode(gtk::WrapMode::WordChar);
             // Tab indents by two spaces, as in nested lists and most code.
@@ -299,7 +308,8 @@ mod imp {
             self.widths.borrow_mut().clear();
         }
 
-        /// Fits diagrams and tables to the new width.
+        /// Fits diagrams and tables to the new width, and keeps the cursor in
+        /// sight.
         fn size_allocate(&self, width: i32, height: i32, baseline: i32) {
             self.parent_size_allocate(width, height, baseline);
             if let Some(card) = &*self.contact_card.borrow() {
@@ -308,6 +318,9 @@ mod imp {
             let view = self.obj();
             if self.decorations.borrow().misfit(view.upcast_ref()) {
                 view.queue_restyle();
+            }
+            if self.follow_cursor.take() {
+                scrolling::follow_cursor(view.upcast_ref());
             }
         }
 
