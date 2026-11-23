@@ -1,6 +1,6 @@
 project(
   'bitlog',
-  version: '26.11',
+  version: '26.11.1',
   license: 'GPL-3.0-or-later',
   meson_version: '>= 1.5.0',
 )
