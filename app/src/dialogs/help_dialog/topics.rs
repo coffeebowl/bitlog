@@ -103,7 +103,7 @@ fn days() -> Topic {
                 "To start an empty day, click <b>Log Day</b>. Besides its blocks, a day has a note for anything about the day as a whole, a kind of day and a location. Vacation, sick days and public holidays reduce the target hours of their week.",
             )),
             Block::Text(gettext(
-                "Your open tasks are shown on every day. The <b>Standup</b> button summarizes your last working day and today, including your commits, ready to paste into your team chat.",
+                "Today’s page shows the tasks that are due. The <b>Standup</b> button summarizes your last working day and today, including your commits, ready to paste into your team chat.",
             )),
         ],
     }
